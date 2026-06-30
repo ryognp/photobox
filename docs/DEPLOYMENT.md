@@ -1,287 +1,163 @@
-# Photobox — 本番デプロイ手順書
+# Photobox — Vercel / Supabase デプロイ手順
 
-> **状態**: Production Hardening 完了 (Day 10 / 2026-06-30)  
-> まだデプロイは実行していません。この手順書に従って順番に進めてください。
-
----
-
-## 前提チェックリスト
-
-デプロイ前に以下がすべて ✅ であることを確認してください:
-
-- [ ] `npm run lint` 警告なし
-- [ ] `npm run build` 成功
-- [ ] `npm run db:validate` schema valid
-- [ ] `npm run audit:storage-assets -- --workspace-id <id> --dry-run` Missing 0 / Orphan 0
-- [ ] `.env.local` に実キーが含まれており、Git に含まれていないこと
-- [ ] `.env.example` / `.env.migrate.example` がプレースホルダーのみであること
+最終更新: 2026-06-30
 
 ---
 
-## 1. GitHub リポジトリ作成
+## 前提
 
-### 1-1. ローカルで Git を初期化（まだなら）
-
-```bash
-cd /Volumes/Extreme\ SSD/photobox/app
-
-git init
-git add .
-git commit -m "chore: initial production-ready commit"
-```
-
-### 1-2. Push 前の必須チェック
-
-```bash
-# 実キーがステージされていないか確認
-git diff --cached | grep -E "eyJ|sb_secret_|postgresql://.*:[^@]+@" && echo "⚠️ 実キーが含まれています" || echo "✅ 実キーなし"
-
-# 除外されているべきファイルがステージされていないか確認
-git status | grep -E "\.env\.local|\.env\.migrate$|\.xlsx$"
-```
-
-**`.gitignore` チェックリスト（push 前）:**
-
-| ファイル / パターン | 状態 |
-|-------------------|------|
-| `.env.local` | Git 管理外 ✅ |
-| `.env.migrate` | Git 管理外 ✅ |
-| `.env` | プレースホルダーのみ ✅ |
-| `.env.example` | プレースホルダーのみ ✅ |
-| `.env.migrate.example` | プレースホルダーのみ ✅ |
-| `*.xlsx` / `*.xls` | Git 管理外 ✅ |
-| `/tmp/xlsx-extract/` | Git 管理外 ✅ |
-| `/src/generated/prisma/` | Git 管理外（ビルド時に生成）✅ |
-
-### 1-3. GitHub に push
-
-```bash
-# GitHub で新規リポジトリを作成後:
-git remote add origin https://github.com/<your-org>/photobox.git
-git push -u origin main
-```
+- GitHub リポジトリ: https://github.com/ryognp/photobox
+- Supabase プロジェクト作成済み
+- Supabase Storage `photobox-private` バケット作成済み (non-public)
+- Vercel アカウント作成済み
 
 ---
 
-## 2. Supabase 設定確認（デプロイ前）
+## 1. Supabase 設定
 
-### 2-1. Storage Bucket をプライベートに設定
+### 1-1. Site URL と Redirect URLs
 
-Supabase Dashboard > Storage > Buckets > `photobox-images`
-
-- **Public bucket**: **OFF**（プライベートであること）
-- アクセスは signed URL 経由のみ
-- アプリは `/api/images/[id]/signed-url` 経由で一時URLを発行している
-
-> ⚠️ Public bucket のままだと Storage URL を知っている誰でも画像を閲覧できます。  
-> 必ずプライベートに設定されていることを確認してください。
-
-### 2-2. Auth — Site URL と Redirect URLs
-
-Supabase Dashboard > Authentication > URL Configuration:
+Supabase Dashboard → **Authentication → URL Configuration**
 
 | 設定項目 | 値 |
-|---------|---|
-| **Site URL** | `https://your-app.vercel.app` |
-| **Redirect URLs** | `https://your-app.vercel.app/**` |
-| （Preview 用）| `https://*.vercel.app/**` |
+|---|---|
+| Site URL | `https://<your-vercel-domain>.vercel.app` |
+| Redirect URLs | `https://<your-vercel-domain>.vercel.app/**` |
 
-> Site URL を設定しないとメール認証・OAuth のリダイレクトが失敗します。
+> Preview デプロイも使う場合は `https://<project>-*.vercel.app/**` も追加する。
 
-### 2-3. RLS ポリシー確認
+### 1-2. Storage bucket
 
-```bash
-# RLS が有効になっているテーブルを確認
-# docs/rls-policies.sql を参照
-cat docs/rls-policies.sql
-```
+- Dashboard → **Storage** → `photobox-private` が存在し **Private** (non-public) であること
+- Public にしてはいけない（signed URL 経由でのみ画像を配信する）
 
----
+### 1-3. Database migration
 
-## 3. Vercel プロジェクト作成
-
-1. https://vercel.com/new にアクセス
-2. **Import Git Repository** で GitHub の `photobox` リポジトリを選択
-3. **Root Directory** を **`app`** に設定
-
-   > ⚠️ これを設定しないと Vercel がリポジトリ root を Next.js root と誤認します。
-
-4. Framework Preset: **Next.js**（自動検出される）
-5. Build Command: `npm run build`（デフォルトのまま）
-6. Output Directory: `.next`（デフォルトのまま）
-7. **Environment Variables** は次のセクションで設定するため、この画面ではまだ Deploy しない
-
----
-
-## 4. Environment Variables 設定
-
-Vercel Dashboard > Project > Settings > Environment Variables
-
-### 必須変数
-
-| 変数名 | 対象環境 | 値の取得元 |
-|--------|---------|-----------|
-| `DATABASE_URL` | Production, Preview | Supabase > Project Settings > Database > **Transaction Pooler** URI (port **6543**) |
-| `DIRECT_URL` | Production, Preview | Supabase > Project Settings > Database > **Session Mode** URI (port **5432**) |
-| `NEXT_PUBLIC_SUPABASE_URL` | All | Supabase > Project Settings > API > **Project URL** |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All | Supabase > Project Settings > API > **anon public** key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Production, Preview | Supabase > Project Settings > API > **service_role** key |
-| `NEXT_PUBLIC_SITE_URL` | Production | `https://your-app.vercel.app`（デプロイ後の実URL）|
-| `ENABLE_DEV_API_CHECK` | Production | `false`（または未設定）|
-
-### 変数設定時の注意
-
-```
-⚠️ SUPABASE_SERVICE_ROLE_KEY
-  - 変数名に NEXT_PUBLIC_ を付けない → クライアントバンドル露出を防ぐ
-  - Vercel の "Sensitive" フラグを有効にする（ログに表示されない）
-  - 値は Supabase の legacy service_role JWT（eyJ... で始まる長い文字列）
-
-⚠️ DATABASE_URL
-  - ?pgbouncer=true パラメータを含む Transaction Pooler URL を使用
-  - pgbouncer=true がないと Prisma の接続プーリングが正しく動作しない
-
-⚠️ NEXT_PUBLIC_SITE_URL
-  - デプロイ後の実 URL に更新すること
-  - Supabase の Site URL とも一致させること
-```
-
----
-
-## 5. デプロイ実行
+本番 DB への migration は `DIRECT_URL`（Session Mode, port 5432）が必要。
 
 ```bash
-# 事前チェック（再確認）
 cd /Volumes/Extreme\ SSD/photobox/app
-npm run lint        # 警告なし
-npm run build       # ビルド成功
-npm run db:validate # schema valid
-
-# Vercel CLI でデプロイ
-npx vercel --prod
-# または GitHub push → Vercel が自動デプロイ
+# .env.migrate に DIRECT_URL を設定してから実行
+npm run db:migrate:prod
 ```
 
 ---
 
-## 6. 本番確認項目
+## 2. Vercel 環境変数
 
-デプロイ後にブラウザで以下を確認してください:
+Vercel Dashboard → **Project Settings → Environment Variables** に以下を設定する。
 
-### 認証
-- [ ] `https://your-app.vercel.app/login` → ログイン画面が表示される
-- [ ] メール / パスワードでログイン → `/gallery` へリダイレクト
-- [ ] 未認証でアクセス → `/login` へリダイレクト
+すべて **Production / Preview / Development** の対象にする（または用途に応じて選択）。
 
-### Gallery
-- [ ] 画像一覧が表示される（628件）
-- [ ] フィルター（Person / Scene / Tag / Favorite）が動作する
-- [ ] 検索（q パラメータ）が動作する
-- [ ] URL フィルター sync：ブラウザの Back / Forward でフィルターが復元される
-- [ ] 画像クリック → DetailPanel（desktop）/ Drawer（mobile）が開く
-- [ ] Prompt 編集 → originalBody が変わらず currentBody が更新される
+| 変数名 | 取得場所 | 備考 |
+|---|---|---|
+| `DATABASE_URL` | Supabase → Settings → Database → **Transaction Pooler** URI | port 6543, `?pgbouncer=true` 付き |
+| `DIRECT_URL` | Supabase → Settings → Database → **Session Mode** URI | port 5432, migration 用 |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API → Project URL | |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → **anon public** | |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → **service_role** | ⚠️ 下記参照 |
+| `NEXT_PUBLIC_SITE_URL` | `https://<your-vercel-domain>.vercel.app` | auth callback 用 |
 
-### Quick Add
-- [ ] 画像アップロード → Gallery に反映される
-- [ ] 重複チェックが動作する
+### ⚠️ SUPABASE_SERVICE_ROLE_KEY は必須
 
-### Masters
+**private bucket の signed URL 発行に `SUPABASE_SERVICE_ROLE_KEY` が必要。**
+この変数が未設定の場合、`/gallery` で画像が表示されず 500 エラーになる。
+
+- `NEXT_PUBLIC_` prefix を付けない（クライアントに絶対露出しない）
+- Vercel のログや GitHub に貼らない
+- 漏洩した場合は Supabase Dashboard で即 Regenerate する
+
+### ENABLE_DEV_API_CHECK
+
+| 環境 | 値 |
+|---|---|
+| Production | `false` または未設定 |
+| Preview / Development | `true`（任意） |
+
+---
+
+## 3. Vercel デプロイ
+
+### 初回デプロイ
+
+1. Vercel Dashboard → **Add New Project** → GitHub リポジトリを接続
+2. **Root Directory** を `app` に設定
+3. 環境変数を上記 2 のとおり設定
+4. **Deploy**
+
+### Redeploy（env 変更後）
+
+環境変数を変更・追加した場合は必ず **Redeploy** が必要（既存のビルドには反映されない）。
+
+Vercel Dashboard → **Deployments** → 最新デプロイの `…` → **Redeploy**
+
+---
+
+## 4. デプロイ後の動作確認チェックリスト
+
+Redeploy 完了後、本番 URL で以下を順に確認する。
+
+### 4-1. 基本ページ
+
+- [ ] `/login` — ページが表示される
+- [ ] `/signup` — アカウント作成できる
+- [ ] ログイン後 → `/gallery` にリダイレクトされる
+
+### 4-2. /gallery
+
+- [ ] 画像一覧が表示される（signed URL で画像が読み込まれる）
+- [ ] 500 エラーが出ない（`SUPABASE_SERVICE_ROLE_KEY` が設定済みか確認）
+- [ ] フィルタ（Person / Scene / Tag）が動く
+- [ ] 検索が動く
+- [ ] DetailPanel が開く
+
+### 4-3. /quick-add
+
+- [ ] 画像をアップロードできる
+- [ ] `/quick-add/commit` で確定保存できる
+
+### 4-4. /masters
+
 - [ ] Person / Scene / Tag 一覧が表示される
-- [ ] imageCount > 0 のマスタは削除できない（400 エラー）
-- [ ] 削除・統合が正常に動作する
 
-### Import
-- [ ] `/import` に CLI 注意バナーが表示される
-- [ ] XLSX ファイルアップロード → 解析プレビューが表示される
+### 4-5. セキュリティ確認
 
-### セキュリティ
-- [ ] `/dev/api-check` → **404** が返る（ENABLE_DEV_API_CHECK 未設定）
-- [ ] Storage URL に直接アクセス → **403** が返る（Private bucket）
-- [ ] DevTools の Network タブで `SUPABASE_SERVICE_ROLE_KEY` が露出していない
-
-### CLI 動作確認（ローカルから本番 DB に対して）
-- [ ] `npm run audit:storage-assets -- --workspace-id <id> --dry-run` Missing 0 / Orphan 0
+- [ ] `/api/images-debug` → 404 が返る（診断 API は削除済み）
+- [ ] `/api/runtime-db-connect-check` → 404 が返る（診断 API は削除済み）
+- [ ] `/api/runtime-db-check` → 404 が返る（診断 API は削除済み）
+- [ ] `/dev/api-check` → Production では 404 または表示されない（`ENABLE_DEV_API_CHECK=false`）
+- [ ] ブラウザ DevTools で `SUPABASE_SERVICE_ROLE_KEY` がレスポンスに含まれていない
 
 ---
 
-## 7. /dev/api-check — 本番無効化の仕組み
+## 5. よくある Vercel Runtime エラーと対処
 
-```typescript
-// src/app/dev/api-check/page.tsx
-if (process.env.ENABLE_DEV_API_CHECK !== "true") notFound();
-```
-
-| 環境 | `ENABLE_DEV_API_CHECK` | `/dev/api-check` |
-|------|----------------------|-----------------|
-| ローカル（`.env.local`）| `true` | 表示される ✅ |
-| Vercel Production | 未設定 or `false` | **404** ✅ |
-| Vercel Preview | 未設定 or `false` | **404** ✅ |
+| エラー | 原因 | 対処 |
+|---|---|---|
+| `/gallery` 500、`supabaseKey is required` | `SUPABASE_SERVICE_ROLE_KEY` 未設定 | Vercel env に追加 → Redeploy |
+| `/gallery` 500、Prisma P1001 | `DATABASE_URL` 未設定または誤り | Vercel env を確認 → Redeploy |
+| ログイン後に `/login` に戻る | Supabase Redirect URLs 未設定 | Supabase → Auth → URL Configuration を確認 |
+| 画像が表示されない（signed URL エラー） | `SUPABASE_SERVICE_ROLE_KEY` 誤り / bucket 名違い | service_role key と bucket 名 `photobox-private` を確認 |
+| Build 失敗 | 型エラー / lint エラー | ローカルで `npm run lint && npm run build` を確認 |
 
 ---
 
-## 8. XLSX Import — ローカル CLI 運用方針
+## 6. 診断 API（削除済み）
 
-本番 Vercel ではXLSX画像インポートを実行しません。
+以下の診断用エンドポイントは調査完了後に削除済み。本番には存在しない。
 
-```
-理由:
-- Vercel Functions に 200MB 級ファイルをアップロードするのは非推奨
-- Import は冪等スクリプトで管理されており、ローカルから本番 DB に直接書き込む
-- Google Drive 共有リンクからの直接インポートは未対応
-```
+- `/api/images-debug`
+- `/api/runtime-db-connect-check`
+- `/api/runtime-db-check`
 
-**ローカル CLI での Import 手順:**
-
-```bash
-cd /Volumes/Extreme\ SSD/photobox/app
-
-# 1. 解析（dry-run）
-npm run extract:xlsx-batch -- --dry-run
-
-# 2. 特定 XLSX のみ（部分一致）
-npm run extract:xlsx-batch -- --only <partial-filename>
-
-# 3. Import（dry-run → 確認後に本実行）
-npm run import:xlsx-batch -- --dry-run
-npm run import:xlsx-batch
-```
-
-詳細は [`docs/XLSX_IMPORT_RUNBOOK.md`](./XLSX_IMPORT_RUNBOOK.md) を参照。
+将来また診断が必要になった場合は、環境変数でガードした一時的なエンドポイントを追加し、調査完了後に削除すること。
 
 ---
 
-## 9. セキュリティチェックリスト
+## 関連ドキュメント
 
-```bash
-# 実キーが docs / README / .env.example に混入していないか確認
-grep -rn "eyJ" docs/ README* .env.example .env.migrate.example 2>/dev/null \
-  && echo "⚠️ JWT が見つかりました" || echo "✅ 実JWT なし"
-
-grep -rn "sb_secret_\|sb_publishable_" docs/ README* .env.example .env.migrate.example 2>/dev/null \
-  && echo "⚠️ Supabase key が見つかりました" || echo "✅ Supabase key なし"
-
-grep -rn "postgresql://.*:[^@\[]\+@" docs/ README* .env.example .env.migrate.example 2>/dev/null \
-  && echo "⚠️ DB パスワードが見つかりました" || echo "✅ DB パスワードなし"
-
-# .env.local が Git に含まれていないか
-git ls-files | grep "\.env\.local" && echo "⚠️ .env.local が Git に含まれています" || echo "✅ .env.local は Git 管理外"
-```
-
----
-
-## 10. ロールバック手順
-
-### Vercel ロールバック（即時）
-
-Vercel Dashboard > Deployments > 対象デプロイ > **Promote to Production**
-
-### DB マイグレーションを伴う変更のロールバック
-
-1. Vercel でアプリをロールバック
-2. DB は `docs/BACKUP.md` の手順でリストア
-
-> DB マイグレーションを伴うデプロイは必ずバックアップを取得してから実施すること。
-
----
-
-*最終更新: Day 10 Production Hardening (2026-06-30)*
+| ファイル | 内容 |
+|---|---|
+| [OPERATIONS.md](OPERATIONS.md) | ローカル開発・DB 操作・運用手順 |
+| [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) | リリース前チェックリスト（ローカル） |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | エラー対処一覧 |

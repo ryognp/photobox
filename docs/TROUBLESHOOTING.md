@@ -26,6 +26,10 @@
 | 16 | prompt_versions が増えすぎる | Quick Add で同じ画像のプロンプトを何度も変更している | `SELECT COUNT(*) FROM prompt_versions` | 現時点では削除機能なし。後続フェーズで対応予定 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |
 | 17 | Gallery が重い / 表示が遅い | 628件の初回ロード中 | ブラウザ Network タブで `/api/images` のレスポンス時間 | 正常動作。初回は数秒かかる場合がある。FilterSidebar でフィルタをかけると軽くなる | — |
 | 18 | フィルタが効かない / リセットされる | URL パラメータの双方向同期が未実装 | ブラウザの URL バー | ページをリロードするとフィルタがリセットされる。後続フェーズで改善予定 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |
+| 19 | Vercel: `/gallery` 500、`supabaseKey is required` | `SUPABASE_SERVICE_ROLE_KEY` が Vercel 環境変数に未設定 | Vercel Dashboard → Project Settings → Environment Variables | `SUPABASE_SERVICE_ROLE_KEY` を追加 → Redeploy | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| 20 | Vercel: `/gallery` 500、Prisma P1001 / `Can't reach database server` | `DATABASE_URL` が Vercel 環境変数に未設定または誤り | Vercel Dashboard → Environment Variables | `DATABASE_URL`（Transaction Pooler, port 6543）を確認 → Redeploy | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| 21 | Vercel: ログイン後に `/login` に戻る | Supabase の Redirect URLs に本番 URL が未登録 | Supabase → Authentication → URL Configuration | 本番ドメインを Redirect URLs に追加 | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| 22 | Vercel: 環境変数を追加したが反映されない | Redeploy していない（既存ビルドには反映されない） | Vercel → Deployments → 最新デプロイの状態 | Vercel Dashboard から手動 Redeploy を実行 | [DEPLOYMENT.md](DEPLOYMENT.md) |
 
 ---
 

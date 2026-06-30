@@ -173,6 +173,36 @@ SELECT status, COUNT(*) FROM import_batches GROUP BY status;
 
 ---
 
+## 10. Vercel 本番確認
+
+> ローカル確認完了後、本番 URL でも以下を確認する。
+
+- [ ] Vercel 環境変数がすべて設定されている（[DEPLOYMENT.md](DEPLOYMENT.md) の表を参照）
+  - `DATABASE_URL`
+  - `DIRECT_URL`
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `SUPABASE_SERVICE_ROLE_KEY` ← **private bucket signed URL に必須**
+  - `NEXT_PUBLIC_SITE_URL`
+- [ ] Supabase → Authentication → URL Configuration に本番ドメインが登録されている
+- [ ] `/login` — ページが表示される
+- [ ] ログイン成功後 `/gallery` にリダイレクトされる
+- [ ] `/gallery` — 画像が表示される（500 エラーがない）
+- [ ] `/quick-add` — 画像アップロードができる
+- [ ] `/masters` — 一覧が表示される
+- [ ] 診断 API が存在しないこと（すべて 404）
+  ```bash
+  curl -o /dev/null -s -w "%{http_code}" https://<domain>/api/images-debug
+  # → 404
+  curl -o /dev/null -s -w "%{http_code}" https://<domain>/api/runtime-db-connect-check
+  # → 404
+  curl -o /dev/null -s -w "%{http_code}" https://<domain>/api/runtime-db-check
+  # → 404
+  ```
+- [ ] `ENABLE_DEV_API_CHECK=false` で `/dev/api-check` が Production で無効になっている
+
+---
+
 ## メモ欄
 
 ```
