@@ -24,7 +24,12 @@ Supabase Dashboard → **Authentication → URL Configuration**
 | Site URL | `https://<your-vercel-domain>.vercel.app` |
 | Redirect URLs | `https://<your-vercel-domain>.vercel.app/**` |
 
-> Preview デプロイも使う場合は `https://<project>-*.vercel.app/**` も追加する。
+> Preview デプロイも使う場合は、Vercel が発行した実際の Preview URL を Redirect URLs に追加する。
+> Preview URL は project 名だけでなく branch 名・team slug を含む形式になるため、ワイルドカードパターン `https://<project>-*.vercel.app/**` では一致しないことがある。
+>
+> 例: `https://photobox-git-main-ikeuchi-4554s-projects.vercel.app/**`
+>
+> Vercel Dashboard → **Deployments** で実際に発行された URL を確認し、その URL（`/**` 付き）を Supabase Redirect URLs に追加すること。
 
 ### 1-2. Storage bucket
 
