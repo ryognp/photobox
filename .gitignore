@@ -30,8 +30,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — example files are tracked; secret files are not
+.env
+.env.local
+.env.migrate
+.env*.local
+!.env.example
+!.env.migrate.example
 
 # vercel
 .vercel
@@ -39,3 +44,26 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# local PoC output
+/tmp/
+._*
+
+# local backup files
+*.local.backup
+*.backup.sql
+
+# extracted XLSX images (intermediate output)
+/tmp/xlsx-extract/
+
+# XLSX source files — managed locally, never commit to repo
+*.xlsx
+*.xls
+
+# Prisma migrate env (contains DB credentials)
+.env.migrate
+
+# Local agent config
+.claude/

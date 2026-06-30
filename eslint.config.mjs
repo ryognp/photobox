@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // macOS resource fork files (external SSD artifact)
+    "**/._*",
+    "._*",
   ]),
 ]);
 

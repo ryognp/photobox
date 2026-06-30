@@ -1,0 +1,478 @@
+// ================================================================
+// Photobox — prisma/schema.prisma
+// DESIGN v1.2 + Day 0 補正版
+// ================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ================================================================
+// Enums
+// ================================================================
+
+enum UploadStatus {
+  PENDING    // DB INSERT 直後（Storage アップロード前）
+  UPLOADING  // API Route で Storage PUT 中
+  READY      // Storage PUT 完了
+  ERROR      // Storage PUT 失敗
+}
+
+enum PromptStatus {
+  EMPTY   // 未入力
+  DRAFT   // 入力中（確定前）
+  FILLED  // 入力済み（保存済み）
+}
+
+enum DuplicateStatus {
+  UNCHECKED  // チェック未実施
+  CLEAN      // 重複なし
+  DUPLICATE  // 重複あり（ユーザーの skip 選択待ち）
+  SKIPPED    // ユーザーが skip を選択済み
+}
+
+enum CommitStatus {
+  PENDING      // 未コミット
+  IN_PROGRESS  // コミット処理中（クラッシュ検出用）
+  COMMITTED    // 正式保存済み（skip 完了も含む）
+  FAILED       // コミット失敗（リトライ可能）
+}
+
+enum SessionStatus {
+  ACTIVE      // 入力中
+  PREVIEWING  // CommitPreview 表示中
+  COMMITTED   // 全アイテムがコミット済み
+  ABANDONED   // 破棄済み
+}
+
+enum ImageStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum PromptVersionType {
+  EDIT
+  SCENE_TRANSFORM
+}
+
+// ================================================================
+// Workspace / Auth
+// ================================================================
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      String   @default("free")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // back-relations
+  members           WorkspaceMember[]
+  scenes            Scene[]
+  tags              Tag[]
+  persons           Person[]
+  promptGroups      PromptGroup[]
+  images            Image[]
+  prompts           Prompt[]
+  promptVersions    PromptVersion[]
+  uploadSessions    UploadSession[]
+  importBatches     ImportBatch[]
+  imageTags         ImageTag[]
+  imagePersons      ImagePerson[]
+  uploadItemTags    UploadItemTag[]
+  uploadItemPersons UploadItemPerson[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  workspaceId String   @map("workspace_id")
+  userId      String   @map("user_id") // Supabase Auth uid
+  role        String   @default("member") // "owner" | "member"
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+// ================================================================
+// Master Tables
+// ================================================================
+
+model Scene {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  images         Image[]
+  uploadItems    UploadItem[]
+  promptVersions PromptVersion[]
+  promptGroups   PromptGroup[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("scenes")
+}
+
+model Tag {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  imageTags      ImageTag[]
+  uploadItemTags UploadItemTag[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("tags")
+}
+
+model Person {
+  id                String   @id @default(cuid())
+  workspaceId       String   @map("workspace_id")
+  name              String
+  notes             String?
+  defaultPromptHint String?  @map("default_prompt_hint")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  imagePersons      ImagePerson[]
+  uploadItemPersons UploadItemPerson[]
+  promptGroups      PromptGroup[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("persons")
+}
+
+model PromptGroup {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  name        String
+  body        String
+  personId    String?   @map("person_id")
+  sceneId     String?   @map("scene_id")
+  isFavorite  Boolean   @default(false) @map("is_favorite")
+  usedCount   Int       @default(0) @map("used_count")
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  person    Person?   @relation(fields: [personId], references: [id], onDelete: SetNull)
+  scene     Scene?    @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  prompts   Prompt[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, isFavorite])
+  @@index([workspaceId, personId])
+  @@map("prompt_groups")
+}
+
+// ================================================================
+// Confirmed Image Assets
+// ================================================================
+
+model Image {
+  // id はアプリ側（commit 開始時）に reservedImageId として生成する
+  // Prisma の @default(cuid()) は付けない → create 時に id を必ず渡す
+  id          String      @id
+  workspaceId String      @map("workspace_id")
+  sceneId     String?     @map("scene_id")
+  status      ImageStatus @default(ACTIVE)
+
+  // Storage paths（URL は保存しない）
+  storageBucket String  @default("photobox-private") @map("storage_bucket")
+  storagePath   String  @map("storage_path") // {workspaceId}/assets/{imageId}/original.{ext}
+  thumbnailPath String? @map("thumbnail_path") // {workspaceId}/assets/{imageId}/thumbnail.webp
+  previewPath   String? @map("preview_path") // {workspaceId}/assets/{imageId}/preview.webp
+
+  // ファイルメタ（サーバー側で確定した値のみ保存）
+  originalName  String @map("original_name")
+  originalExt   String @map("original_ext") // "jpg" | "png" | "webp"
+  mimeType      String @map("mime_type") // "image/jpeg" | "image/png" | "image/webp"
+  fileSizeBytes Int    @map("file_size_bytes")
+  widthPx       Int?   @map("width_px")
+  heightPx      Int?   @map("height_px")
+  fileHash      String @map("file_hash") // SHA-256（サーバー側で再計算した値）
+
+  // メタデータ
+  rating     Int?
+  isFavorite Boolean @default(false) @map("is_favorite")
+  notes      String?
+
+  // 検索用（Phase 2 で pg_trgm / tsvector に移行予定）
+  searchText String? @map("search_text")
+
+  // 出所トレース
+  importBatchId   String? @map("import_batch_id")
+  sourceSheetName String? @map("source_sheet_name")
+  sourceRow       Int?    @map("source_row")
+  sourceColumn    Int?    @map("source_column")
+  uploadItemId    String? @map("upload_item_id") // Quick Add 由来のトレース（FK 制約なし）
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at") // soft delete
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scene        Scene?       @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  importBatch  ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  prompt       Prompt?
+  imageTags    ImageTag[]
+  imagePersons ImagePerson[]
+
+  @@unique([workspaceId, fileHash])
+  @@index([workspaceId, status])
+  @@index([workspaceId, sceneId])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, isFavorite])
+  @@index([fileHash])
+  @@map("images")
+}
+
+// join table: Image × Tag
+model ImageTag {
+  imageId     String   @map("image_id")
+  tagId       String   @map("tag_id")
+  workspaceId String   @map("workspace_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  image     Image     @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  tag       Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([imageId, tagId])
+  @@index([workspaceId])
+  @@map("image_tags")
+}
+
+// join table: Image × Person
+model ImagePerson {
+  imageId     String   @map("image_id")
+  personId    String   @map("person_id")
+  workspaceId String   @map("workspace_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  image     Image     @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  person    Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([imageId, personId])
+  @@index([workspaceId])
+  @@map("image_persons")
+}
+
+// ================================================================
+// Prompts
+// ================================================================
+
+model Prompt {
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  imageId       String   @unique @map("image_id")
+  originalBody  String   @map("original_body") // 初回登録値。アプリ層で変更禁止
+  currentBody   String   @map("current_body") // 編集可能な現在値（初期値 = originalBody）
+  promptGroupId String?  @map("prompt_group_id") // テンプレから生成した場合の参照
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  image       Image         @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  promptGroup PromptGroup?  @relation(fields: [promptGroupId], references: [id], onDelete: SetNull)
+  versions    PromptVersion[]
+
+  @@index([workspaceId])
+  @@map("prompts")
+}
+
+model PromptVersion {
+  id          String            @id @default(cuid())
+  workspaceId String            @map("workspace_id")
+  promptId    String            @map("prompt_id")
+  versionType PromptVersionType @map("version_type")
+  body        String
+  sceneId     String?           @map("scene_id") // SCENE_TRANSFORM 時のみ使用
+  changeNote  String?           @map("change_note")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  prompt    Prompt    @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  scene     Scene?    @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([promptId])
+  @@index([promptId, createdAt])
+  @@map("prompt_versions")
+}
+
+// ================================================================
+// Upload Session（Quick Add 一時領域）
+// ================================================================
+
+model UploadSession {
+  id          String        @id @default(cuid())
+  workspaceId String        @map("workspace_id")
+  userId      String        @map("user_id") // Supabase Auth uid
+  status      SessionStatus @default(ACTIVE)
+  title       String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  committedAt DateTime?     @map("committed_at")
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  items     UploadItem[]
+
+  // composite FK の参照先として必須
+  // UploadItem が [sessionId, workspaceId] → [id, workspaceId] で参照する
+  @@unique([id, workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@map("upload_sessions")
+}
+
+model UploadItem {
+  // id はAPI側で cuid() を生成して create 時に渡す
+  // tempStoragePath に itemId が必要なため Prisma default に任せない
+  id          String @id
+  workspaceId String @map("workspace_id")
+  sessionId   String @map("session_id")
+  sortOrder   Int    @map("sort_order")
+
+  // ファイルメタ（サーバー側で確定した値のみ保存）
+  originalName  String @map("original_name")
+  originalExt   String @map("original_ext") // サーバー側 magic bytes で確定
+  mimeType      String @map("mime_type") // サーバー側で確定
+  fileSizeBytes Int    @map("file_size_bytes")
+  widthPx       Int?   @map("width_px")
+  heightPx      Int?   @map("height_px")
+  fileHash      String @map("file_hash") // サーバー側で再計算した SHA-256
+
+  // Storage temp paths（Storage PUT 完了後に更新）
+  tempStoragePath   String  @map("temp_storage_path") // {wId}/uploads/{sid}/{iid}/original.{ext}
+  tempThumbnailPath String? @map("temp_thumbnail_path") // {wId}/uploads/{sid}/{iid}/thumbnail.webp
+  tempPreviewPath   String? @map("temp_preview_path") // {wId}/uploads/{sid}/{iid}/preview.webp
+
+  // 状態（4つの独立 enum）
+  uploadStatus    UploadStatus    @default(PENDING) @map("upload_status")
+  promptStatus    PromptStatus    @default(EMPTY) @map("prompt_status")
+  duplicateStatus DuplicateStatus @default(UNCHECKED) @map("duplicate_status")
+  commitStatus    CommitStatus    @default(PENDING) @map("commit_status")
+
+  // 重複情報（FK 制約なし: 参照先 image が削除されても残す）
+  duplicateImageId String? @map("duplicate_image_id")
+
+  // プロンプト下書き
+  promptDraft String? @map("prompt_draft")
+
+  // メタデータ入力
+  sceneId    String?  @map("scene_id")
+  rating     Int?
+  isFavorite Boolean  @default(false) @map("is_favorite")
+  notes      String?
+
+  // commit retry 対応
+  // commit 開始時に cuid() で生成し、リトライ時に再利用する
+  reservedImageId    String? @map("reserved_image_id")
+  assetStoragePath   String? @map("asset_storage_path") // {wId}/assets/{rid}/original.{ext}
+  assetThumbnailPath String? @map("asset_thumbnail_path") // {wId}/assets/{rid}/thumbnail.webp
+  assetPreviewPath   String? @map("asset_preview_path") // {wId}/assets/{rid}/preview.webp
+
+  // commit 追跡（冪等性）
+  commitStartedAt  DateTime? @map("commit_started_at")
+  committedAt      DateTime? @map("committed_at")
+  committedImageId String?   @map("committed_image_id") // 正式保存済み imageId（skip 時は duplicateImageId）
+  commitError      String?   @map("commit_error")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // composite FK: [sessionId, workspaceId] → UploadSession[id, workspaceId]
+  // DB 層で「アイテムのセッションが同じ workspace に属すること」を保証
+  session UploadSession    @relation(fields: [sessionId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  scene   Scene?           @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  tags    UploadItemTag[]
+  persons UploadItemPerson[]
+
+  @@index([sessionId])
+  @@index([workspaceId, commitStatus])
+  @@index([sessionId, sortOrder])
+  @@map("upload_items")
+}
+
+// join table: UploadItem × Tag
+model UploadItemTag {
+  uploadItemId String   @map("upload_item_id")
+  tagId        String   @map("tag_id")
+  workspaceId  String   @map("workspace_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  uploadItem UploadItem @relation(fields: [uploadItemId], references: [id], onDelete: Cascade)
+  tag        Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([uploadItemId, tagId])
+  @@index([workspaceId])
+  @@map("upload_item_tags")
+}
+
+// join table: UploadItem × Person
+model UploadItemPerson {
+  uploadItemId String   @map("upload_item_id")
+  personId     String   @map("person_id")
+  workspaceId  String   @map("workspace_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  uploadItem UploadItem @relation(fields: [uploadItemId], references: [id], onDelete: Cascade)
+  person     Person     @relation(fields: [personId], references: [id], onDelete: Cascade)
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([uploadItemId, personId])
+  @@index([workspaceId])
+  @@map("upload_item_persons")
+}
+
+// ================================================================
+// Import（CSV / XLSX）
+// ================================================================
+
+model ImportBatch {
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  userId        String   @map("user_id")
+  fileName      String   @map("file_name")
+  fileType      String   @map("file_type") // "csv" | "xlsx"
+  rowCount      Int      @map("row_count")
+  importedCount Int      @default(0) @map("imported_count")
+  skippedCount  Int      @default(0) @map("skipped_count")
+  errorCount    Int      @default(0) @map("error_count")
+  status        String   @default("PROCESSING") // "PROCESSING" | "DONE" | "FAILED"
+  errorLog      String?  @map("error_log") // JSON: [{ row: number, reason: string }]
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  images    Image[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, createdAt])
+  @@map("import_batches")
+}
