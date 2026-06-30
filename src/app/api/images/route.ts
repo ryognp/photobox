@@ -13,13 +13,24 @@ const THUMB_EXPIRY = 900; // 15min
 const LIMIT_MAX = 100;
 const LIMIT_DEFAULT = 48;
 
-async function signedUrl(path: string | null, expiry: number): Promise<string | null> {
-  if (!path) return null;
+async function signedUrlMap(paths: string[], expiry: number): Promise<Map<string, string>> {
+  const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
+  const map = new Map<string, string>();
+  if (uniquePaths.length === 0) return map;
+
   const { data, error } = await supabaseAdmin.storage
     .from(BUCKET)
-    .createSignedUrl(path, expiry);
-  if (error || !data?.signedUrl) return null;
-  return data.signedUrl;
+    .createSignedUrls(uniquePaths, expiry);
+
+  if (error || !data) return map;
+
+  for (const entry of data) {
+    if (entry.path && entry.signedUrl) {
+      map.set(entry.path, entry.signedUrl);
+    }
+  }
+
+  return map;
 }
 
 export async function GET(request: NextRequest) {
@@ -99,29 +110,39 @@ export async function GET(request: NextRequest) {
   const page = hasMore ? images.slice(0, limit) : images;
   const nextCursor = hasMore ? page[page.length - 1].id : null;
 
-  const withUrls = await Promise.all(
-    page.map(async (img) => {
-      const thumbnailUrl = await signedUrl(img.thumbnailPath, THUMB_EXPIRY);
-      const fallbackUrl = thumbnailUrl
-        ? null
-        : await signedUrl(img.previewPath, THUMB_EXPIRY);
-      return {
-        id: img.id,
-        originalName: img.originalName,
-        widthPx: img.widthPx,
-        heightPx: img.heightPx,
-        isFavorite: img.isFavorite,
-        rating: img.rating,
-        createdAt: img.createdAt,
-        scene: img.scene,
-        tags: img.imageTags.map((t) => t.tag),
-        persons: img.imagePersons.map((p) => p.person),
-        promptSnippet: img.prompt?.currentBody?.slice(0, 80) ?? null,
-        promptVersionCount: img.prompt?._count?.versions ?? 0,
-        thumbnailUrl: thumbnailUrl ?? fallbackUrl,
-      };
-    }),
+  const thumbnailUrls = await signedUrlMap(
+    page.map((img) => img.thumbnailPath).filter((path): path is string => Boolean(path)),
+    THUMB_EXPIRY,
   );
+
+  const fallbackPreviewUrls = await signedUrlMap(
+    page
+      .filter((img) => !img.thumbnailPath || !thumbnailUrls.has(img.thumbnailPath))
+      .map((img) => img.previewPath)
+      .filter((path): path is string => Boolean(path)),
+    THUMB_EXPIRY,
+  );
+
+  const withUrls = page.map((img) => {
+    const thumbnailUrl = img.thumbnailPath ? thumbnailUrls.get(img.thumbnailPath) ?? null : null;
+    const fallbackUrl = !thumbnailUrl && img.previewPath ? fallbackPreviewUrls.get(img.previewPath) ?? null : null;
+
+    return {
+      id: img.id,
+      originalName: img.originalName,
+      widthPx: img.widthPx,
+      heightPx: img.heightPx,
+      isFavorite: img.isFavorite,
+      rating: img.rating,
+      createdAt: img.createdAt,
+      scene: img.scene,
+      tags: img.imageTags.map((t) => t.tag),
+      persons: img.imagePersons.map((p) => p.person),
+      promptSnippet: img.prompt?.currentBody?.slice(0, 80) ?? null,
+      promptVersionCount: img.prompt?._count?.versions ?? 0,
+      thumbnailUrl: thumbnailUrl ?? fallbackUrl,
+    };
+  });
 
   return ok({ images: withUrls, nextCursor });
 }
