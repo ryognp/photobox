@@ -1,5 +1,7 @@
 import "server-only";
 
+export const dynamic = "force-dynamic";
+
 import { NextRequest } from "next/server";
 import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";

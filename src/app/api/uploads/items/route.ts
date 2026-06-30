@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest } from "next/server";
 import cuid from "cuid";
 import { getCurrentUser } from "@/lib/auth";
