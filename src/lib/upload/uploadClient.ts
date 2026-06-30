@@ -17,6 +17,7 @@ export type SignedUrls = {
 export type UploadResult = {
   item: Record<string, unknown>;
   signedUrls: SignedUrls;
+  previewObjectUrl: string | null;
 };
 
 export async function uploadFile(
@@ -31,6 +32,7 @@ export async function uploadFile(
   const dims = await getImageDimensions(file);
   const thumbBlob = await generateWebpBlob(file, 300, 0.85);
   const previewBlob = await generateWebpBlob(file, 800, 0.9);
+  const previewObjectUrl = previewBlob ? URL.createObjectURL(previewBlob) : null;
 
   onProgress({ stage: "uploading" });
   const formData = new FormData();
@@ -55,6 +57,7 @@ export async function uploadFile(
   });
 
   if (!response.ok) {
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
     let msg = `Upload failed: ${response.status}`;
     try {
       const errJson = await response.json() as { error?: { message?: string } | string; message?: string };
@@ -68,5 +71,5 @@ export async function uploadFile(
   const { item, signedUrls } = json.data;
 
   onProgress({ stage: "done" });
-  return { item, signedUrls };
+  return { item, signedUrls, previewObjectUrl };
 }
