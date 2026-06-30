@@ -1,9 +1,9 @@
 # リリース前チェックリスト
 
-実施日: ____/__/__
-担当: ________
+実施日: 2026/07/01
+担当: 池内
 
-最終確認バージョン: Day 9-B（2026-06-30）
+最終確認バージョン: Day 9-D（2026-07-01）
 
 ---
 
@@ -205,9 +205,33 @@ SELECT status, COUNT(*) FROM import_batches GROUP BY status;
 
 ## メモ欄
 
-```
-実施日:
-確認者:
-問題点:
-対応内容:
-```
+---
+
+### 2026/07/01 — Vercel 本番デプロイ確認（池内）
+
+**問題点:**
+
+1. Vercel Runtime で `/gallery` が Failed to load images (500) になった。
+2. 初期 Runtime Logs では Prisma P1001 / `workspaceMember.findFirst()` が出ていたが、段階診断の結果、DB 接続・Prisma・workspaceMember は正常だった。
+3. 画像一覧 500 の直接原因は、Vercel Runtime に private bucket `photobox-private` の signed URL 発行に必要なサーバー専用管理キー（`SUPABASE_SERVICE_ROLE_KEY`）が未設定だったこと。
+4. `/quick-add` で draft auto-save の「保存しました ✓」と commit 結果が混同され、新規画像が Gallery に反映されたか分かりにくかった。
+5. `DUPLICATE_UNCHECKED` などで `committed=0` になる場合、旧 UI では理由が表示されず原因不明になりやすかった。
+
+**対応内容:**
+
+- Vercel の環境変数に `SUPABASE_SERVICE_ROLE_KEY` を追加し、Redeploy 後に `/gallery` の画像表示を確認した。
+- 一時診断 API を段階的に実装し、DATABASE_URL / pg direct / Prisma / workspaceMember / Storage bucket / signed URL の各層を切り分けて確認した。
+- 調査完了後、診断 API 3種（`images-debug` / `runtime-db-connect-check` / `runtime-db-check`）を削除した。
+- 一時診断用環境変数（`ENABLE_IMAGES_DEBUG` / `ENABLE_RUNTIME_DB_CONNECT_CHECK` / `ENABLE_RUNTIME_DB_CHECK`）を削除した。`ENABLE_DEV_API_CHECK=false` は継続設定。
+- `src/lib/database-url.ts` は `getDatabaseUrl()` のみ残し、Prisma 初期化時の DATABASE_URL validation として継続利用した。
+- `docs/DEPLOYMENT.md` / `docs/TROUBLESHOOTING.md` を整備し、Vercel デプロイ手順・private bucket signed URL に必要な環境変数・Preview URL の Redirect URLs 設定手順を明記した。
+- `CommitResultPanel` を追加し、commit 結果（新規保存 / 重複スキップ / 既存保存済み / 失敗 / 無効）を日本語で表示・理由も明示するようにした。
+
+**Production 確認済み項目:**
+
+- [x] `/login` 表示・ログイン成功
+- [x] `/gallery` 画像表示（signed URL 正常）
+- [x] `/quick-add` 画像アップロード → 重複チェック → commit → Gallery 反映
+- [x] `/masters` 一覧表示
+- [x] 診断 API 3種が 404 であることを確認
+- [x] `ENABLE_DEV_API_CHECK=false` で `/dev/api-check` が Production で無効
