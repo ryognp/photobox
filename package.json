@@ -19,7 +19,8 @@
     "import:xlsx-batch": "tsx scripts/import-xlsx-batch.ts",
     "cleanup:import-batch": "tsx scripts/cleanup-import-batch.ts",
     "repair:import-duplicates": "tsx scripts/repair-import-duplicate-errors.ts",
-    "audit:storage-assets": "tsx scripts/audit-storage-assets.ts"
+    "audit:storage-assets": "tsx scripts/audit-storage-assets.ts",
+    "prebuild": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
