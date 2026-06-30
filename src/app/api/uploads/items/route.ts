@@ -15,6 +15,36 @@ const BUCKET = "photobox-private";
 const MAX_ORIGINAL_BYTES = 3 * 1024 * 1024; // 3MB
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;    // 4MB
 
+type OptionalUploadResult = {
+  ok: boolean;
+  path: string | null;
+};
+
+async function prepareOptionalUpload(file: FormDataEntryValue | null, path: string): Promise<{
+  path: string;
+  buffer: Buffer;
+  contentType: string;
+} | null> {
+  if (!(file instanceof File)) return null;
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const validation = validateImageFile(file, new Uint8Array(buffer));
+  if (!validation.ok) return null;
+
+  return { path, buffer, contentType: validation.mime };
+}
+
+async function uploadOptionalFile(prepared: Awaited<ReturnType<typeof prepareOptionalUpload>>): Promise<OptionalUploadResult> {
+  if (!prepared) return { ok: true, path: null };
+
+  const { error } = await supabaseAdmin.storage
+    .from(BUCKET)
+    .upload(prepared.path, prepared.buffer, { contentType: prepared.contentType, upsert: false });
+
+  if (error) return { ok: false, path: null };
+  return { ok: true, path: prepared.path };
+}
+
 export async function POST(request: NextRequest) {
   // 1. 認証
   const user = await getCurrentUser();
@@ -158,48 +188,41 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // 18. Storage PUT — original (必須)
-  const { error: originalError } = await supabaseAdmin.storage
+  // 18. Storage PUT — original / thumbnail / preview を並列化
+  // original は必須。thumbnail / preview は失敗しても READY を維持し、表示時に fallback する。
+  const [preparedThumbnail, preparedPreview] = await Promise.all([
+    prepareOptionalUpload(thumbnailFile, thumbnailStoragePath),
+    prepareOptionalUpload(previewFile, previewStoragePath),
+  ]);
+
+  const originalUpload = supabaseAdmin.storage
     .from(BUCKET)
     .upload(storagePath, originalBuffer, { contentType: mimeType, upsert: false });
 
-  if (originalError) {
-    await prisma.uploadItem.update({
-      where: { id: uploadItemId },
-      data: { uploadStatus: "ERROR" },
-    });
-    return err("INTERNAL_ERROR", `Storage upload failed: ${originalError.message}`, 500);
-  }
+  const [originalResult, thumbnailResult, previewResult] = await Promise.all([
+    originalUpload,
+    uploadOptionalFile(preparedThumbnail),
+    uploadOptionalFile(preparedPreview),
+  ]);
 
-  // 19. Storage PUT — thumbnail / preview (任意)
-  // MIME / magic bytes が許可外の場合は null 扱い（original が成功していれば READY のまま）
-  let actualThumbnailPath: string | null = null;
-  let actualPreviewPath: string | null = null;
-
-  if (thumbnailFile instanceof File) {
-    const thumbBuf = Buffer.from(await thumbnailFile.arrayBuffer());
-    const thumbValidation = validateImageFile(thumbnailFile, new Uint8Array(thumbBuf));
-    if (thumbValidation.ok) {
-      const { error } = await supabaseAdmin.storage
+  if (originalResult.error) {
+    await Promise.all([
+      prisma.uploadItem.update({
+        where: { id: uploadItemId },
+        data: { uploadStatus: "ERROR" },
+      }),
+      supabaseAdmin.storage
         .from(BUCKET)
-        .upload(thumbnailStoragePath, thumbBuf, { contentType: thumbValidation.mime, upsert: false });
-      if (!error) actualThumbnailPath = thumbnailStoragePath;
-    }
-    // MIME 不正 or upload 失敗 → null のまま（original 成功なので READY は維持）
+        .remove([thumbnailStoragePath, previewStoragePath])
+        .catch(() => undefined),
+    ]);
+    return err("INTERNAL_ERROR", `Storage upload failed: ${originalResult.error.message}`, 500);
   }
 
-  if (previewFile instanceof File) {
-    const prevBuf = Buffer.from(await previewFile.arrayBuffer());
-    const prevValidation = validateImageFile(previewFile, new Uint8Array(prevBuf));
-    if (prevValidation.ok) {
-      const { error } = await supabaseAdmin.storage
-        .from(BUCKET)
-        .upload(previewStoragePath, prevBuf, { contentType: prevValidation.mime, upsert: false });
-      if (!error) actualPreviewPath = previewStoragePath;
-    }
-  }
+  const actualThumbnailPath = thumbnailResult.ok ? thumbnailResult.path : null;
+  const actualPreviewPath = previewResult.ok ? previewResult.path : null;
 
-  // 20. DB UPDATE — READY
+  // 19. DB UPDATE — READY
   const item = await prisma.uploadItem.update({
     where: { id: uploadItemId },
     data: {
@@ -232,8 +255,8 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // 21. signed URLs を発行して返す
-  const [thumbResult, previewResult, originalResult] = await Promise.all([
+  // 20. signed URLs を発行して返す
+  const [thumbResult, previewResultSigned, originalResultSigned] = await Promise.all([
     resolveSignedUrl("uploadItem", uploadItemId, "thumbnail", user.id, 0),
     resolveSignedUrl("uploadItem", uploadItemId, "preview", user.id, 1),
     resolveSignedUrl("uploadItem", uploadItemId, "original", user.id, 2),
@@ -249,8 +272,8 @@ export async function POST(request: NextRequest) {
       item,
       signedUrls: {
         thumbnail: toSignedUrlEntry(thumbResult),
-        preview: toSignedUrlEntry(previewResult),
-        original: toSignedUrlEntry(originalResult),
+        preview: toSignedUrlEntry(previewResultSigned),
+        original: toSignedUrlEntry(originalResultSigned),
       },
     },
     201,
