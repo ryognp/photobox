@@ -59,8 +59,8 @@ export function CommitResultPanel({
   // Gallery URL: if exactly 1 image newly committed, search by its originalName
   const galleryUrl = useMemo(() => {
     if (result.committed.length === 1) {
-      const imageId = result.committed[0].uploadItemId
-      const item = items.find((i) => i.id === imageId)
+      const uploadItemId = result.committed[0].uploadItemId
+      const item = items.find((i) => i.id === uploadItemId)
       const name = item?.originalName as string | undefined
       if (name) {
         return `/gallery?q=${encodeURIComponent(name.replace(/\.[^.]+$/, ""))}`
