@@ -258,19 +258,12 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
         }
       });
 
-      let previewObjectUrl: string | null = null;
-      try {
-        const { generateWebpBlob } = await import("@/lib/upload/thumbnailClient");
-        const blob = await generateWebpBlob(file, 800, 0.9);
-        if (blob) previewObjectUrl = URL.createObjectURL(blob);
-      } catch { /* ignore */ }
-
       updateItem(clientId, {
         status: "done",
         serverId: result.item.id as string,
         serverItem: result.item,
         signedUrls: result.signedUrls,
-        previewObjectUrl,
+        previewObjectUrl: result.previewObjectUrl,
       });
       setSelectedClientId(clientId);
       setTimeout(() => {
@@ -560,22 +553,18 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
           ) : (
             <InputPane
               selectedItem={selectedItem}
-              checkedClientIds={checkedClientIds}
-              items={items}
-              sessionId={sessionId}
               scenes={scenes}
               tags={tags}
               persons={persons}
+              checkedClientIds={checkedClientIds}
+              allItems={items}
               onItemUpdated={handleItemUpdated}
               onBulkUpdated={handleBulkUpdated}
-              onSceneCreated={handleSceneCreated}
-              onTagCreated={handleTagCreated}
-              onPersonCreated={handlePersonCreated}
-              createScene={handleCreateScene}
-              createTag={handleCreateTag}
-              createPerson={handleCreatePerson}
-              focusRef={focusPromptRef}
               onSelectNext={handleSelectNext}
+              onCreateScene={handleCreateScene}
+              onCreateTag={handleCreateTag}
+              onCreatePerson={handleCreatePerson}
+              focusPromptRef={focusPromptRef}
             />
           )}
         </div>
