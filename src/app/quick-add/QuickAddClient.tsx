@@ -553,18 +553,22 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
           ) : (
             <InputPane
               selectedItem={selectedItem}
+              checkedClientIds={checkedClientIds}
+              items={items}
+              sessionId={sessionId}
               scenes={scenes}
               tags={tags}
               persons={persons}
-              checkedClientIds={checkedClientIds}
-              allItems={items}
               onItemUpdated={handleItemUpdated}
               onBulkUpdated={handleBulkUpdated}
+              onSceneCreated={handleSceneCreated}
+              onTagCreated={handleTagCreated}
+              onPersonCreated={handlePersonCreated}
+              createScene={handleCreateScene}
+              createTag={handleCreateTag}
+              createPerson={handleCreatePerson}
+              focusRef={focusPromptRef}
               onSelectNext={handleSelectNext}
-              onCreateScene={handleCreateScene}
-              onCreateTag={handleCreateTag}
-              onCreatePerson={handleCreatePerson}
-              focusPromptRef={focusPromptRef}
             />
           )}
         </div>
