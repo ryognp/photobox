@@ -11,6 +11,8 @@ import { buildImageSearchText } from "@/lib/commit/searchText";
 import { copyStorageFile } from "@/lib/commit/storageCopy";
 import type { CommitItemResult, CommitResponse } from "@/lib/commit/commitTypes";
 
+const COMMIT_CONCURRENCY = 2;
+
 function generateId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 25);
 }
@@ -87,6 +89,71 @@ const COMMIT_ITEM_SELECT = {
   tags: { select: { tag: { select: { id: true, name: true } } } },
   persons: { select: { person: { select: { id: true, name: true } } } },
 } as const;
+
+
+async function processItemsWithLimitedConcurrency(
+  items: CommitItem[],
+  workspaceId: string,
+): Promise<CommitItemResult[]> {
+  const results: Array<CommitItemResult | undefined> = new Array(items.length);
+  const activeHashes = new Set<string>();
+  let activeCount = 0;
+  let completedCount = 0;
+
+  return new Promise((resolve) => {
+    function launchNext() {
+      while (activeCount < COMMIT_CONCURRENCY && completedCount < items.length) {
+        let selectedIndex = -1;
+
+        for (let i = 0; i < items.length; i += 1) {
+          if (results[i]) continue;
+          const item = items[i];
+          if (activeHashes.has(item.fileHash)) continue;
+          selectedIndex = i;
+          break;
+        }
+
+        if (selectedIndex === -1) break;
+
+        const item = items[selectedIndex];
+        activeHashes.add(item.fileHash);
+        activeCount += 1;
+
+        processItem(item, workspaceId)
+          .then((result) => {
+            results[selectedIndex] = result;
+          })
+          .catch((error: unknown) => {
+            results[selectedIndex] = {
+              kind: "failed",
+              uploadItemId: item.id,
+              reason: "COMMIT_PROCESS_FAILED",
+              message: error instanceof Error ? error.message : "Unknown commit processing error",
+            };
+          })
+          .finally(() => {
+            activeHashes.delete(item.fileHash);
+            activeCount -= 1;
+            completedCount += 1;
+
+            if (completedCount === items.length) {
+              resolve(results as CommitItemResult[]);
+              return;
+            }
+
+            launchNext();
+          });
+      }
+    }
+
+    if (items.length === 0) {
+      resolve([]);
+      return;
+    }
+
+    launchNext();
+  });
+}
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -202,12 +269,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Process each item
-  const results: CommitItemResult[] = [];
-  for (const item of items) {
-    const result = await processItem(item, session.workspaceId);
-    results.push(result);
-  }
+  // Process items with limited concurrency.
+  // 同じ fileHash は同時処理しないことで、commit 時の重複レースを避ける。
+  const results = await processItemsWithLimitedConcurrency(items, session.workspaceId);
 
   // Check if all session items are committed and update session status
   const allItems = await prisma.uploadItem.findMany({
@@ -447,23 +511,21 @@ async function processItem(
     };
   }
 
-  // --- Storage copy: thumbnail (optional) ---
+  // --- Storage copy: thumbnail / preview (optional) ---
   let finalThumbnailPath: string | null = assetThumbnailPath;
-  if (assetThumbnailPath && item.tempThumbnailPath) {
-    const thumbResult = await copyStorageFile(item.tempThumbnailPath, assetThumbnailPath);
-    if (!thumbResult.ok) {
-      finalThumbnailPath = null;
-    }
-  }
-
-  // --- Storage copy: preview (optional) ---
   let finalPreviewPath: string | null = assetPreviewPath;
-  if (assetPreviewPath && item.tempPreviewPath) {
-    const prevResult = await copyStorageFile(item.tempPreviewPath, assetPreviewPath);
-    if (!prevResult.ok) {
-      finalPreviewPath = null;
-    }
-  }
+
+  const [thumbResult, prevResult] = await Promise.all([
+    assetThumbnailPath && item.tempThumbnailPath
+      ? copyStorageFile(item.tempThumbnailPath, assetThumbnailPath)
+      : Promise.resolve({ ok: true } as const),
+    assetPreviewPath && item.tempPreviewPath
+      ? copyStorageFile(item.tempPreviewPath, assetPreviewPath)
+      : Promise.resolve({ ok: true } as const),
+  ]);
+
+  if (!thumbResult.ok) finalThumbnailPath = null;
+  if (!prevResult.ok) finalPreviewPath = null;
 
   // Persist corrected thumbnail/preview paths if copies partially failed
   if (finalThumbnailPath !== assetThumbnailPath || finalPreviewPath !== assetPreviewPath) {
