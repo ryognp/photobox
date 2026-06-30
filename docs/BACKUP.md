@@ -15,12 +15,12 @@
 
 ### Supabase 自動バックアップ
 
-Supabase は daily backup を自動で取得している（有料プランによって保持期間が異なる）。
+Supabase は daily backup を自動で取得している。保持期間・PITR（Point-in-Time Recovery）の有無は契約プランにより異なり、仕様は変更される可能性があるため、docs では具体的な日数を断定しない。
 
 確認場所: Supabase Dashboard → **Database → Backups**
 
-- Free plan: 7日間保持
-- Pro plan: 30日間保持
+- 現在の保持期間と復旧可能な時間範囲をここで確認する
+- PITR が有効かどうかもここで確認できる
 
 ### 手動バックアップ（必要時）
 
