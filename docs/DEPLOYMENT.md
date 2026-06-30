@@ -159,6 +159,68 @@ Redeploy 完了後、本番 URL で以下を順に確認する。
 
 ---
 
+## 7. Environment Inventory（環境変数棚卸し）
+
+Vercel Dashboard → Project Settings → Environment Variables で、
+Production / Preview / Development の各 scope を切り替えて以下の設定状況を確認する。
+
+| 変数名 | Production | Preview | Development | 備考 |
+|---|---|---|---|---|
+| `DATABASE_URL` | 設定済み | 設定済み | ローカル `.env.local` | Transaction Pooler (port 6543) |
+| `DIRECT_URL` | 設定済み | 設定済み | ローカル `.env.local` | Session Pooler (port 5432)、migration 用 |
+| `NEXT_PUBLIC_SUPABASE_URL` | 設定済み | 設定済み | 設定済み | Supabase Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 設定済み | 設定済み | 設定済み | anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | **設定済み** | **設定済み** | ローカル `.env.local` | **private bucket に必須** |
+| `NEXT_PUBLIC_SITE_URL` | 本番 URL | Preview URL または本番 URL | `http://localhost:3007` | auth callback 用 |
+| `ENABLE_DEV_API_CHECK` | `false` | `false` または `true` | `true` | Production は必ず `false` |
+
+### NG パターン（要注意）
+
+- Production / Preview のどちらかに `SUPABASE_SERVICE_ROLE_KEY` が抜けている
+- `NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY` が存在する（クライアント露出）
+- `ENABLE_DEV_API_CHECK=true` が Production に残っている
+- `NEXT_PUBLIC_SITE_URL` が古い Preview URL のまま
+
+### 確認手順
+
+1. Vercel Dashboard → Project → Settings → Environment Variables を開く
+2. Environment filter を **Production** に設定し、上記7変数がすべて存在するか確認
+3. **Preview** に切り替えて同様に確認（特に `SUPABASE_SERVICE_ROLE_KEY` が抜けていないか）
+4. env 変更・追加後は必ず **Redeploy** する
+
+---
+
+## 8. Preview Deployment の整理
+
+### 整理の目的
+
+- 古い Preview URL が Supabase Redirect URLs に残り続けると、削除された URL がいつまでも登録される
+- Vercel 上に不要なデプロイが大量に残ることを防ぐ
+
+### 手順
+
+1. Vercel Dashboard → Project → **Deployments** を開く
+2. **Production** alias（`[project].vercel.app`）が付いているデプロイは削除しない
+3. `main` ブランチの最新 Production デプロイは残す
+4. 現在使用中の Preview URL があれば残す
+5. それ以外の古い Preview デプロイ（debug 用・作業中のもの）は削除候補
+
+### Supabase Redirect URLs の整理
+
+1. Supabase Dashboard → Authentication → URL Configuration を開く
+2. 現在 Vercel に存在しない古い Preview URL が Redirect URLs に登録されていれば削除する
+3. ワイルドカード（`https://<project>-*.vercel.app/**`）を使っている場合は残してよい
+
+### Preview Deployment Cleanup チェックリスト
+
+- [ ] 最新 Production Deployment を確認（削除しない）
+- [ ] 現在使用中の Preview URL を確認
+- [ ] 不要な debug 用 Preview デプロイを削除した
+- [ ] Supabase Redirect URLs に不要な Preview URL が残っていない
+- [ ] Production URL（`/login` `/gallery`）の動作確認済み
+
+---
+
 ## 関連ドキュメント
 
 | ファイル | 内容 |
@@ -166,3 +228,5 @@ Redeploy 完了後、本番 URL で以下を順に確認する。
 | [OPERATIONS.md](OPERATIONS.md) | ローカル開発・DB 操作・運用手順 |
 | [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) | リリース前チェックリスト（ローカル） |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | エラー対処一覧 |
+| [SECURITY.md](SECURITY.md) | Secrets 管理・漏洩対応手順 |
+| [BACKUP.md](BACKUP.md) | DB / Storage バックアップ・復旧方針 |

@@ -154,9 +154,15 @@ SELECT status, COUNT(*) FROM import_batches GROUP BY status;
   ```bash
   grep -r "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY" /Volumes/Extreme\ SSD/photobox/app/
   ```
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` の値がコード・docs・README に含まれていない
+  ```bash
+  git log --all -p | grep -i "service_role" | grep -v "SUPABASE_SERVICE_ROLE_KEY"
+  ```
 - [ ] Storage bucket `photobox-private` が private である（Supabase Dashboard で確認）
 - [ ] signed URL 以外で画像を返す API がない
+- [ ] `/api/images` レスポンスに secret や key 値が含まれていない
 - [ ] `tmp/` が git に含まれていない（`.gitignore` 確認）
+- [ ] 詳細は [SECURITY.md](SECURITY.md) を参照
 
 ---
 
@@ -200,6 +206,22 @@ SELECT status, COUNT(*) FROM import_batches GROUP BY status;
   # → 404
   ```
 - [ ] `ENABLE_DEV_API_CHECK=false` で `/dev/api-check` が Production で無効になっている
+
+### 11. Environment Inventory 確認
+
+- [ ] Production / Preview / Development の env 差分を確認済み（[DEPLOYMENT.md](DEPLOYMENT.md) § 7 参照）
+- [ ] Production と Preview の両方に `SUPABASE_SERVICE_ROLE_KEY` が設定されている
+- [ ] `NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY` が Vercel に存在しない
+- [ ] `ENABLE_DEV_API_CHECK=true` が Production に残っていない
+- [ ] debug / 診断用 env（`ENABLE_IMAGES_DEBUG` 等）が残っていない
+- [ ] env 変更後に Redeploy 済み
+
+### 12. Preview Deployment Cleanup
+
+- [ ] 最新 Production Deployment が正常であることを確認（削除しない）
+- [ ] 不要な debug 用 Preview デプロイを削除した（[DEPLOYMENT.md](DEPLOYMENT.md) § 8 参照）
+- [ ] Supabase Redirect URLs に不要な古い Preview URL が残っていない
+- [ ] Production URL で `/login` `/gallery` の動作確認済み
 
 ---
 
