@@ -8,6 +8,7 @@ import { CommitBlockedReasons } from "./_components/CommitBlockedReasons"
 import { CommitFilterTabs, FilterTab } from "./_components/CommitFilterTabs"
 import CommitItemList from "./_components/CommitItemList"
 import DuplicateWarningPanel from "./_components/DuplicateWarningPanel"
+import { CommitResultPanel } from "./_components/CommitResultPanel"
 
 interface CommitPreviewClientProps {
   sessionId: string
@@ -271,72 +272,15 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
           )}
 
           {commitResult && (
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 flex flex-col gap-3">
-              <h2 className="text-sm font-semibold text-zinc-800">保存結果</h2>
-              <div className="flex flex-wrap gap-3 text-sm">
-                <span className="text-green-700">✓ committed: {commitResult.summary.committed}</span>
-                <span className="text-zinc-500">skip: {commitResult.summary.skipped}</span>
-                <span className="text-zinc-400">already: {commitResult.summary.alreadyCommitted}</span>
-                {commitResult.summary.failed > 0 && (
-                  <span className="text-red-600">✗ failed: {commitResult.summary.failed}</span>
-                )}
-                {commitResult.summary.invalid > 0 && (
-                  <span className="text-amber-600">invalid: {commitResult.summary.invalid}</span>
-                )}
-              </div>
-              {commitResult.failed.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-red-600 mb-1">失敗:</p>
-                  {commitResult.failed.map((f) => (
-                    <p key={f.uploadItemId} className="text-xs text-red-500">
-                      {f.uploadItemId}: {f.reason} — {f.message}
-                    </p>
-                  ))}
-                </div>
-              )}
-              {commitResult.invalid.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-amber-600 mb-1">無効:</p>
-                  {commitResult.invalid.map((f) => (
-                    <p key={f.uploadItemId} className="text-xs text-amber-500">
-                      {f.uploadItemId}: {f.reason}
-                    </p>
-                  ))}
-                </div>
-              )}
-              {sessionCommitted ? (
-                <div className="flex gap-3 mt-1">
-                  <button
-                    onClick={() => router.push("/gallery")}
-                    className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-                  >
-                    Gallery へ →
-                  </button>
-                  <button
-                    onClick={() => router.push("/quick-add")}
-                    className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    新しいセッションを開始
-                  </button>
-                </div>
-              ) : (
-                <div className="flex gap-3 mt-1">
-                  <button
-                    onClick={() => void handleCommit()}
-                    disabled={committing}
-                    className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                  >
-                    再試行
-                  </button>
-                  <button
-                    onClick={() => router.push("/quick-add")}
-                    className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    Quick Add へ戻る
-                  </button>
-                </div>
-              )}
-            </div>
+            <CommitResultPanel
+              result={commitResult}
+              sessionCommitted={sessionCommitted}
+              committing={committing}
+              items={items}
+              onRetry={() => void handleCommit()}
+              onGoGallery={(url) => router.push(url)}
+              onNewSession={() => router.push("/quick-add")}
+            />
           )}
         </div>
 
