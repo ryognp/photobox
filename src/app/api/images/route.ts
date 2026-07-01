@@ -3,7 +3,8 @@ import "server-only";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
+import { getDefaultWorkspaceForUser } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
@@ -52,12 +53,20 @@ async function signedUrlMap(paths: string[], expiry: number): Promise<Map<string
 export async function GET(request: NextRequest) {
   const perf = createPerfLog("gallery.images");
 
-  const user = await getCurrentUser();
-  if (!user) return Errors.unauthorized();
+  // ── Auth breakdown ──────────────────────────────────────────────────────
+  // Step 1: cookies() + createServerClient (sync setup, no network)
+  const supabase = await createClient();
+  perf.mark("authCreateClientMs");
 
+  // Step 2: supabase.auth.getUser() — validates JWT via Supabase Auth API (1 RTT)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return Errors.unauthorized();
+  perf.mark("authGetUserMs");
+
+  // Step 3: workspaceMember.findFirst + workspace JOIN (1 DB round-trip)
   const workspace = await getDefaultWorkspaceForUser(user.id);
   if (!workspace) return Errors.forbidden();
-  perf.mark("authMs");
+  perf.mark("authWorkspaceMs");
 
   const sp = request.nextUrl.searchParams;
   const q = sp.get("q")?.trim() ?? "";
@@ -93,6 +102,10 @@ export async function GET(request: NextRequest) {
     ...(personId ? { imagePersons: { some: { personId } } } : {}),
   };
 
+  // ── DB breakdown ───────────────────────────────────────────────────────
+  // Single findMany with relations (scene, imageTags→tag, imagePersons→person,
+  // prompt+_count). Prisma may issue separate SELECT per relation type.
+  // Active filters logged in perf.end() for correlation.
   const images = await prisma.image.findMany({
     where,
     orderBy: [{ createdAt: sort }, { id: sort }],
@@ -124,11 +137,14 @@ export async function GET(request: NextRequest) {
       },
     },
   });
-  perf.mark("dbMs");
+  // dbFindManyMs = full findMany including all relation fetches
+  perf.mark("dbFindManyMs");
 
   const hasMore = images.length > limit;
   const page = hasMore ? images.slice(0, limit) : images;
   const nextCursor = hasMore ? page[page.length - 1].id : null;
+  // dbSliceMs = in-memory hasMore/page/cursor (should be ~0ms)
+  perf.mark("dbSliceMs");
 
   const thumbnailUrls = await signedUrlMap(
     page.map((img) => img.thumbnailPath).filter((path): path is string => Boolean(path)),
@@ -166,12 +182,30 @@ export async function GET(request: NextRequest) {
     };
   });
   perf.mark("serializeMs");
+  // Count images that had scene / tags / persons / prompt (helps correlate dbMs)
+  const sceneCount   = page.filter((img) => img.scene).length;
+  const tagCount     = page.reduce((n, img) => n + img.imageTags.length, 0);
+  const personCount  = page.reduce((n, img) => n + img.imagePersons.length, 0);
+  const promptCount  = page.filter((img) => img.prompt).length;
+
   perf.end({
     imageCount: page.length,
     hasMore,
+    // DB filters active during findMany
     hasQuery: q.length > 0,
     hasCursor: cursor !== null,
+    hasTagFilter: !!tagId,
+    hasPersonFilter: !!personId,
+    hasSceneFilter: !!sceneId,
+    hasFavoriteFilter: favorite !== null,
+    sort,
     limit,
+    // Relation row counts (how much data the DB returned)
+    sceneCount,
+    tagCount,
+    personCount,
+    promptCount,
+    // Signed URL cache
     urlCacheSize: urlCacheStats.size,
   });
 
