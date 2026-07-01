@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
 import { createPerfLog } from "@/lib/perfLog";
+import { getSignedUrlCache, setSignedUrlCache, getSignedUrlCacheStats } from "@/lib/supabase/signedUrlCache";
 
 const BUCKET = "photobox-private";
 const THUMB_EXPIRY = 900; // 15min
@@ -19,15 +20,29 @@ async function signedUrlMap(paths: string[], expiry: number): Promise<Map<string
   const map = new Map<string, string>();
   if (uniquePaths.length === 0) return map;
 
+  // Serve cached URLs; collect paths that need signing
+  const uncached: string[] = [];
+  for (const p of uniquePaths) {
+    const cached = getSignedUrlCache(p);
+    if (cached) {
+      map.set(p, cached);
+    } else {
+      uncached.push(p);
+    }
+  }
+
+  if (uncached.length === 0) return map;
+
   const { data, error } = await supabaseAdmin.storage
     .from(BUCKET)
-    .createSignedUrls(uniquePaths, expiry);
+    .createSignedUrls(uncached, expiry);
 
   if (error || !data) return map;
 
   for (const entry of data) {
     if (entry.path && entry.signedUrl) {
       map.set(entry.path, entry.signedUrl);
+      setSignedUrlCache(entry.path, entry.signedUrl);
     }
   }
 
@@ -127,6 +142,7 @@ export async function GET(request: NextRequest) {
       .filter((path): path is string => Boolean(path)),
     THUMB_EXPIRY,
   );
+  const urlCacheStats = getSignedUrlCacheStats();
   perf.mark("signedUrlMs");
 
   const withUrls = page.map((img) => {
@@ -156,6 +172,7 @@ export async function GET(request: NextRequest) {
     hasQuery: q.length > 0,
     hasCursor: cursor !== null,
     limit,
+    urlCacheSize: urlCacheStats.size,
   });
 
   return ok({ images: withUrls, nextCursor });

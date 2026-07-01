@@ -7,15 +7,19 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
+import { getSignedUrlCache, setSignedUrlCache } from "@/lib/supabase/signedUrlCache";
 
 const BUCKET = "photobox-private";
 
-async function signedUrl(path: string | null, expirySeconds: number): Promise<string | null> {
-  if (!path) return null;
+async function signedUrl(storagePath: string | null, expirySeconds: number): Promise<string | null> {
+  if (!storagePath) return null;
+  const cached = getSignedUrlCache(storagePath);
+  if (cached) return cached;
   const { data, error } = await supabaseAdmin.storage
     .from(BUCKET)
-    .createSignedUrl(path, expirySeconds);
+    .createSignedUrl(storagePath, expirySeconds);
   if (error || !data?.signedUrl) return null;
+  setSignedUrlCache(storagePath, data.signedUrl);
   return data.signedUrl;
 }
 

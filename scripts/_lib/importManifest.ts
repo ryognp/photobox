@@ -232,11 +232,58 @@ export async function importManifest(
   const errorDetails: Array<{ row: number; reason: string }> = [];
   const importedImages: Array<{ row: number; imageId: string; outputFileName: string }> = [];
 
+  // ---------------------------------------------------------------------------
+  // Pre-pass: compute all file hashes in parallel, then do a single bulk DB
+  // lookup instead of one findFirst per record.
+  //
+  // For a 149-record import with ~143 duplicates this eliminates ~143 individual
+  // DB round-trips (each ~5-20 ms) and replaces them with 1 findMany.
+  // ---------------------------------------------------------------------------
+  const prepassStart = Date.now();
+  const prepassHashes = new Map<string, string>(); // outputFileName → fileHash
+
+  await withConcurrency(eligible, opts.concurrency, async (record) => {
+    const imagePath = path.join(opts.imagesDir, record.outputFileName);
+    try {
+      const buf = await fs.readFile(imagePath);
+      prepassHashes.set(record.outputFileName, sha256(buf));
+    } catch {
+      // File-read errors are reported properly in the main loop below
+    }
+  });
+
+  // Bulk DB lookup — chunk at 500 to stay within parameter limits
+  const HASH_CHUNK_SIZE = 500;
+  const allHashes = [...new Set(prepassHashes.values())];
+  const existingByHash = new Map<string, string>(); // fileHash → imageId
+  for (let i = 0; i < allHashes.length; i += HASH_CHUNK_SIZE) {
+    const chunk = allHashes.slice(i, i + HASH_CHUNK_SIZE);
+    const found = await prisma.image.findMany({
+      where: { workspaceId: opts.workspaceId, fileHash: { in: chunk } },
+      select: { id: true, fileHash: true },
+    });
+    for (const img of found) {
+      if (img.fileHash) existingByHash.set(img.fileHash, img.id);
+    }
+  }
+
+  const prepassMs = Date.now() - prepassStart;
+  console.log(
+    `[${label}] pre-pass: ${prepassHashes.size} hashes, ` +
+    `${existingByHash.size} existing in DB, ${prepassMs}ms`,
+  );
+
   // Promise-based in-flight dedup: fileHash → Promise<imageId | null>
   // Registering the promise BEFORE uploading prevents concurrent workers from
   // starting a second image.create for the same hash (P2002 race condition).
   // imageId = null means the insert failed with a non-recoverable error.
   const inFlight = new Map<string, Promise<string | null>>();
+
+  // Pre-populate inFlight with DB-existing images so concurrent workers
+  // that share a hash with an already-known duplicate skip immediately.
+  for (const [hash, id] of existingByHash) {
+    inFlight.set(hash, Promise.resolve(id));
+  }
 
   // Create ImportBatch
   let batchId: string | null = null;
@@ -261,9 +308,38 @@ export async function importManifest(
   // Process records
   await withConcurrency(eligible, opts.concurrency, async (record) => {
     const rowTag = `row ${record.rowNumber}`;
-
-    // Read image file
     const imagePath = path.join(opts.imagesDir, record.outputFileName);
+
+    // -----------------------------------------------------------------------
+    // Fast duplicate skip using pre-pass hash (avoids file read for duplicates)
+    //
+    // inFlight was pre-populated from existingByHash (bulk DB lookup), so any
+    // hash already in inFlight is either a known DB duplicate or a concurrent
+    // in-progress upload. Skip immediately without reading the file.
+    // -----------------------------------------------------------------------
+    const prepassHash = prepassHashes.get(record.outputFileName);
+    if (prepassHash && inFlight.has(prepassHash)) {
+      const existingId = await inFlight.get(prepassHash)!;
+      const resolvedId =
+        existingId ??
+        // Fallback: if original in-flight worker failed, verify DB state
+        ((await prisma.image.findFirst({ where: { workspaceId: opts.workspaceId, fileHash: prepassHash } }))?.id ?? null);
+      if (resolvedId) {
+        console.log(
+          `[${label}] SKIP_DUPLICATE (pre-pass) ${rowTag}: hash=${prepassHash.slice(0, 12)}… existingId=${resolvedId}`,
+        );
+        skippedDuplicate++;
+        if (!opts.dryRun) {
+          promptVersionsCreated += await handleDuplicatePrompt(prisma, opts.workspaceId, resolvedId, record, label);
+        }
+      } else {
+        console.warn(`[${label}] SKIP (pre-pass original failed) ${rowTag}`);
+        skippedDuplicate++;
+      }
+      return;
+    }
+
+    // Read image file (needed for upload, or when pre-pass couldn't hash this file)
     let imageBuffer: Buffer;
     try {
       imageBuffer = await fs.readFile(imagePath);
@@ -276,18 +352,18 @@ export async function importManifest(
       return;
     }
 
-    // Compute hash
-    const fileHash = sha256(imageBuffer);
+    // Use pre-pass hash if available (avoids redundant SHA-256 for new images)
+    const fileHash = prepassHash ?? sha256(imageBuffer);
 
     // -----------------------------------------------------------------------
-    // In-flight dedup: await any concurrent worker already processing this hash
+    // In-flight dedup: guard against concurrent workers sharing the same hash
+    // (P2002 prevention). Also catches late arrivals that missed the pre-pass.
     // -----------------------------------------------------------------------
     if (inFlight.has(fileHash)) {
       const existingId = await inFlight.get(fileHash)!;
-      const resolvedId = existingId ?? (
-        // If original failed for unknown reason, fall back to DB lookup
-        (await prisma.image.findFirst({ where: { workspaceId: opts.workspaceId, fileHash } }))?.id ?? null
-      );
+      const resolvedId =
+        existingId ??
+        ((await prisma.image.findFirst({ where: { workspaceId: opts.workspaceId, fileHash } }))?.id ?? null);
       if (resolvedId) {
         console.log(`[${label}] SKIP_DUPLICATE (in-flight) ${rowTag}: hash=${fileHash.slice(0, 12)}… existingId=${resolvedId}`);
         skippedDuplicate++;
@@ -295,7 +371,6 @@ export async function importManifest(
           promptVersionsCreated += await handleDuplicatePrompt(prisma, opts.workspaceId, resolvedId, record, label);
         }
       } else {
-        // Original worker failed and no DB record: skip this row too
         console.warn(`[${label}] SKIP (in-flight original failed) ${rowTag}`);
         skippedDuplicate++;
       }
@@ -303,20 +378,20 @@ export async function importManifest(
     }
 
     // -----------------------------------------------------------------------
-    // DB dedup check
+    // DB dedup fallback — for hashes not covered by the pre-pass (file-read
+    // failure during pre-pass). Keeps correctness when pre-pass is incomplete.
     // -----------------------------------------------------------------------
     const existingImage = await prisma.image.findFirst({
       where: { workspaceId: opts.workspaceId, fileHash },
     });
     if (existingImage) {
       console.log(
-        `[${label}] SKIP_DUPLICATE (db) ${rowTag}: hash=${fileHash.slice(0, 12)}… existingId=${existingImage.id}`,
+        `[${label}] SKIP_DUPLICATE (db-fallback) ${rowTag}: hash=${fileHash.slice(0, 12)}… existingId=${existingImage.id}`,
       );
       skippedDuplicate++;
       if (!opts.dryRun) {
         promptVersionsCreated += await handleDuplicatePrompt(prisma, opts.workspaceId, existingImage.id, record, label);
       }
-      // Register in in-flight so parallel workers don't double-check DB
       inFlight.set(fileHash, Promise.resolve(existingImage.id));
       return;
     }
