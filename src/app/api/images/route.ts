@@ -69,15 +69,39 @@ export async function GET(request: NextRequest) {
   perf.mark("authCreateClientMs");
 
   // Step 2: getUser() with Redis short-term auth cache (TTL 60s)
-  // Cache key = SHA-256(access_token) — token itself never stored or logged.
+  // Cache key = SHA-256(access_token) — token never stored or logged.
   // On cache hit: skip getUser() network call (~770ms saved).
   // On cache miss: call getUser(), cache user.id if valid.
-  // Forced logout takes effect within at most 60s (TTL window).
+  //
+  // Access token is read directly from request.cookies to avoid
+  // getSession()'s token-refresh side effects in SSR without middleware.
+  // @supabase/ssr stores the session as JSON in sb-{ref}-auth-token,
+  // chunked into .0/.1/... suffixes when the value exceeds cookie size limit.
 
-  // Extract access token from session cookie (read-only, no network call).
-  // Used only to derive the cache key — not used for authorization.
-  const { data: { session } } = await supabase.auth.getSession();
-  const accessToken = session?.access_token ?? null;
+  const supabaseProjectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")
+    .match(/\/\/([^.]+)\.supabase\.co/)?.[1] ?? "";
+  const authCookieName = `sb-${supabaseProjectRef}-auth-token`;
+
+  // Reassemble chunked cookie (.0, .1, ...) or read single cookie
+  const cookieChunks: string[] = [];
+  for (let i = 0; ; i++) {
+    const chunk = request.cookies.get(`${authCookieName}.${i}`)?.value;
+    if (!chunk) break;
+    cookieChunks.push(chunk);
+  }
+  const rawSession = cookieChunks.length > 0
+    ? cookieChunks.join("")
+    : request.cookies.get(authCookieName)?.value ?? null;
+
+  let accessToken: string | null = null;
+  if (rawSession) {
+    try {
+      const parsed = JSON.parse(rawSession) as { access_token?: string };
+      accessToken = parsed.access_token ?? null;
+    } catch {
+      // Malformed cookie — skip cache, fall through to getUser()
+    }
+  }
 
   let userId: string | null = null;
   let authUserCacheSource: AuthUserCacheSource = "miss";
