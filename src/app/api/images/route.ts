@@ -10,6 +10,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
 import { createPerfLog } from "@/lib/perfLog";
 import { getSignedUrlCache, setSignedUrlCache, getSignedUrlCacheStats } from "@/lib/supabase/signedUrlCache";
+import { getWorkspaceCacheStats } from "@/lib/cache/workspaceCache";
 
 const BUCKET = "photobox-private";
 const THUMB_EXPIRY = 900; // 15min
@@ -188,11 +189,16 @@ export async function GET(request: NextRequest) {
   const personCount  = page.reduce((n, img) => n + img.imagePersons.length, 0);
   const promptCount  = page.filter((img) => img.prompt).length;
 
+  const workspaceCacheStats = getWorkspaceCacheStats();
+
   perf.end({
     imageCount: page.length,
     hasMore,
+    // Instance / cache identity — same ID means same process; different means cold start
+    cacheInstanceId: workspaceCacheStats.instanceId,
     // Auth cache
     workspaceCacheHit,
+    workspaceCacheSize: workspaceCacheStats.size,
     // DB filters active during findMany
     hasQuery: q.length > 0,
     hasCursor: cursor !== null,

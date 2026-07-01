@@ -1,4 +1,5 @@
 import "server-only";
+import { CACHE_INSTANCE_ID } from "../cache/cacheInstance";
 
 /**
  * Process-level TTL cache for Supabase Storage signed URLs.
@@ -51,9 +52,10 @@ export function setSignedUrlCache(storagePath: string, url: string): void {
 }
 
 export function getSignedUrlCacheStats(): {
+  instanceId: string;
   size: number;
   maxEntries: number;
   ttlMs: number;
 } {
-  return { size: cache.size, maxEntries: MAX_ENTRIES, ttlMs: CACHE_TTL_MS };
+  return { instanceId: CACHE_INSTANCE_ID, size: cache.size, maxEntries: MAX_ENTRIES, ttlMs: CACHE_TTL_MS };
 }

@@ -1,4 +1,7 @@
 import "server-only";
+import { CACHE_INSTANCE_ID } from "./cacheInstance";
+
+export { CACHE_INSTANCE_ID };
 
 /**
  * Process-level TTL cache for default workspace lookups.
@@ -68,9 +71,10 @@ export function invalidateWorkspaceCache(userId: string): void {
 }
 
 export function getWorkspaceCacheStats(): {
+  instanceId: string;
   size: number;
   maxEntries: number;
   ttlMs: number;
 } {
-  return { size: cache.size, maxEntries: MAX_ENTRIES, ttlMs: TTL_MS };
+  return { instanceId: CACHE_INSTANCE_ID, size: cache.size, maxEntries: MAX_ENTRIES, ttlMs: TTL_MS };
 }
