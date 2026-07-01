@@ -10,6 +10,7 @@ import { validateImageFile } from "@/lib/upload/validateImage";
 import { sha256Hex } from "@/lib/upload/hashServer";
 import { tempOriginalPath, tempThumbnailPath, tempPreviewPath } from "@/lib/upload/storagePaths";
 import { resolveSignedUrl } from "@/lib/signedUrl";
+import { createPerfLog } from "@/lib/perfLog";
 
 const BUCKET = "photobox-private";
 const MAX_ORIGINAL_BYTES = 3 * 1024 * 1024; // 3MB
@@ -46,9 +47,12 @@ async function uploadOptionalFile(prepared: Awaited<ReturnType<typeof prepareOpt
 }
 
 export async function POST(request: NextRequest) {
+  const perf = createPerfLog("uploads.items");
+
   // 1. 認証
   const user = await getCurrentUser();
   if (!user) return Errors.unauthorized();
+  perf.mark("authMs");
 
   // 2. multipart parse
   let formData: FormData;
@@ -57,6 +61,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return Errors.validation("Failed to parse multipart/form-data");
   }
+  perf.mark("formDataMs");
 
   // 3. sessionId 取得
   const sessionId = formData.get("sessionId");
@@ -82,6 +87,7 @@ export async function POST(request: NextRequest) {
   if (session.status !== "ACTIVE") {
     return Errors.validation(`Session status is '${session.status}'. Only ACTIVE sessions accept uploads.`);
   }
+  perf.mark("sessionMs");
 
   // 6. ファイル取得
   const originalFile = formData.get("original");
@@ -129,6 +135,7 @@ export async function POST(request: NextRequest) {
   if (clientFileHash.toLowerCase() !== serverHash.toLowerCase()) {
     return err("FILE_HASH_MISMATCH", "File hash mismatch. The file may have been corrupted during upload.", 400);
   }
+  perf.mark("validateHashMs");
 
   // 12. duplicate check (images テーブルに対して)
   // 注: upload_items 同士の重複はMVPでは判定しない
@@ -138,6 +145,7 @@ export async function POST(request: NextRequest) {
   });
   const duplicateStatus = existingImage ? "DUPLICATE" : "CLEAN";
   const duplicateImageId = existingImage?.id ?? null;
+  perf.mark("duplicateCheckMs");
 
   // 13. メタデータ取得
   const originalName =
@@ -187,6 +195,7 @@ export async function POST(request: NextRequest) {
       duplicateImageId,
     },
   });
+  perf.mark("dbInsertMs");
 
   // 18. Storage PUT — original / thumbnail / preview を並列化
   // original は必須。thumbnail / preview は失敗しても READY を維持し、表示時に fallback する。
@@ -194,6 +203,7 @@ export async function POST(request: NextRequest) {
     prepareOptionalUpload(thumbnailFile, thumbnailStoragePath),
     prepareOptionalUpload(previewFile, previewStoragePath),
   ]);
+  perf.mark("prepareVariantsMs");
 
   const originalUpload = supabaseAdmin.storage
     .from(BUCKET)
@@ -204,6 +214,7 @@ export async function POST(request: NextRequest) {
     uploadOptionalFile(preparedThumbnail),
     uploadOptionalFile(preparedPreview),
   ]);
+  perf.mark("storageUploadMs");
 
   if (originalResult.error) {
     await Promise.all([
@@ -254,6 +265,7 @@ export async function POST(request: NextRequest) {
       updatedAt: true,
     },
   });
+  perf.mark("dbReadyMs");
 
   // 20. signed URLs を発行して返す
   const [thumbResult, previewResultSigned, originalResultSigned] = await Promise.all([
@@ -261,11 +273,20 @@ export async function POST(request: NextRequest) {
     resolveSignedUrl("uploadItem", uploadItemId, "preview", user.id, 1),
     resolveSignedUrl("uploadItem", uploadItemId, "original", user.id, 2),
   ]);
+  perf.mark("signedUrlMs");
 
   function toSignedUrlEntry(result: typeof thumbResult) {
     if ("reason" in result) return { signedUrl: null, fallback: null };
     return { signedUrl: result.signedUrl, fallback: result.fallback };
   }
+
+  perf.end({
+    originalBytes: originalFile.size,
+    totalBytes: totalSize,
+    hasThumbnail: preparedThumbnail !== null,
+    hasPreview: preparedPreview !== null,
+    duplicateStatus,
+  });
 
   return ok(
     {
