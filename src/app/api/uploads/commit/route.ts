@@ -10,6 +10,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { buildImageSearchText } from "@/lib/commit/searchText";
 import { copyStorageFile } from "@/lib/commit/storageCopy";
 import type { CommitItemResult, CommitResponse } from "@/lib/commit/commitTypes";
+import { createPerfLog } from "@/lib/perfLog";
 
 const COMMIT_CONCURRENCY = 2;
 
@@ -156,6 +157,8 @@ async function processItemsWithLimitedConcurrency(
 }
 
 export async function POST(req: NextRequest) {
+  const perf = createPerfLog("uploads.commit");
+
   const user = await getCurrentUser();
   if (!user) return Errors.unauthorized();
 
@@ -216,6 +219,7 @@ export async function POST(req: NextRequest) {
     );
   }
   // COMMITTED or PREVIEWING: fall through and process
+  perf.mark("authSessionMs");
 
   // Fetch items
   const whereClause = requestedItemIds
@@ -244,6 +248,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  perf.mark("fetchItemsMs");
+
   // Reset IN_PROGRESS items that timed out (> 5 min)
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   const timedOutIds = items
@@ -269,9 +275,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  perf.mark("timeoutResetMs");
+
   // Process items with limited concurrency.
   // 同じ fileHash は同時処理しないことで、commit 時の重複レースを避ける。
   const results = await processItemsWithLimitedConcurrency(items, session.workspaceId);
+  perf.mark("processItemsMs");
 
   // Check if all session items are committed and update session status
   const allItems = await prisma.uploadItem.findMany({
@@ -287,6 +296,8 @@ export async function POST(req: NextRequest) {
     });
     finalSessionStatus = "COMMITTED";
   }
+
+  perf.mark("sessionFinalizeMs");
 
   // Build typed result buckets
   const committed = results
@@ -325,6 +336,19 @@ export async function POST(req: NextRequest) {
     invalid,
     session: { id: session.id, status: finalSessionStatus },
   };
+
+  perf.mark("serializeMs");
+  perf.end({
+    itemCount: items.length,
+    concurrency: COMMIT_CONCURRENCY,
+    timedOutCount: timedOutIds.length,
+    committed: committed.length,
+    skipped: skipped.length,
+    alreadyCommitted: alreadyCommitted.length,
+    failed: failed.length,
+    invalid: invalid.length,
+    finalSessionCommitted: finalSessionStatus === "COMMITTED",
+  });
 
   return ok(response);
 }
