@@ -13,6 +13,7 @@ import { createPerfLog } from "@/lib/perfLog";
 import { getSignedUrlCacheAsync, setSignedUrlCacheAsync, getSignedUrlCacheStats } from "@/lib/supabase/signedUrlCache";
 import { getWorkspaceCacheStats } from "@/lib/cache/workspaceCache";
 import { getAuthUserCache, setAuthUserCache, type AuthUserCacheSource } from "@/lib/cache/authUserCache";
+import { getDatabaseUrl } from "@/lib/database-url";
 
 const BUCKET = "photobox-private";
 const THUMB_EXPIRY = 900; // 15min
@@ -59,6 +60,28 @@ async function signedUrlMap(paths: string[], expiry: number): Promise<Map<string
 
   return map;
 }
+
+// Derive DB connection metadata from DATABASE_URL host — no secret emitted.
+function getDbUrlMeta(): { dbUrlMode: string; dbHostRegionHint: string } {
+  let host = "";
+  try {
+    host = new URL(getDatabaseUrl()).hostname;
+  } catch {
+    return { dbUrlMode: "unknown", dbHostRegionHint: "unknown" };
+  }
+  const port = new URL(getDatabaseUrl()).port;
+  const isPooler = host.includes("pooler.supabase.com");
+  const isDirect = host.match(/^db\.[^.]+\.supabase\.co$/) !== null;
+  const dbUrlMode = isPooler
+    ? port === "6543" ? "pooler-transaction" : "pooler-session"
+    : isDirect ? "direct"
+    : "unknown";
+  const regionMatch = host.match(/aws-\d+-([^.]+)\.pooler\.supabase\.com/) ??
+                      host.match(/db\.([^.]+)\.supabase\.co/);
+  const dbHostRegionHint = regionMatch ? regionMatch[1] : "unknown";
+  return { dbUrlMode, dbHostRegionHint };
+}
+const { dbUrlMode, dbHostRegionHint } = getDbUrlMeta();
 
 export async function GET(request: NextRequest) {
   const perf = createPerfLog("gallery.images");
@@ -583,6 +606,8 @@ export async function GET(request: NextRequest) {
     promptCount,
     urlCacheSize: urlCacheStats.size,
     urlCacheShared: urlCacheStats.sharedCacheEnabled,
+    dbUrlMode,
+    dbHostRegionHint,
   });
 
   return ok({ images: withUrls, nextCursor });
