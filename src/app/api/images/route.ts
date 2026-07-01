@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
+import { Prisma } from "@/generated/prisma/client";
 import { createPerfLog } from "@/lib/perfLog";
 import { getSignedUrlCacheAsync, setSignedUrlCacheAsync, getSignedUrlCacheStats } from "@/lib/supabase/signedUrlCache";
 import { getWorkspaceCacheStats } from "@/lib/cache/workspaceCache";
@@ -86,6 +87,7 @@ export async function GET(request: NextRequest) {
   const sort = sp.get("sort") === "oldest" ? "asc" : "desc";
   const limitRaw = parseInt(sp.get("limit") ?? String(LIMIT_DEFAULT), 10);
   const limit = Math.min(isNaN(limitRaw) || limitRaw < 1 ? LIMIT_DEFAULT : limitRaw, LIMIT_MAX);
+  const debugDb = sp.get("debugDb") === "1";
 
   const qFilter = q
     ? {
@@ -109,6 +111,38 @@ export async function GET(request: NextRequest) {
     ...(tagId ? { imageTags: { some: { tagId } } } : {}),
     ...(personId ? { imagePersons: { some: { personId } } } : {}),
   };
+
+  // ── debugDb: staged query breakdown (?debugDb=1 only) ──────────────────
+  // Runs 4 sequential findMany with increasing select depth to isolate which
+  // relation is expensive. Does NOT affect the normal response path below.
+  if (debugDb) {
+    const dbgOrderBy: Prisma.ImageOrderByWithRelationInput[] = [{ createdAt: sort }, { id: sort }];
+    const dbgBase = { where, orderBy: dbgOrderBy, take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    };
+    const baseSelect = {
+      id: true, originalName: true, widthPx: true, heightPx: true,
+      thumbnailPath: true, previewPath: true, isFavorite: true, rating: true, createdAt: true,
+    };
+    const t0 = Date.now();
+    await prisma.image.findMany({ ...dbgBase, select: baseSelect });
+    const t1 = Date.now();
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect, scene: { select: { id: true, name: true } } } });
+    const t2 = Date.now();
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect, scene: { select: { id: true, name: true } }, imageTags: { select: { tag: { select: { id: true, name: true } } } } } });
+    const t3 = Date.now();
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect, scene: { select: { id: true, name: true } }, imageTags: { select: { tag: { select: { id: true, name: true } } } }, prompt: { select: { currentBody: true, _count: { select: { versions: true } } } } } });
+    const t4 = Date.now();
+    console.log(JSON.stringify({
+      tag: "gallery.images.debugDb",
+      dbBaseMs: t1 - t0,
+      dbSceneMs: t2 - t1,
+      dbTagsMs: t3 - t2,
+      dbPromptMs: t4 - t3,
+      dbFullMs: t4 - t0,
+      rowCount: limit,
+    }));
+  }
 
   // ── DB breakdown ───────────────────────────────────────────────────────
   // Single findMany with relations (scene, imageTags→tag, prompt+_count).
