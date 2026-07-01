@@ -3,7 +3,7 @@ import "server-only";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { getDefaultWorkspaceForUser } from "@/lib/auth";
+import { getDefaultWorkspaceForUserCached } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -63,8 +63,8 @@ export async function GET(request: NextRequest) {
   if (!user) return Errors.unauthorized();
   perf.mark("authGetUserMs");
 
-  // Step 3: workspaceMember.findFirst + workspace JOIN (1 DB round-trip)
-  const workspace = await getDefaultWorkspaceForUser(user.id);
+  // Step 3: workspaceMember.findFirst + workspace JOIN (cached, TTL 5min)
+  const { workspace, cacheHit: workspaceCacheHit } = await getDefaultWorkspaceForUserCached(user.id);
   if (!workspace) return Errors.forbidden();
   perf.mark("authWorkspaceMs");
 
@@ -191,6 +191,8 @@ export async function GET(request: NextRequest) {
   perf.end({
     imageCount: page.length,
     hasMore,
+    // Auth cache
+    workspaceCacheHit,
     // DB filters active during findMany
     hasQuery: q.length > 0,
     hasCursor: cursor !== null,
