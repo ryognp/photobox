@@ -1,61 +1,126 @@
 import "server-only";
 import { CACHE_INSTANCE_ID } from "../cache/cacheInstance";
+import { getRedisClient } from "../cache/redisClient";
 
 /**
- * Process-level TTL cache for Supabase Storage signed URLs.
+ * TTL cache for Supabase Storage signed URLs.
  *
- * Signed URLs from photobox-private have a 15-minute (900s) expiry.
- * We cache for 14 minutes (840s) to ensure URLs are still valid when served.
+ * Signed URLs from photobox-private expire in 900s (15 min).
+ * We cache for 840s (14 min) to ensure URLs are still valid when served.
  *
- * This is a simple in-process Map — appropriate for a single-instance
- * Next.js deployment. For multi-instance deployments, replace with
- * Upstash Redis / Vercel KV.
+ * Primary: Upstash Redis (shared across Vercel instances) when configured.
+ * Fallback: in-process Map (single instance or dev).
  */
 
-const CACHE_TTL_MS = 840_000; // 14 min — safely under the 15 min signing expiry
+const CACHE_TTL_MS = 840_000; // 14 min
+const REDIS_TTL_S = 840;       // same in seconds for Redis EX
 const MAX_ENTRIES = 5_000;
+
+// ---- In-process fallback ---------------------------------------------------
 
 interface Entry {
   url: string;
   expiresAt: number;
 }
+const memCache = new Map<string, Entry>();
 
-const cache = new Map<string, Entry>();
-
-export function getSignedUrlCache(storagePath: string): string | null {
-  const entry = cache.get(storagePath);
-  if (!entry) return null;
-  if (Date.now() >= entry.expiresAt) {
-    cache.delete(storagePath);
-    return null;
-  }
-  return entry.url;
+function memGet(key: string): string | null {
+  const e = memCache.get(key);
+  if (!e) return null;
+  if (Date.now() >= e.expiresAt) { memCache.delete(key); return null; }
+  return e.url;
 }
 
-export function setSignedUrlCache(storagePath: string, url: string): void {
-  // Evict expired entries when approaching limit
-  if (cache.size >= MAX_ENTRIES) {
+function memSet(key: string, url: string): void {
+  if (memCache.size >= MAX_ENTRIES) {
     const now = Date.now();
-    for (const [k, v] of cache) {
-      if (now >= v.expiresAt) cache.delete(k);
+    for (const [k, v] of memCache) {
+      if (now >= v.expiresAt) memCache.delete(k);
     }
-    // If still over 90% capacity, evict oldest 10%
-    if (cache.size >= MAX_ENTRIES * 0.9) {
+    if (memCache.size >= MAX_ENTRIES * 0.9) {
       let toRemove = Math.ceil(MAX_ENTRIES * 0.1);
-      for (const k of cache.keys()) {
+      for (const k of memCache.keys()) {
         if (toRemove-- <= 0) break;
-        cache.delete(k);
+        memCache.delete(k);
       }
     }
   }
-  cache.set(storagePath, { url, expiresAt: Date.now() + CACHE_TTL_MS });
+  memCache.set(key, { url, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+// ---- Public API ------------------------------------------------------------
+
+/**
+ * Sync fast-path used in the hot loop (checks in-process Map only).
+ * Call getSignedUrlCacheAsync for a full Redis lookup.
+ */
+export function getSignedUrlCache(storagePath: string): string | null {
+  return memGet(storagePath);
+}
+
+/**
+ * Full lookup: Redis first, then in-process Map.
+ * Used in signedUrlMap before issuing Supabase Storage requests.
+ */
+export async function getSignedUrlCacheAsync(storagePath: string): Promise<string | null> {
+  // Fast path: in-process Map
+  const mem = memGet(storagePath);
+  if (mem) return mem;
+
+  // Shared cache: Redis
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      const raw = await redis.get<string>(storagePath);
+      if (raw) {
+        // Warm in-process Map for subsequent same-instance requests
+        memSet(storagePath, raw);
+        return raw;
+      }
+    } catch {
+      // Redis failure — continue to return null (caller will re-sign)
+    }
+  }
+
+  return null;
+}
+
+/** Store a signed URL. Writes to both in-process Map and Redis (if available). */
+export async function setSignedUrlCacheAsync(storagePath: string, url: string): Promise<void> {
+  memSet(storagePath, url);
+
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      await redis.set(storagePath, url, { ex: REDIS_TTL_S });
+    } catch {
+      // Redis write failure is non-fatal
+    }
+  }
+}
+
+/** @deprecated Use setSignedUrlCacheAsync. Kept for [id]/route.ts compat. */
+export function setSignedUrlCache(storagePath: string, url: string): void {
+  memSet(storagePath, url);
+  // Fire-and-forget Redis write (no await — sync callers only)
+  const redis = getRedisClient();
+  if (redis) {
+    redis.set(storagePath, url, { ex: REDIS_TTL_S }).catch(() => {});
+  }
 }
 
 export function getSignedUrlCacheStats(): {
   instanceId: string;
+  sharedCacheEnabled: boolean;
   size: number;
   maxEntries: number;
   ttlMs: number;
 } {
-  return { instanceId: CACHE_INSTANCE_ID, size: cache.size, maxEntries: MAX_ENTRIES, ttlMs: CACHE_TTL_MS };
+  return {
+    instanceId: CACHE_INSTANCE_ID,
+    sharedCacheEnabled: getRedisClient() !== null,
+    size: memCache.size,
+    maxEntries: MAX_ENTRIES,
+    ttlMs: CACHE_TTL_MS,
+  };
 }

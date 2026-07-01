@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
 import { createPerfLog } from "@/lib/perfLog";
-import { getSignedUrlCache, setSignedUrlCache, getSignedUrlCacheStats } from "@/lib/supabase/signedUrlCache";
+import { getSignedUrlCacheAsync, setSignedUrlCacheAsync, getSignedUrlCacheStats } from "@/lib/supabase/signedUrlCache";
 import { getWorkspaceCacheStats } from "@/lib/cache/workspaceCache";
 
 const BUCKET = "photobox-private";
@@ -24,8 +24,11 @@ async function signedUrlMap(paths: string[], expiry: number): Promise<Map<string
 
   // Serve cached URLs; collect paths that need signing
   const uncached: string[] = [];
-  for (const p of uniquePaths) {
-    const cached = getSignedUrlCache(p);
+  // Check Redis + in-process cache for each path concurrently
+  const cacheResults = await Promise.all(uniquePaths.map((p) => getSignedUrlCacheAsync(p)));
+  for (let i = 0; i < uniquePaths.length; i++) {
+    const p = uniquePaths[i];
+    const cached = cacheResults[i];
     if (cached) {
       map.set(p, cached);
     } else {
@@ -41,12 +44,16 @@ async function signedUrlMap(paths: string[], expiry: number): Promise<Map<string
 
   if (error || !data) return map;
 
-  for (const entry of data) {
-    if (entry.path && entry.signedUrl) {
-      map.set(entry.path, entry.signedUrl);
-      setSignedUrlCache(entry.path, entry.signedUrl);
-    }
-  }
+  await Promise.all(
+    data
+      .filter((entry): entry is typeof entry & { path: string; signedUrl: string } =>
+        Boolean(entry.path && entry.signedUrl),
+      )
+      .map((entry) => {
+        map.set(entry.path, entry.signedUrl);
+        return setSignedUrlCacheAsync(entry.path, entry.signedUrl);
+      }),
+  );
 
   return map;
 }
@@ -65,7 +72,7 @@ export async function GET(request: NextRequest) {
   perf.mark("authGetUserMs");
 
   // Step 3: workspaceMember.findFirst + workspace JOIN (cached, TTL 5min)
-  const { workspace, cacheHit: workspaceCacheHit } = await getDefaultWorkspaceForUserCached(user.id);
+  const { workspace, cacheSource: workspaceCacheSource } = await getDefaultWorkspaceForUserCached(user.id);
   if (!workspace) return Errors.forbidden();
   perf.mark("authWorkspaceMs");
 
@@ -194,11 +201,13 @@ export async function GET(request: NextRequest) {
   perf.end({
     imageCount: page.length,
     hasMore,
-    // Instance / cache identity — same ID means same process; different means cold start
+    // Shared cache enabled (Upstash Redis configured)
+    sharedCacheEnabled: workspaceCacheStats.sharedCacheEnabled,
+    // Instance identity — same ID = same process; different = cold start / new lambda
     cacheInstanceId: workspaceCacheStats.instanceId,
-    // Auth cache
-    workspaceCacheHit,
-    workspaceCacheSize: workspaceCacheStats.size,
+    // Auth cache: "shared" | "memory" | "miss"
+    workspaceCacheSource,
+    workspaceCacheMemSize: workspaceCacheStats.memSize,
     // DB filters active during findMany
     hasQuery: q.length > 0,
     hasCursor: cursor !== null,
@@ -213,8 +222,9 @@ export async function GET(request: NextRequest) {
     tagCount,
     personCount,
     promptCount,
-    // Signed URL cache
+    // Signed URL cache (Redis shared or in-process Map)
     urlCacheSize: urlCacheStats.size,
+    urlCacheShared: urlCacheStats.sharedCacheEnabled,
   });
 
   return ok({ images: withUrls, nextCursor });

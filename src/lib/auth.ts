@@ -7,6 +7,7 @@ import {
   getWorkspaceCache,
   setWorkspaceCache,
   type CachedWorkspace,
+  type WorkspaceCacheSource,
 } from "./cache/workspaceCache";
 
 export async function getCurrentUser() {
@@ -58,20 +59,22 @@ export async function getDefaultWorkspaceForUser(userId: string) {
  */
 export async function getDefaultWorkspaceForUserCached(
   userId: string,
-): Promise<{ workspace: CachedWorkspace | null; cacheHit: boolean }> {
-  const cached = getWorkspaceCache(userId);
+): Promise<{ workspace: CachedWorkspace | null; cacheSource: WorkspaceCacheSource }> {
+  const { workspace: cached, source } = await getWorkspaceCache(userId);
   if (cached) {
-    return { workspace: cached, cacheHit: true };
+    return { workspace: cached, cacheSource: source };
   }
 
   const workspace = await getDefaultWorkspaceForUser(userId);
   if (workspace) {
-    setWorkspaceCache(userId, {
+    const w: CachedWorkspace = {
       id: workspace.id,
       name: workspace.name,
       slug: workspace.slug,
       plan: workspace.plan,
-    });
+    };
+    await setWorkspaceCache(userId, w);
+    return { workspace: w, cacheSource: "miss" };
   }
-  return { workspace: workspace ? { id: workspace.id, name: workspace.name, slug: workspace.slug, plan: workspace.plan } : null, cacheHit: false };
+  return { workspace: null, cacheSource: "miss" };
 }
