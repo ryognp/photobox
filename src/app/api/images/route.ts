@@ -207,6 +207,7 @@ export async function GET(request: NextRequest) {
   const limitRaw = parseInt(sp.get("limit") ?? String(LIMIT_DEFAULT), 10);
   const limit = Math.min(isNaN(limitRaw) || limitRaw < 1 ? LIMIT_DEFAULT : limitRaw, LIMIT_MAX);
   const debugDb = sp.get("debugDb") === "1";
+  const debugAuth = sp.get("debugAuth") === "1";
 
   const qFilter = q
     ? {
@@ -376,6 +377,8 @@ export async function GET(request: NextRequest) {
     // ── $queryRaw path: single SQL round-trip with LEFT JOINs ─────────────
     // ~4× faster than Prisma multi-SELECT for uncached first pages.
     // workspaceId bound as parameter — never interpolated into SQL string.
+    await prisma.$queryRaw`SELECT 1`;
+    perf.mark("dbPingMs");
     type RawRow = {
       id: string;
       original_name: string;
@@ -549,18 +552,20 @@ export async function GET(request: NextRequest) {
     imageCount: page.length,
     hasMore,
     queryMode,
-    // Auth cookie diagnostics
-    authCookieNameFound,
-    authCookieChunkCount,
-    authRawSessionLength,
-    authTokenAvailable,
-    authTokenHashAvailable,
-    authCookieParseMode,
-    authUserCacheWriteAttempted,
-    authUserCacheWriteOk,
     // Auth user cache (Redis TTL 60s)
     authUserCacheSource,
     authUserCacheHit: authUserCacheSource !== "miss",
+    // Auth cookie diagnostics (?debugAuth=1 only)
+    ...(debugAuth ? {
+      authCookieNameFound,
+      authCookieChunkCount,
+      authRawSessionLength,
+      authTokenAvailable,
+      authTokenHashAvailable,
+      authCookieParseMode,
+      authUserCacheWriteAttempted,
+      authUserCacheWriteOk,
+    } : {}),
     sharedCacheEnabled: workspaceCacheStats.sharedCacheEnabled,
     cacheInstanceId: workspaceCacheStats.instanceId,
     workspaceCacheSource,
