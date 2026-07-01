@@ -8,7 +8,6 @@ export type GalleryImage = {
   createdAt: string;
   scene: { id: string; name: string } | null;
   tags: { id: string; name: string }[];
-  persons: { id: string; name: string }[];
   promptSnippet: string | null;
   promptVersionCount: number;
   thumbnailUrl: string | null;

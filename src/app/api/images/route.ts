@@ -111,8 +111,10 @@ export async function GET(request: NextRequest) {
   };
 
   // ── DB breakdown ───────────────────────────────────────────────────────
-  // Single findMany with relations (scene, imageTags→tag, imagePersons→person,
-  // prompt+_count). Prisma may issue separate SELECT per relation type.
+  // Single findMany with relations (scene, imageTags→tag, prompt+_count).
+  // imagePersons excluded from select — not used in ImageCard (persons filter
+  // in WHERE is still applied via imagePersons.some).
+  // Prisma may issue separate SELECT per relation type.
   // Active filters logged in perf.end() for correlation.
   const images = await prisma.image.findMany({
     where,
@@ -136,7 +138,6 @@ export async function GET(request: NextRequest) {
       createdAt: true,
       scene: { select: { id: true, name: true } },
       imageTags: { select: { tag: { select: { id: true, name: true } } } },
-      imagePersons: { select: { person: { select: { id: true, name: true } } } },
       prompt: {
         select: {
           currentBody: true,
@@ -183,7 +184,6 @@ export async function GET(request: NextRequest) {
       createdAt: img.createdAt,
       scene: img.scene,
       tags: img.imageTags.map((t) => t.tag),
-      persons: img.imagePersons.map((p) => p.person),
       promptSnippet: img.prompt?.currentBody?.slice(0, 80) ?? null,
       promptVersionCount: img.prompt?._count?.versions ?? 0,
       thumbnailUrl: thumbnailUrl ?? fallbackUrl,
@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
   // Count images that had scene / tags / persons / prompt (helps correlate dbMs)
   const sceneCount   = page.filter((img) => img.scene).length;
   const tagCount     = page.reduce((n, img) => n + img.imageTags.length, 0);
-  const personCount  = page.reduce((n, img) => n + img.imagePersons.length, 0);
+
   const promptCount  = page.filter((img) => img.prompt).length;
 
   const workspaceCacheStats = getWorkspaceCacheStats();
@@ -220,7 +220,6 @@ export async function GET(request: NextRequest) {
     // Relation row counts (how much data the DB returned)
     sceneCount,
     tagCount,
-    personCount,
     promptCount,
     // Signed URL cache (Redis shared or in-process Map)
     urlCacheSize: urlCacheStats.size,
