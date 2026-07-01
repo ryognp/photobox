@@ -159,6 +159,47 @@ export async function GET(request: NextRequest) {
       imageTags: { select: { tag: { select: { id: true, name: true } } } } } });
     const t8 = Date.now();
 
+    // ── Phase 4: single $queryRaw — all relations in one SQL round-trip ────
+    // Comparison baseline: if this is fast, Prisma's multi-SELECT RTT is the culprit.
+    // workspaceId is bound as a parameter — not logged.
+    const tRaw0 = Date.now();
+    const rawRows = await prisma.$queryRaw<{ id: string }[]>(
+      Prisma.sql`
+        SELECT
+          i.id,
+          i.original_name,
+          i.width_px,
+          i.height_px,
+          i.thumbnail_path,
+          i.preview_path,
+          i.is_favorite,
+          i.rating,
+          i.created_at,
+          s.id   AS scene_id,
+          s.name AS scene_name,
+          COALESCE(
+            JSON_AGG(DISTINCT JSONB_BUILD_OBJECT('id', t.id, 'name', t.name))
+              FILTER (WHERE t.id IS NOT NULL),
+            '[]'::json
+          ) AS tags,
+          p.current_body  AS prompt_body,
+          COUNT(DISTINCT pv.id)::int AS prompt_version_count
+        FROM images i
+        LEFT JOIN scenes       s  ON s.id       = i.scene_id
+        LEFT JOIN image_tags   it ON it.image_id = i.id
+        LEFT JOIN tags         t  ON t.id        = it.tag_id
+        LEFT JOIN prompts      p  ON p.image_id  = i.id
+        LEFT JOIN prompt_versions pv ON pv.prompt_id = p.id
+        WHERE i.workspace_id = ${workspace.id}
+          AND i.status       = 'ACTIVE'
+          AND i.deleted_at   IS NULL
+        GROUP BY i.id, s.id, s.name, p.current_body
+        ORDER BY i.created_at DESC, i.id DESC
+        LIMIT ${limit + 1}
+      `,
+    );
+    const tRaw1 = Date.now();
+
     console.log(JSON.stringify({
       tag: "gallery.images.debugDb",
       // Phase 1 — cumulative staged
@@ -173,6 +214,9 @@ export async function GET(request: NextRequest) {
       // Phase 3 — imageTags internals
       dbImageTagsOnlyMs: t7 - t6,
       dbTagsJoinMs:      t8 - t7,
+      // Phase 4 — single queryRaw (1 SQL vs Prisma multi-SELECT)
+      dbRawGalleryMs: tRaw1 - tRaw0,
+      rawRowCount: rawRows.length,
       rowCount: limit,
     }));
   }

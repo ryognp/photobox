@@ -245,6 +245,8 @@ model Image {
   @@index([workspaceId, createdAt])
   @@index([workspaceId, isFavorite])
   @@index([fileHash])
+  // Gallery list: WHERE workspaceId=? AND status='ACTIVE' AND deletedAt IS NULL ORDER BY createdAt DESC, id DESC
+  @@index([workspaceId, status, createdAt(sort: Desc), id(sort: Desc)], name: "idx_images_gallery_list")
   @@map("images")
 }
 
