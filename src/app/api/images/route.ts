@@ -7,6 +7,7 @@ import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
+import { createPerfLog } from "@/lib/perfLog";
 
 const BUCKET = "photobox-private";
 const THUMB_EXPIRY = 900; // 15min
@@ -34,11 +35,14 @@ async function signedUrlMap(paths: string[], expiry: number): Promise<Map<string
 }
 
 export async function GET(request: NextRequest) {
+  const perf = createPerfLog("gallery.images");
+
   const user = await getCurrentUser();
   if (!user) return Errors.unauthorized();
 
   const workspace = await getDefaultWorkspaceForUser(user.id);
   if (!workspace) return Errors.forbidden();
+  perf.mark("authMs");
 
   const sp = request.nextUrl.searchParams;
   const q = sp.get("q")?.trim() ?? "";
@@ -105,6 +109,7 @@ export async function GET(request: NextRequest) {
       },
     },
   });
+  perf.mark("dbMs");
 
   const hasMore = images.length > limit;
   const page = hasMore ? images.slice(0, limit) : images;
@@ -122,6 +127,7 @@ export async function GET(request: NextRequest) {
       .filter((path): path is string => Boolean(path)),
     THUMB_EXPIRY,
   );
+  perf.mark("signedUrlMs");
 
   const withUrls = page.map((img) => {
     const thumbnailUrl = img.thumbnailPath ? thumbnailUrls.get(img.thumbnailPath) ?? null : null;
@@ -142,6 +148,14 @@ export async function GET(request: NextRequest) {
       promptVersionCount: img.prompt?._count?.versions ?? 0,
       thumbnailUrl: thumbnailUrl ?? fallbackUrl,
     };
+  });
+  perf.mark("serializeMs");
+  perf.end({
+    imageCount: page.length,
+    hasMore,
+    hasQuery: q.length > 0,
+    hasCursor: cursor !== null,
+    limit,
   });
 
   return ok({ images: withUrls, nextCursor });
