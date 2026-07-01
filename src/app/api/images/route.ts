@@ -221,49 +221,167 @@ export async function GET(request: NextRequest) {
     }));
   }
 
-  // ── DB breakdown ───────────────────────────────────────────────────────
-  // Single findMany with relations (scene, imageTags→tag, prompt+_count).
-  // imagePersons excluded from select — not used in ImageCard (persons filter
-  // in WHERE is still applied via imagePersons.some).
-  // Prisma may issue separate SELECT per relation type.
-  // Active filters logged in perf.end() for correlation.
-  const images = await prisma.image.findMany({
-    where,
-    orderBy: [{ createdAt: sort }, { id: sort }],
-    ...(cursor
-      ? {
-          cursor: { id: cursor },
-          skip: 1,
-        }
-      : {}),
-    take: limit + 1,
-    select: {
-      id: true,
-      originalName: true,
-      widthPx: true,
-      heightPx: true,
-      thumbnailPath: true,
-      previewPath: true,
-      isFavorite: true,
-      rating: true,
-      createdAt: true,
-      scene: { select: { id: true, name: true } },
-      imageTags: { select: { tag: { select: { id: true, name: true } } } },
-      prompt: {
-        select: {
-          currentBody: true,
-          _count: { select: { versions: true } },
+  // ── Internal shape shared by both query paths ──────────────────────────
+  type PageImage = {
+    id: string;
+    originalName: string;
+    widthPx: number | null;
+    heightPx: number | null;
+    thumbnailPath: string | null;
+    previewPath: string | null;
+    isFavorite: boolean;
+    rating: number | null;
+    createdAt: Date;
+    scene: { id: string; name: string } | null;
+    tags: { id: string; name: string }[];
+    promptBody: string | null;
+    promptVersionCount: number;
+  };
+
+  // ── Query path selection ────────────────────────────────────────────────
+  // Raw path: first page, default sort, no filters.
+  // Everything else (cursor / filters / sort=asc) falls back to Prisma.
+  const useRawPath =
+    cursor === null &&
+    sort === "desc" &&
+    q === "" &&
+    sceneId === null &&
+    tagId === null &&
+    personId === null &&
+    favorite === null;
+
+  let rawImages: PageImage[];
+  let queryMode: "raw" | "prisma";
+
+  if (useRawPath) {
+    // ── $queryRaw path: single SQL round-trip with LEFT JOINs ─────────────
+    // ~4× faster than Prisma multi-SELECT for uncached first pages.
+    // workspaceId bound as parameter — never interpolated into SQL string.
+    type RawRow = {
+      id: string;
+      original_name: string;
+      width_px: number | null;
+      height_px: number | null;
+      thumbnail_path: string | null;
+      preview_path: string | null;
+      is_favorite: boolean;
+      rating: number | null;
+      created_at: Date;
+      scene_id: string | null;
+      scene_name: string | null;
+      tags: unknown; // JSON_AGG → parsed by pg driver as JS array
+      prompt_body: string | null;
+      prompt_version_count: number | bigint;
+    };
+
+    const rows = await prisma.$queryRaw<RawRow[]>(
+      Prisma.sql`
+        SELECT
+          i.id,
+          i.original_name,
+          i.width_px,
+          i.height_px,
+          i.thumbnail_path,
+          i.preview_path,
+          i.is_favorite,
+          i.rating,
+          i.created_at,
+          s.id                                                      AS scene_id,
+          s.name                                                    AS scene_name,
+          COALESCE(
+            JSON_AGG(DISTINCT JSONB_BUILD_OBJECT('id', t.id, 'name', t.name))
+              FILTER (WHERE t.id IS NOT NULL),
+            '[]'::json
+          )                                                         AS tags,
+          p.current_body                                            AS prompt_body,
+          CAST(COUNT(DISTINCT pv.id) AS integer)                    AS prompt_version_count
+        FROM images i
+        LEFT JOIN scenes          s  ON s.id        = i.scene_id
+        LEFT JOIN image_tags      it ON it.image_id  = i.id
+        LEFT JOIN tags            t  ON t.id         = it.tag_id
+        LEFT JOIN prompts         p  ON p.image_id   = i.id
+        LEFT JOIN prompt_versions pv ON pv.prompt_id = p.id
+        WHERE i.workspace_id = ${workspace.id}
+          AND i.status       = 'ACTIVE'
+          AND i.deleted_at   IS NULL
+        GROUP BY i.id, s.id, s.name, p.current_body
+        ORDER BY i.created_at DESC, i.id DESC
+        LIMIT ${limit + 1}
+      `,
+    );
+    perf.mark("dbRawMainMs");
+    queryMode = "raw";
+
+    rawImages = rows.map((row) => {
+      const tags = Array.isArray(row.tags)
+        ? (row.tags as { id: string; name: string }[])
+        : (JSON.parse(row.tags as string) as { id: string; name: string }[]);
+      return {
+        id: row.id,
+        originalName: row.original_name,
+        widthPx: row.width_px,
+        heightPx: row.height_px,
+        thumbnailPath: row.thumbnail_path,
+        previewPath: row.preview_path,
+        isFavorite: row.is_favorite,
+        rating: row.rating,
+        createdAt: row.created_at,
+        scene: row.scene_id ? { id: row.scene_id, name: row.scene_name! } : null,
+        tags,
+        promptBody: row.prompt_body,
+        promptVersionCount: Number(row.prompt_version_count),
+      };
+    });
+  } else {
+    // ── Prisma path: cursor / filters / sort=asc ───────────────────────────
+    const prismaRows = await prisma.image.findMany({
+      where,
+      orderBy: [{ createdAt: sort }, { id: sort }],
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      take: limit + 1,
+      select: {
+        id: true,
+        originalName: true,
+        widthPx: true,
+        heightPx: true,
+        thumbnailPath: true,
+        previewPath: true,
+        isFavorite: true,
+        rating: true,
+        createdAt: true,
+        scene: { select: { id: true, name: true } },
+        imageTags: { select: { tag: { select: { id: true, name: true } } } },
+        prompt: {
+          select: {
+            currentBody: true,
+            _count: { select: { versions: true } },
+          },
         },
       },
-    },
-  });
-  // dbFindManyMs = full findMany including all relation fetches
-  perf.mark("dbFindManyMs");
+    });
+    perf.mark("dbFindManyMs");
+    queryMode = "prisma";
 
-  const hasMore = images.length > limit;
-  const page = hasMore ? images.slice(0, limit) : images;
+    rawImages = prismaRows.map((img) => ({
+      id: img.id,
+      originalName: img.originalName,
+      widthPx: img.widthPx,
+      heightPx: img.heightPx,
+      thumbnailPath: img.thumbnailPath,
+      previewPath: img.previewPath,
+      isFavorite: img.isFavorite,
+      rating: img.rating,
+      createdAt: img.createdAt,
+      scene: img.scene,
+      tags: img.imageTags.map((t) => t.tag),
+      promptBody: img.prompt?.currentBody ?? null,
+      promptVersionCount: img.prompt?._count?.versions ?? 0,
+    }));
+  }
+
+  const hasMore = rawImages.length > limit;
+  const page = hasMore ? rawImages.slice(0, limit) : rawImages;
   const nextCursor = hasMore ? page[page.length - 1].id : null;
-  // dbSliceMs = in-memory hasMore/page/cursor (should be ~0ms)
   perf.mark("dbSliceMs");
 
   const thumbnailUrls = await signedUrlMap(
@@ -294,32 +412,28 @@ export async function GET(request: NextRequest) {
       rating: img.rating,
       createdAt: img.createdAt,
       scene: img.scene,
-      tags: img.imageTags.map((t) => t.tag),
-      promptSnippet: img.prompt?.currentBody?.slice(0, 80) ?? null,
-      promptVersionCount: img.prompt?._count?.versions ?? 0,
+      tags: img.tags,
+      promptSnippet: img.promptBody?.slice(0, 80) ?? null,
+      promptVersionCount: img.promptVersionCount,
       thumbnailUrl: thumbnailUrl ?? fallbackUrl,
     };
   });
   perf.mark("serializeMs");
-  // Count images that had scene / tags / persons / prompt (helps correlate dbMs)
-  const sceneCount   = page.filter((img) => img.scene).length;
-  const tagCount     = page.reduce((n, img) => n + img.imageTags.length, 0);
 
-  const promptCount  = page.filter((img) => img.prompt).length;
+  const sceneCount  = page.filter((img) => img.scene).length;
+  const tagCount    = page.reduce((n, img) => n + img.tags.length, 0);
+  const promptCount = page.filter((img) => img.promptBody !== null).length;
 
   const workspaceCacheStats = getWorkspaceCacheStats();
 
   perf.end({
     imageCount: page.length,
     hasMore,
-    // Shared cache enabled (Upstash Redis configured)
+    queryMode,
     sharedCacheEnabled: workspaceCacheStats.sharedCacheEnabled,
-    // Instance identity — same ID = same process; different = cold start / new lambda
     cacheInstanceId: workspaceCacheStats.instanceId,
-    // Auth cache: "shared" | "memory" | "miss"
     workspaceCacheSource,
     workspaceCacheMemSize: workspaceCacheStats.memSize,
-    // DB filters active during findMany
     hasQuery: q.length > 0,
     hasCursor: cursor !== null,
     hasTagFilter: !!tagId,
@@ -328,11 +442,9 @@ export async function GET(request: NextRequest) {
     hasFavoriteFilter: favorite !== null,
     sort,
     limit,
-    // Relation row counts (how much data the DB returned)
     sceneCount,
     tagCount,
     promptCount,
-    // Signed URL cache (Redis shared or in-process Map)
     urlCacheSize: urlCacheStats.size,
     urlCacheShared: urlCacheStats.sharedCacheEnabled,
   });
