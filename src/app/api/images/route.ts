@@ -67,9 +67,27 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   perf.mark("authCreateClientMs");
 
-  // Step 2: supabase.auth.getUser() — validates JWT via Supabase Auth API (1 RTT)
-  const { data: { user } } = await supabase.auth.getUser();
+  // Step 2: getUser() vs getClaims() parallel PoC
+  // getUser()   — validates JWT via Supabase Auth API (1 RTT, always authoritative)
+  // getClaims() — local WebCrypto verify if project uses asymmetric keys (RS256);
+  //               falls back to server request if symmetric (HS256) or WebCrypto unavailable.
+  // Run in parallel so total latency = max(getUser, getClaims), not sum.
+  const tUser0   = Date.now();
+  const tClaims0 = Date.now();
+  const [userResult, claimsResult] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.auth.getClaims(),
+  ]);
+  const authGetUserMs   = Date.now() - tUser0;
+  const authGetClaimsMs = Date.now() - tClaims0;
+
+  const user = userResult.data?.user ?? null;
   if (!user) return Errors.unauthorized();
+
+  // authMode: whether getClaims userId matches getUser userId (sanity check)
+  const claimsUserId  = claimsResult.data?.claims?.sub ?? null;
+  const authClaimsMatch = claimsUserId !== null && claimsUserId === user.id;
+
   perf.mark("authGetUserMs");
 
   // Step 3: workspaceMember.findFirst + workspace JOIN (cached, TTL 5min)
@@ -430,6 +448,10 @@ export async function GET(request: NextRequest) {
     imageCount: page.length,
     hasMore,
     queryMode,
+    // Auth PoC: getUser vs getClaims parallel timing
+    authGetUserMs,
+    authGetClaimsMs,
+    authClaimsMatch,
     sharedCacheEnabled: workspaceCacheStats.sharedCacheEnabled,
     cacheInstanceId: workspaceCacheStats.instanceId,
     workspaceCacheSource,
