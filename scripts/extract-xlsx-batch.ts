@@ -197,6 +197,24 @@ for (const plan of plans) {
     plan.recordCount = summary.recordCount;
     successCount++;
     console.log(`\n✅ Done: ${plan.fileName} → ${summary.recordCount} records`);
+
+    // Warn if images were found but no records were normalized — likely a layout mismatch
+    if (summary.recordCount === 0 && summary.mediaFileCount > 0 && summary.anchorCount > 0) {
+      console.error(`\n⚠️  WARNING: recordCount=0 despite images being present.`);
+      console.error(`   mediaFileCount: ${summary.mediaFileCount}`);
+      console.error(`   anchorCount:    ${summary.anchorCount}`);
+      console.error(`   recordCount:    ${summary.recordCount}`);
+      console.error(`\n   Possible causes:`);
+      console.error(`   - Images are not anchored in column A`);
+      console.error(`   - Prompts are not in columns B/C`);
+      console.error(`   - Sheet layout is not supported`);
+      console.error(`\n   Run: npm run inspect:xlsx-layout -- "${plan.xlsxPath}"`);
+      console.error(`   Fix the XLSX layout and re-run with --force\n`);
+      if (stopOnError) {
+        console.error("Stopping due to --stop-on-error.");
+        break;
+      }
+    }
   } catch (err) {
     plan.status = "error";
     plan.errorMessage = err instanceof Error ? err.message : String(err);

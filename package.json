@@ -17,9 +17,12 @@
     "import:xlsx-run": "tsx scripts/import-xlsx-run.ts",
     "import:xlsx-extract": "tsx scripts/import-xlsx-extract.ts",
     "import:xlsx-batch": "tsx scripts/import-xlsx-batch.ts",
+    "import:xlsx-safe": "tsx scripts/import-xlsx-safe.ts",
     "cleanup:import-batch": "tsx scripts/cleanup-import-batch.ts",
     "repair:import-duplicates": "tsx scripts/repair-import-duplicate-errors.ts",
     "audit:storage-assets": "tsx scripts/audit-storage-assets.ts",
+    "inspect:xlsx-layout": "tsx scripts/inspect-xlsx-layout.ts",
+    "inspect:xlsx-duplicates": "tsx scripts/inspect-xlsx-duplicates.ts",
     "prebuild": "prisma generate"
   },
   "dependencies": {

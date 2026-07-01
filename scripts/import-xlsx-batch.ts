@@ -337,7 +337,7 @@ async function main(): Promise<void> {
       // Always query DB — even in dry-run — so we show accurate status
       const existingBatches = await prisma.importBatch.findMany({
         where: { workspaceId: args.workspaceId, fileName: m.meta.xlsxFile },
-        select: { id: true, status: true },
+        select: { id: true, status: true, rowCount: true },
         orderBy: { createdAt: "desc" },
       });
 
@@ -348,6 +348,16 @@ async function main(): Promise<void> {
         if (b.status === "DONE" && args.skipExisting) {
           entryStatus = "WILL_SKIP_DONE";
           existingBatchId = b.id;
+
+          // Warn if an empty DONE batch would suppress a valid re-import
+          if ((b.rowCount ?? 0) === 0 && m.meta.readyCount > 0) {
+            console.warn(`\n⚠️  WARNING: ${m.meta.xlsxFile}`);
+            console.warn(`   Existing DONE batch (${b.id}) has rowCount=0,`);
+            console.warn(`   but current manifest has readyCount=${m.meta.readyCount}.`);
+            console.warn(`   This batch was likely imported from an empty/broken manifest.`);
+            console.warn(`   Use --no-skip-existing to import the corrected manifest.\n`);
+          }
+
           break;
         }
         if (b.status === "PROCESSING") {
