@@ -89,22 +89,80 @@ export async function GET(request: NextRequest) {
     if (!chunk) break;
     cookieChunks.push(chunk);
   }
-  const rawSession = cookieChunks.length > 0
+  const authCookieChunkCount = cookieChunks.length;
+  const authCookieNameFound =
+    authCookieChunkCount > 0 ||
+    request.cookies.get(authCookieName) !== undefined;
+  const rawSession = authCookieChunkCount > 0
     ? cookieChunks.join("")
     : request.cookies.get(authCookieName)?.value ?? null;
+  const authRawSessionLength = rawSession?.length ?? 0;
 
+  // Parse the cookie value to extract access_token.
+  // @supabase/ssr formats: plain JSON, OR "base64-" + base64url(JSON),
+  // OR URL-encoded JSON. Array format: [session, ...] also possible.
+  type ParsedSession = { access_token?: string; currentSession?: { access_token?: string } };
   let accessToken: string | null = null;
+  let authCookieParseMode: "json" | "decoded-json" | "array" | "failed" | "none" = "none";
+
   if (rawSession) {
+    // Attempt 1: plain JSON
     try {
-      const parsed = JSON.parse(rawSession) as { access_token?: string };
-      accessToken = parsed.access_token ?? null;
+      const parsed = JSON.parse(rawSession) as ParsedSession | ParsedSession[];
+      if (Array.isArray(parsed)) {
+        accessToken = parsed[0]?.access_token ?? parsed[0]?.currentSession?.access_token ?? null;
+        authCookieParseMode = "array";
+      } else {
+        accessToken = parsed.access_token ?? parsed.currentSession?.access_token ?? null;
+        authCookieParseMode = "json";
+      }
     } catch {
-      // Malformed cookie — skip cache, fall through to getUser()
+      // Attempt 2: "base64-" prefix (base64url-encoded JSON)
+      const BASE64_PREFIX = "base64-";
+      const valueToTry = rawSession.startsWith(BASE64_PREFIX)
+        ? rawSession.substring(BASE64_PREFIX.length)
+        : null;
+      if (valueToTry) {
+        try {
+          // base64url → Buffer → string → JSON
+          const decoded = Buffer.from(valueToTry, "base64url").toString("utf-8");
+          const parsed = JSON.parse(decoded) as ParsedSession | ParsedSession[];
+          if (Array.isArray(parsed)) {
+            accessToken = parsed[0]?.access_token ?? parsed[0]?.currentSession?.access_token ?? null;
+          } else {
+            accessToken = parsed.access_token ?? parsed.currentSession?.access_token ?? null;
+          }
+          authCookieParseMode = "decoded-json";
+        } catch {
+          authCookieParseMode = "failed";
+        }
+      } else {
+        // Attempt 3: URL-encoded JSON
+        try {
+          const decoded = decodeURIComponent(rawSession);
+          const parsed = JSON.parse(decoded) as ParsedSession | ParsedSession[];
+          if (Array.isArray(parsed)) {
+            accessToken = parsed[0]?.access_token ?? parsed[0]?.currentSession?.access_token ?? null;
+            authCookieParseMode = "array";
+          } else {
+            accessToken = parsed.access_token ?? parsed.currentSession?.access_token ?? null;
+            authCookieParseMode = "decoded-json";
+          }
+        } catch {
+          authCookieParseMode = "failed";
+        }
+      }
     }
   }
 
+  const authTokenAvailable = accessToken !== null;
+  // We only compute SHA-256 inside getAuthUserCache; note availability without hashing here
+  const authTokenHashAvailable = authTokenAvailable;
+
   let userId: string | null = null;
   let authUserCacheSource: AuthUserCacheSource = "miss";
+  let authUserCacheWriteAttempted = false;
+  let authUserCacheWriteOk = false;
 
   if (accessToken) {
     const cached = await getAuthUserCache(accessToken);
@@ -121,7 +179,13 @@ export async function GET(request: NextRequest) {
     userId = user.id;
     authUserCacheSource = "miss";
     if (accessToken) {
-      await setAuthUserCache(accessToken, userId);
+      authUserCacheWriteAttempted = true;
+      try {
+        await setAuthUserCache(accessToken, userId);
+        authUserCacheWriteOk = true;
+      } catch {
+        authUserCacheWriteOk = false;
+      }
     }
   }
 
@@ -485,6 +549,15 @@ export async function GET(request: NextRequest) {
     imageCount: page.length,
     hasMore,
     queryMode,
+    // Auth cookie diagnostics
+    authCookieNameFound,
+    authCookieChunkCount,
+    authRawSessionLength,
+    authTokenAvailable,
+    authTokenHashAvailable,
+    authCookieParseMode,
+    authUserCacheWriteAttempted,
+    authUserCacheWriteOk,
     // Auth user cache (Redis TTL 60s)
     authUserCacheSource,
     authUserCacheHit: authUserCacheSource !== "miss",
