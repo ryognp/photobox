@@ -12,6 +12,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { createPerfLog } from "@/lib/perfLog";
 import { getSignedUrlCacheAsync, setSignedUrlCacheAsync, getSignedUrlCacheStats } from "@/lib/supabase/signedUrlCache";
 import { getWorkspaceCacheStats } from "@/lib/cache/workspaceCache";
+import { getAuthUserCache, setAuthUserCache, type AuthUserCacheSource } from "@/lib/cache/authUserCache";
 
 const BUCKET = "photobox-private";
 const THUMB_EXPIRY = 900; // 15min
@@ -67,31 +68,43 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   perf.mark("authCreateClientMs");
 
-  // Step 2: getUser() vs getClaims() parallel PoC
-  // getUser()   — validates JWT via Supabase Auth API (1 RTT, always authoritative)
-  // getClaims() — local WebCrypto verify if project uses asymmetric keys (RS256);
-  //               falls back to server request if symmetric (HS256) or WebCrypto unavailable.
-  // Run in parallel so total latency = max(getUser, getClaims), not sum.
-  const tUser0   = Date.now();
-  const tClaims0 = Date.now();
-  const [userResult, claimsResult] = await Promise.all([
-    supabase.auth.getUser(),
-    supabase.auth.getClaims(),
-  ]);
-  const authGetUserMs   = Date.now() - tUser0;
-  const authGetClaimsMs = Date.now() - tClaims0;
+  // Step 2: getUser() with Redis short-term auth cache (TTL 60s)
+  // Cache key = SHA-256(access_token) — token itself never stored or logged.
+  // On cache hit: skip getUser() network call (~770ms saved).
+  // On cache miss: call getUser(), cache user.id if valid.
+  // Forced logout takes effect within at most 60s (TTL window).
 
-  const user = userResult.data?.user ?? null;
-  if (!user) return Errors.unauthorized();
+  // Extract access token from session cookie (read-only, no network call).
+  // Used only to derive the cache key — not used for authorization.
+  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = session?.access_token ?? null;
 
-  // authMode: whether getClaims userId matches getUser userId (sanity check)
-  const claimsUserId  = claimsResult.data?.claims?.sub ?? null;
-  const authClaimsMatch = claimsUserId !== null && claimsUserId === user.id;
+  let userId: string | null = null;
+  let authUserCacheSource: AuthUserCacheSource = "miss";
+
+  if (accessToken) {
+    const cached = await getAuthUserCache(accessToken);
+    if (cached.userId) {
+      userId = cached.userId;
+      authUserCacheSource = cached.source;
+    }
+  }
+
+  if (!userId) {
+    // Cache miss — validate JWT via Supabase Auth API (1 RTT)
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return Errors.unauthorized();
+    userId = user.id;
+    authUserCacheSource = "miss";
+    if (accessToken) {
+      await setAuthUserCache(accessToken, userId);
+    }
+  }
 
   perf.mark("authGetUserMs");
 
   // Step 3: workspaceMember.findFirst + workspace JOIN (cached, TTL 5min)
-  const { workspace, cacheSource: workspaceCacheSource } = await getDefaultWorkspaceForUserCached(user.id);
+  const { workspace, cacheSource: workspaceCacheSource } = await getDefaultWorkspaceForUserCached(userId);
   if (!workspace) return Errors.forbidden();
   perf.mark("authWorkspaceMs");
 
@@ -448,10 +461,9 @@ export async function GET(request: NextRequest) {
     imageCount: page.length,
     hasMore,
     queryMode,
-    // Auth PoC: getUser vs getClaims parallel timing
-    authGetUserMs,
-    authGetClaimsMs,
-    authClaimsMatch,
+    // Auth user cache (Redis TTL 60s)
+    authUserCacheSource,
+    authUserCacheHit: authUserCacheSource !== "miss",
     sharedCacheEnabled: workspaceCacheStats.sharedCacheEnabled,
     cacheInstanceId: workspaceCacheStats.instanceId,
     workspaceCacheSource,
