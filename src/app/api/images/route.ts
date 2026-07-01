@@ -117,29 +117,62 @@ export async function GET(request: NextRequest) {
   // relation is expensive. Does NOT affect the normal response path below.
   if (debugDb) {
     const dbgOrderBy: Prisma.ImageOrderByWithRelationInput[] = [{ createdAt: sort }, { id: sort }];
-    const dbgBase = { where, orderBy: dbgOrderBy, take: limit + 1,
+    const dbgBase = {
+      where, orderBy: dbgOrderBy, take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     };
     const baseSelect = {
       id: true, originalName: true, widthPx: true, heightPx: true,
       thumbnailPath: true, previewPath: true, isFavorite: true, rating: true, createdAt: true,
     };
+
+    // ── Phase 1: original staged breakdown ──────────────────────────────────
     const t0 = Date.now();
     await prisma.image.findMany({ ...dbgBase, select: baseSelect });
     const t1 = Date.now();
-    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect, scene: { select: { id: true, name: true } } } });
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect,
+      scene: { select: { id: true, name: true } } } });
     const t2 = Date.now();
-    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect, scene: { select: { id: true, name: true } }, imageTags: { select: { tag: { select: { id: true, name: true } } } } } });
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect,
+      scene: { select: { id: true, name: true } },
+      imageTags: { select: { tag: { select: { id: true, name: true } } } } } });
     const t3 = Date.now();
-    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect, scene: { select: { id: true, name: true } }, imageTags: { select: { tag: { select: { id: true, name: true } } } }, prompt: { select: { currentBody: true, _count: { select: { versions: true } } } } } });
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect,
+      scene: { select: { id: true, name: true } },
+      imageTags: { select: { tag: { select: { id: true, name: true } } } },
+      prompt: { select: { currentBody: true, _count: { select: { versions: true } } } } } });
     const t4 = Date.now();
+
+    // ── Phase 2: prompt internals (body vs count) ───────────────────────────
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect,
+      prompt: { select: { currentBody: true } } } });
+    const t5 = Date.now();
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect,
+      prompt: { select: { _count: { select: { versions: true } } } } } });
+    const t6 = Date.now();
+
+    // ── Phase 3: imageTags internals (junction only vs +tag join) ───────────
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect,
+      imageTags: { select: { imageId: true, tagId: true } } } });
+    const t7 = Date.now();
+    await prisma.image.findMany({ ...dbgBase, select: { ...baseSelect,
+      imageTags: { select: { tag: { select: { id: true, name: true } } } } } });
+    const t8 = Date.now();
+
     console.log(JSON.stringify({
       tag: "gallery.images.debugDb",
-      dbBaseMs: t1 - t0,
-      dbSceneMs: t2 - t1,
-      dbTagsMs: t3 - t2,
+      // Phase 1 — cumulative staged
+      dbBaseMs:   t1 - t0,
+      dbSceneMs:  t2 - t1,
+      dbTagsMs:   t3 - t2,
       dbPromptMs: t4 - t3,
-      dbFullMs: t4 - t0,
+      dbFullMs:   t4 - t0,
+      // Phase 2 — prompt internals
+      dbPromptBodyMs:  t5 - t4,
+      dbPromptCountMs: t6 - t5,
+      // Phase 3 — imageTags internals
+      dbImageTagsOnlyMs: t7 - t6,
+      dbTagsJoinMs:      t8 - t7,
       rowCount: limit,
     }));
   }
