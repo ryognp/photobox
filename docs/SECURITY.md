@@ -111,6 +111,35 @@ grep -r "service_role\|supabaseAdmin" /Volumes/Extreme\ SSD/photobox/app/src \
 
 ---
 
+## Rate Limit（post-auth）
+
+`src/lib/rateLimit.ts` + `src/lib/rateLimitCore.ts` により、heavy endpoint に post-auth の
+user/workspace ベース rate limit を適用している（Upstash Redis sliding window）。
+
+| ルート | プリセット | 制限 |
+|---|---|---|
+| `POST /api/uploads/items` | `uploadItem` | 60/min/user |
+| `POST /api/uploads/commit` | `uploadCommit` | 10/min/user |
+| `POST /api/import/parse` | `importParse` | 10/min/user/workspace |
+| `GET /api/images` | `galleryRead` (300/min) | **現在未適用**（定義のみ） |
+
+運用上の注意:
+
+- この rate limit は **post-auth user/workspace ベースの制限であり、未認証DoS対策ではない**。
+  未認証DoS対策には、将来的に middleware/proxy レイヤーで IP ベース制限を追加する。
+- **Redis 未設定・Redis 障害時は fail-open** する（リクエストは通る）。
+  本番では perf log の `rateLimitEnabled` / `rateLimitSource` で有効性を確認する。
+  本番で Redis 未設定の場合は起動後最初のチェック時に `console.warn` が一度出る。
+- Redis key は userId/workspaceId の SHA-256 ハッシュ（生値は Redis に出さない）。
+- 429 レスポンスには `Retry-After` / `X-RateLimit-*`（Reset は epoch 秒）/ `Cache-Control: no-store` が付く。
+- rate limit helper は Node.js runtime API route 用。Edge runtime で使う場合は
+  hash 実装を WebCrypto に置き換える必要がある。
+
+Known issue: rate limit は回数制限であり、単発の巨大ファイル投入は防げない。
+`/api/import/parse` は 4MB 上限があるが、他ルートのボディサイズ上限は別タスクで確認する。
+
+---
+
 ## 関連ドキュメント
 
 | ファイル | 内容 |

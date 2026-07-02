@@ -11,6 +11,7 @@ import { buildImageSearchText } from "@/lib/commit/searchText";
 import { copyStorageFile } from "@/lib/commit/storageCopy";
 import type { CommitItemResult, CommitResponse } from "@/lib/commit/commitTypes";
 import { createPerfLog } from "@/lib/perfLog";
+import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 
 const COMMIT_CONCURRENCY = 2;
 
@@ -161,6 +162,13 @@ export async function POST(req: NextRequest) {
 
   const user = await getCurrentUser();
   if (!user) return Errors.unauthorized();
+
+  // rate limit — body parse / storage copy / DB transaction より前に判定する
+  const rl = await checkUserRateLimit({ preset: "uploadCommit", userId: user.id });
+  perf.mark("rateLimitMs");
+  if (!rl.allowed) {
+    return Errors.rateLimited(rateLimitHeaders(rl));
+  }
 
   let body: unknown;
   try {
@@ -348,6 +356,8 @@ export async function POST(req: NextRequest) {
     failed: failed.length,
     invalid: invalid.length,
     finalSessionCommitted: finalSessionStatus === "COMMITTED",
+    rateLimitEnabled: rl.enabled,
+    rateLimitSource: rl.source,
   });
 
   return ok(response);

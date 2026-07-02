@@ -11,6 +11,7 @@ import { sha256Hex } from "@/lib/upload/hashServer";
 import { tempOriginalPath, tempThumbnailPath, tempPreviewPath } from "@/lib/upload/storagePaths";
 import { resolveSignedUrl } from "@/lib/signedUrl";
 import { createPerfLog } from "@/lib/perfLog";
+import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 
 const BUCKET = "photobox-private";
 const MAX_ORIGINAL_BYTES = 3 * 1024 * 1024; // 3MB
@@ -53,6 +54,14 @@ export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return Errors.unauthorized();
   perf.mark("authMs");
+
+  // 1.5. rate limit — multipart parse より前に判定する
+  // (workspaceId は formData 内の sessionId 経由でしか特定できないため userId のみで制限)
+  const rl = await checkUserRateLimit({ preset: "uploadItem", userId: user.id });
+  perf.mark("rateLimitMs");
+  if (!rl.allowed) {
+    return Errors.rateLimited(rateLimitHeaders(rl));
+  }
 
   // 2. multipart parse
   let formData: FormData;
@@ -286,6 +295,8 @@ export async function POST(request: NextRequest) {
     hasThumbnail: preparedThumbnail !== null,
     hasPreview: preparedPreview !== null,
     duplicateStatus,
+    rateLimitEnabled: rl.enabled,
+    rateLimitSource: rl.source,
   });
 
   return ok(

@@ -12,7 +12,8 @@ export type ErrorCode =
   | "NO_PATH"
   | "FILE_HASH_MISMATCH"
   | "UNSUPPORTED_MEDIA_TYPE"
-  | "PAYLOAD_TOO_LARGE";
+  | "PAYLOAD_TOO_LARGE"
+  | "RATE_LIMITED";
 
 export function ok<T>(data: T, status = 200) {
   return NextResponse.json({ data }, { status });
@@ -29,4 +30,12 @@ export const Errors = {
   conflict: (message: string) => err("CONFLICT", message, 409),
   notFound: (message: string) => err("NOT_FOUND", message, 404),
   internal: () => err("INTERNAL_ERROR", "Internal server error", 500),
+  rateLimited: (headers?: HeadersInit) => {
+    const h = new Headers(headers);
+    h.set("Cache-Control", "no-store");
+    return NextResponse.json(
+      { error: { code: "RATE_LIMITED", message: "Too many requests. Please try again later." } },
+      { status: 429, headers: h },
+    );
+  },
 };

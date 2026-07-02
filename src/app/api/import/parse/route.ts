@@ -7,6 +7,7 @@ import { NextRequest } from "next/server";
 import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
 import { ok, Errors } from "@/lib/apiResponse";
 import { parseImportFile } from "@/lib/import/parseFile";
+import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 
 const FILE_SIZE_LIMIT = 4 * 1024 * 1024; // 4 MB
 
@@ -23,6 +24,16 @@ export async function POST(request: NextRequest) {
 
   const workspace = await getDefaultWorkspaceForUser(user.id);
   if (!workspace) return Errors.forbidden();
+
+  // rate limit — multipart parse / arrayBuffer / XLSX parse より前に判定する
+  const rl = await checkUserRateLimit({
+    preset: "importParse",
+    userId: user.id,
+    workspaceId: workspace.id,
+  });
+  if (!rl.allowed) {
+    return Errors.rateLimited(rateLimitHeaders(rl));
+  }
 
   let formData: FormData;
   try {
