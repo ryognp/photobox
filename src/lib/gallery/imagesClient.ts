@@ -102,3 +102,19 @@ export async function fetchImageDetail(id: string): Promise<ImageDetail> {
   const json = (await res.json()) as { data: ImageDetail };
   return json.data;
 }
+
+export type DeleteImageResult = {
+  deleted: true;
+  alreadyDeleted: boolean;
+  imageId: string;
+};
+
+export async function deleteImage(id: string): Promise<DeleteImageResult> {
+  const res = await fetch(`/api/images/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to delete image (${res.status})`);
+  }
+  const json = (await res.json()) as { data: DeleteImageResult };
+  return json.data;
+}

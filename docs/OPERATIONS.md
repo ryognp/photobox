@@ -160,6 +160,24 @@ npm run audit:storage-assets -- --workspace-id <id> --cleanup-orphans
 
 ---
 
+## 画像削除（Image delete Phase 1）
+
+- `DELETE /api/images/[id]` は **soft delete のみ**行う。
+- `images.status = DELETED`, `images.deletedAt = now` に更新する。
+- **Storage object は Phase 1 では削除しない**（後続の cleanup/audit 系タスクで扱う）。
+- 発行済み signed URL は TTL（最大 ~15分）まで有効な場合がある。
+- prompt / promptVersions / imageTags / imagePersons は soft delete のため温存される（物理 delete しない）。
+- 既に削除済みの画像に対する DELETE は idempotent に 200 を返す（`alreadyDeleted: true`）。
+- UI: Gallery 詳細パネル（desktop/mobile）に削除ボタン。削除後は一覧から即除去しパネルを閉じる。
+
+### Known issue（別タスクで対応）
+
+soft delete 後、同じ画像を再アップロードすると `workspaceId + fileHash` の unique 制約により
+再登録できない可能性がある。この挙動は別タスクで、restore・partial unique index・
+deleted fileHash 退避のいずれかを検討する。
+
+---
+
 ## cleanup API の使い方
 
 古い未コミット Upload Session を削除する。

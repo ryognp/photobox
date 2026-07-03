@@ -7,6 +7,7 @@ import DetailPanel from "./DetailPanel"
 interface MobileDetailDrawerProps {
   imageId: string | null
   onClose: () => void
+  onDeleted?: (imageId: string) => void
   prefetchedDetail?: ImageDetail | null
   prefetchedLoading?: boolean
   prefetchedError?: string | null
@@ -15,6 +16,7 @@ interface MobileDetailDrawerProps {
 export default function MobileDetailDrawer({
   imageId,
   onClose,
+  onDeleted,
   prefetchedDetail,
   prefetchedLoading,
   prefetchedError,
@@ -58,6 +60,7 @@ export default function MobileDetailDrawer({
           <DetailPanel
             imageId={imageId}
             onClose={onClose}
+            onDeleted={onDeleted}
             prefetchedDetail={prefetchedDetail}
             prefetchedLoading={prefetchedLoading}
             prefetchedError={prefetchedError}

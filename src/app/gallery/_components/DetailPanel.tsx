@@ -1,17 +1,20 @@
 "use client"
 
 import { useEffect, useReducer, useState } from "react"
-import { fetchImageDetail, type ImageDetail, type PromptVersionSummary } from "@/lib/gallery/imagesClient"
+import { deleteImage, fetchImageDetail, type ImageDetail, type PromptVersionSummary } from "@/lib/gallery/imagesClient"
 
 interface DetailPanelProps {
   imageId: string | null
   onClose: () => void
+  onDeleted?: (imageId: string) => void
   hideHeader?: boolean
   /** 外部からfetch済みdetailを渡す場合（二重fetch防止） */
   prefetchedDetail?: ImageDetail | null
   prefetchedLoading?: boolean
   prefetchedError?: string | null
 }
+
+type DeletePhase = "view" | "confirm" | "deleting" | "error"
 
 type State =
   | { phase: "idle" }
@@ -313,6 +316,7 @@ function PromptVersionsSection({ versions }: { versions: PromptVersionSummary[] 
 export default function DetailPanel({
   imageId,
   onClose,
+  onDeleted,
   hideHeader = false,
   prefetchedDetail,
   prefetchedLoading,
@@ -320,6 +324,15 @@ export default function DetailPanel({
 }: DetailPanelProps) {
   const usePrefetch = prefetchedDetail !== undefined || prefetchedLoading !== undefined || prefetchedError !== undefined
   const [state, dispatch] = useReducer(reducer, { phase: "idle" })
+  const [deletePhase, setDeletePhase] = useState<DeletePhase>("view")
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  // 画像切り替え時に削除UIをリセット（render中に前回値と比較する React 推奨パターン）
+  const [prevImageId, setPrevImageId] = useState(imageId)
+  if (imageId !== prevImageId) {
+    setPrevImageId(imageId)
+    setDeletePhase("view")
+    setDeleteError(null)
+  }
 
   // 外部からdetailが渡された場合はstateに同期する（内部fetchは不要）
   useEffect(() => {
@@ -361,6 +374,19 @@ export default function DetailPanel({
     } catch {
       dispatch({ type: "copy_msg", msg: "コピーに失敗しました" })
       setTimeout(() => dispatch({ type: "copy_msg", msg: null }), 2000)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    setDeletePhase("deleting")
+    setDeleteError(null)
+    try {
+      await deleteImage(id)
+      // 成功: 親に通知（一覧から除去 + パネルclose は delete_ok reducer が担当）
+      onDeleted?.(id)
+    } catch (e: unknown) {
+      setDeleteError((e as Error).message ?? "削除に失敗しました")
+      setDeletePhase("error")
     }
   }
 
@@ -503,6 +529,67 @@ export default function DetailPanel({
               オリジナルを開く ↗
             </a>
           )}
+
+          {/* 削除 (soft delete) */}
+          <div className="mt-2 border-t border-zinc-100 pt-3">
+            {deletePhase === "view" && (
+              <button
+                onClick={() => setDeletePhase("confirm")}
+                className="w-full rounded-md border border-red-200 px-3 py-2 text-center text-xs text-red-600 hover:bg-red-50"
+              >
+                画像を削除
+              </button>
+            )}
+
+            {deletePhase === "confirm" && (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-red-600">この画像を削除しますか？</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleDelete(state.detail.id)}
+                    className="flex-1 rounded-md bg-red-600 px-3 py-2 text-center text-xs font-medium text-white hover:bg-red-700"
+                  >
+                    削除する
+                  </button>
+                  <button
+                    onClick={() => setDeletePhase("view")}
+                    className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {deletePhase === "deleting" && (
+              <button
+                disabled
+                className="w-full cursor-not-allowed rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-400"
+              >
+                削除中...
+              </button>
+            )}
+
+            {deletePhase === "error" && (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-red-600">{deleteError ?? "削除に失敗しました"}</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleDelete(state.detail.id)}
+                    className="flex-1 rounded-md bg-red-600 px-3 py-2 text-center text-xs font-medium text-white hover:bg-red-700"
+                  >
+                    再試行
+                  </button>
+                  <button
+                    onClick={() => setDeletePhase("view")}
+                    className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </aside>

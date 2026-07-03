@@ -47,6 +47,7 @@ export async function GET(
       isFavorite: true,
       rating: true,
       notes: true,
+      status: true,
       storagePath: true,
       thumbnailPath: true,
       previewPath: true,
@@ -83,7 +84,9 @@ export async function GET(
     },
   });
 
-  if (!image || image.deletedAt !== null) return Errors.notFound("Image not found");
+  if (!image || image.deletedAt !== null || image.status !== "ACTIVE") {
+    return Errors.notFound("Image not found");
+  }
 
   // workspace membership check
   const member = await prisma.workspaceMember.findUnique({
@@ -124,4 +127,52 @@ export async function GET(
     prompt: image.prompt,
     signedUrls: { thumbnailUrl, previewUrl, originalUrl },
   });
+}
+
+/**
+ * Soft delete (Phase 1): sets status=DELETED + deletedAt=now.
+ * Storage objects are NOT removed here — that is handled by a later
+ * cleanup/audit task. prompt / versions / tags / persons are preserved.
+ * Idempotent: deleting an already-deleted image returns 200.
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const user = await getCurrentUser();
+  if (!user) return Errors.unauthorized();
+
+  const { id } = await params;
+
+  const image = await prisma.image.findUnique({
+    where: { id },
+    select: { id: true, workspaceId: true, status: true, deletedAt: true },
+  });
+
+  if (!image) return Errors.notFound("Image not found");
+
+  const member = await prisma.workspaceMember.findUnique({
+    where: {
+      workspaceId_userId: { workspaceId: image.workspaceId, userId: user.id },
+    },
+    select: { workspaceId: true },
+  });
+  if (!member) return Errors.forbidden();
+
+  if (image.deletedAt !== null || image.status === "DELETED") {
+    return ok({ deleted: true, alreadyDeleted: true, imageId: image.id });
+  }
+
+  // updateMany with status/deletedAt guards → safe under concurrent deletes.
+  await prisma.image.updateMany({
+    where: {
+      id: image.id,
+      workspaceId: image.workspaceId,
+      deletedAt: null,
+      status: { not: "DELETED" },
+    },
+    data: { status: "DELETED", deletedAt: new Date() },
+  });
+
+  return ok({ deleted: true, alreadyDeleted: false, imageId: image.id });
 }

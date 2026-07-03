@@ -44,6 +44,7 @@ type GalleryAction =
   | { type: "detail_start" }
   | { type: "detail_ok"; detail: ImageDetail }
   | { type: "detail_error"; message: string }
+  | { type: "delete_ok"; id: string }
 
 function reducer(s: GalleryState, a: GalleryAction): GalleryState {
   switch (a.type) {
@@ -69,6 +70,15 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
       return { ...s, detailLoading: false, detail: a.detail }
     case "detail_error":
       return { ...s, detailLoading: false, detailError: a.message }
+    case "delete_ok":
+      return {
+        ...s,
+        images: s.images.filter((img) => img.id !== a.id),
+        selectedId: s.selectedId === a.id ? null : s.selectedId,
+        detail: s.detail?.id === a.id ? null : s.detail,
+        detailLoading: false,
+        detailError: null,
+      }
   }
 }
 
@@ -254,6 +264,7 @@ function GalleryInner() {
           <DetailPanel
             imageId={state.selectedId}
             onClose={() => dispatch({ type: "select", id: null })}
+            onDeleted={(id) => dispatch({ type: "delete_ok", id })}
             prefetchedDetail={state.detail}
             prefetchedLoading={state.detailLoading}
             prefetchedError={state.detailError}
@@ -265,6 +276,7 @@ function GalleryInner() {
       <MobileDetailDrawer
         imageId={state.selectedId}
         onClose={() => dispatch({ type: "select", id: null })}
+        onDeleted={(id) => dispatch({ type: "delete_ok", id })}
         prefetchedDetail={state.detail}
         prefetchedLoading={state.detailLoading}
         prefetchedError={state.detailError}
