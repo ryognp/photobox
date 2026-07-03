@@ -385,6 +385,14 @@ async function processRecord(
         where: { workspaceId, fileHash },
         select: { id: true, status: true },
       });
+      // The original/thumbnail/preview were uploaded before the DB transaction.
+      // Since we're skipping this row, remove those now-orphaned storage objects
+      // (best-effort; failure is a warning, never fatal).
+      const cleanupPaths = [originalPath, thumbnailPath, previewPath].filter(Boolean) as string[];
+      if (cleanupPaths.length > 0) {
+        const { error: cleanupError } = await supabase.storage.from(BUCKET).remove(cleanupPaths);
+        if (cleanupError) warnings.push(`P2002 storage cleanup failed: ${cleanupError.message}`);
+      }
       warnings.push(
         `P2002 on (workspaceId, fileHash); likely conflicts with a soft-deleted image (existingId=${conflicting?.id ?? "?"}, status=${conflicting?.status ?? "?"}). Skipped. Full re-import support is pending (Phase 6C).`,
       );
