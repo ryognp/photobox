@@ -93,6 +93,36 @@ workspace_id は Supabase Studio の `workspaces` テーブル、または `/dev
 
 ---
 
+## 画像処理と対応フォーマット
+
+### 対応フォーマット
+
+- アップロード可能なのは **JPEG / PNG / WebP のみ**（`src/lib/upload/validateImage.ts`：
+  content-type + magic bytes の両方で検証。dropzone も同3種のみ受理）。
+- **HEIC / HEIF は現状非対応**。iPhone 等の HEIC 画像は **JPEG/PNG/WebP に変換してから**
+  アップロードする（ユーザー向け案内は [USER_MANUAL.md](USER_MANUAL.md) にも記載）。
+- 将来 HEIC 対応する場合の候補はクライアント変換（例: `heic2any`）。品質・EXIF・
+  ファイルサイズ・ブラウザ互換性を検証してから導入する。ブラウザ標準 decode や
+  サーバー変換（libheif）は重いため現時点では見送り。
+
+### sharp 依存（削除不可）
+
+- `sharp` は**本番 API では未使用**だが、**XLSX / import 系スクリプトで現役使用中**のため
+  **削除してはいけない**：
+  - `scripts/_lib/imgVariants.ts`（metadata 取得・resize・WebP 生成）
+  - `scripts/import-xlsx-run.ts`（`sharp(buf).resize(...).webp(...).toBuffer()` で variant 生成）
+- 依存整理（例: `@types/sharp` の重複）を行う場合は別タスクとし、`npm run build` と
+  import スクリプトの dry-run まで確認してから行うこと。
+
+### 派生画像の生成場所
+
+- Quick Add（Web アップロード）: thumbnail/preview はすべて**クライアント Canvas**で生成。
+  original はサーバーで raw bytes のまま保存（再エンコードなし）。
+- XLSX バッチ取込: thumbnail/preview は**サーバー側 sharp**で生成。original は保存のみ。
+- EXIF/GPS の扱いは [SECURITY.md](SECURITY.md) の「画像プライバシー」節を参照。
+
+---
+
 ## service_role key の扱い
 
 - Supabase Dashboard → **Settings → API → service_role** からのみ取得
