@@ -12,8 +12,10 @@ import { copyStorageFile } from "@/lib/commit/storageCopy";
 import type { CommitItemResult, CommitResponse } from "@/lib/commit/commitTypes";
 import { createPerfLog } from "@/lib/perfLog";
 import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
+import { classifyCommitItem, isCommitTimedOut, buildAssetPaths } from "@/lib/commit/commitDecision";
 
 const COMMIT_CONCURRENCY = 2;
+const COMMIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
 
 function generateId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 25);
@@ -259,14 +261,9 @@ export async function POST(req: NextRequest) {
   perf.mark("fetchItemsMs");
 
   // Reset IN_PROGRESS items that timed out (> 5 min)
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  const now = new Date();
   const timedOutIds = items
-    .filter(
-      (i) =>
-        i.commitStatus === "IN_PROGRESS" &&
-        i.commitStartedAt !== null &&
-        i.commitStartedAt < fiveMinutesAgo
-    )
+    .filter((i) => isCommitTimedOut(i, now, COMMIT_TIMEOUT_MS))
     .map((i) => i.id);
 
   if (timedOutIds.length > 0) {
@@ -369,103 +366,42 @@ async function processItem(
 ): Promise<CommitItemResult> {
   const uploadItemId = item.id;
 
-  // Already committed — idempotent
-  if (item.commitStatus === "COMMITTED" || item.committedImageId) {
-    return {
-      kind: "already_committed",
-      uploadItemId,
-      imageId: item.committedImageId ?? "",
-    };
-  }
+  // --- Pre-commit classification (branches 1–9, pure) ---
+  const decision = classifyCommitItem(item);
+  switch (decision.action) {
+    case "already_committed":
+      return { kind: "already_committed", uploadItemId, imageId: decision.imageId };
 
-  // Still in-progress (not timed out — those were reset before this loop)
-  if (item.commitStatus === "IN_PROGRESS") {
-    return {
-      kind: "failed",
-      uploadItemId,
-      reason: "COMMIT_IN_PROGRESS",
-      message: "Commit already in progress for this item",
-    };
-  }
-
-  // --- SKIPPED duplicate handling ---
-  if (item.duplicateStatus === "SKIPPED") {
-    if (!item.duplicateImageId) {
+    case "in_progress":
       return {
-        kind: "invalid",
+        kind: "failed",
         uploadItemId,
-        reason: "SKIPPED_WITHOUT_DUPLICATE_IMAGE_ID",
-        message: "Item is SKIPPED but has no duplicateImageId",
+        reason: "COMMIT_IN_PROGRESS",
+        message: "Commit already in progress for this item",
       };
-    }
-    await prisma.uploadItem.update({
-      where: { id: uploadItemId },
-      data: {
-        commitStatus: "COMMITTED",
-        committedImageId: item.duplicateImageId,
-        committedAt: new Date(),
-        commitError: null,
-      },
-    });
-    await cleanupTempFiles(item);
-    return { kind: "skipped", uploadItemId, imageId: item.duplicateImageId };
+
+    case "invalid":
+      return { kind: "invalid", uploadItemId, reason: decision.reason, message: decision.message };
+
+    case "skip_duplicate":
+      await prisma.uploadItem.update({
+        where: { id: uploadItemId },
+        data: {
+          commitStatus: "COMMITTED",
+          committedImageId: decision.imageId,
+          committedAt: new Date(),
+          commitError: null,
+        },
+      });
+      await cleanupTempFiles(item);
+      return { kind: "skipped", uploadItemId, imageId: decision.imageId };
+
+    case "proceed":
+      break;
   }
 
-  // --- Validation ---
-  if (item.uploadStatus !== "READY") {
-    return {
-      kind: "invalid",
-      uploadItemId,
-      reason: "UPLOAD_NOT_READY",
-      message: `uploadStatus is ${item.uploadStatus}, expected READY`,
-    };
-  }
-
-  if (item.duplicateStatus === "DUPLICATE") {
-    return {
-      kind: "invalid",
-      uploadItemId,
-      reason: "DUPLICATE_UNRESOLVED",
-      message: "Item is marked as DUPLICATE. Skip it or resolve before committing.",
-    };
-  }
-
-  if (item.duplicateStatus === "UNCHECKED") {
-    return {
-      kind: "invalid",
-      uploadItemId,
-      reason: "DUPLICATE_UNCHECKED",
-      message: "Run check-duplicates before committing",
-    };
-  }
-
-  if (item.promptStatus !== "FILLED") {
-    return {
-      kind: "invalid",
-      uploadItemId,
-      reason: "PROMPT_NOT_FILLED",
-      message: `promptStatus is ${item.promptStatus}, expected FILLED`,
-    };
-  }
-
+  // promptDraft is re-derived here (kept in the route; not part of the decision)
   const promptDraft = (item.promptDraft ?? "").trim();
-  if (!promptDraft) {
-    return {
-      kind: "invalid",
-      uploadItemId,
-      reason: "PROMPT_EMPTY",
-      message: "promptDraft is empty",
-    };
-  }
-
-  if (item.commitStatus !== "PENDING" && item.commitStatus !== "FAILED") {
-    return {
-      kind: "invalid",
-      uploadItemId,
-      reason: "INVALID_COMMIT_STATUS",
-      message: `commitStatus is ${item.commitStatus}, expected PENDING or FAILED`,
-    };
-  }
 
   // --- Pre-commit duplicate re-check ---
   const existingImage = await prisma.image.findFirst({
@@ -504,13 +440,16 @@ async function processItem(
 
   if (!reservedImageId) {
     reservedImageId = generateId();
-    assetStoragePath = `${workspaceId}/assets/${reservedImageId}/original.${item.originalExt}`;
-    assetThumbnailPath = item.tempThumbnailPath
-      ? `${workspaceId}/assets/${reservedImageId}/thumbnail.webp`
-      : null;
-    assetPreviewPath = item.tempPreviewPath
-      ? `${workspaceId}/assets/${reservedImageId}/preview.webp`
-      : null;
+    const paths = buildAssetPaths({
+      workspaceId,
+      reservedImageId,
+      originalExt: item.originalExt,
+      tempThumbnailPath: item.tempThumbnailPath,
+      tempPreviewPath: item.tempPreviewPath,
+    });
+    assetStoragePath = paths.assetStoragePath;
+    assetThumbnailPath = paths.assetThumbnailPath;
+    assetPreviewPath = paths.assetPreviewPath;
   }
 
   // Mark as IN_PROGRESS and persist paths
