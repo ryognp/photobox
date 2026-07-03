@@ -10,6 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
+      // Stub `server-only` so server modules import cleanly under node env.
+      "server-only": path.resolve(__dirname, "src/test/stubs/server-only.ts"),
     },
   },
 });
