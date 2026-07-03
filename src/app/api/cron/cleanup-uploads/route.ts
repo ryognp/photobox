@@ -81,11 +81,18 @@ export async function GET(request: NextRequest) {
   });
   perf.mark("queryMs");
 
-  // Build cleanup input: collect temp paths of non-committed items only.
-  const cleanupSessions: CleanupSession[] = sessions.map((s) => {
+  // Safety: exclude any session that contains even one COMMITTED item.
+  // Such a session is an abnormal/intermediate state — deleting it could
+  // cascade-delete the COMMITTED item's DB record. Retain for manual audit.
+  const eligibleSessions = sessions.filter(
+    (s) => !s.items.some((item) => item.commitStatus === "COMMITTED"),
+  );
+  const skippedCommittedMixedSessions = sessions.length - eligibleSessions.length;
+
+  // Build cleanup input: collect temp paths of non-committed items.
+  const cleanupSessions: CleanupSession[] = eligibleSessions.map((s) => {
     const tempPaths: string[] = [];
     for (const item of s.items) {
-      if (item.commitStatus === "COMMITTED") continue;
       if (item.tempStoragePath) tempPaths.push(item.tempStoragePath);
       if (item.tempThumbnailPath) tempPaths.push(item.tempThumbnailPath);
       if (item.tempPreviewPath) tempPaths.push(item.tempPreviewPath);
@@ -96,11 +103,18 @@ export async function GET(request: NextRequest) {
   const totalStoragePaths = cleanupSessions.reduce((n, s) => n + s.tempPaths.length, 0);
 
   if (dryRun) {
-    perf.end({ dryRun: true, olderThanHours, scannedSessions: cleanupSessions.length, totalStoragePaths });
+    perf.end({
+      dryRun: true,
+      olderThanHours,
+      scannedSessions: cleanupSessions.length,
+      skippedCommittedMixedSessions,
+      totalStoragePaths,
+    });
     return ok({
       dryRun: true,
       olderThanHours,
       scannedSessions: cleanupSessions.length,
+      skippedCommittedMixedSessions,
       plannedStoragePaths: totalStoragePaths,
     });
   }
@@ -127,6 +141,7 @@ export async function GET(request: NextRequest) {
     dryRun: false,
     olderThanHours,
     scannedSessions: result.scannedSessions,
+    skippedCommittedMixedSessions,
     deletedSessions: result.deletedSessions,
     retainedSessions: result.retainedSessions,
     deletedStoragePaths: result.deletedStoragePaths,
@@ -141,6 +156,7 @@ export async function GET(request: NextRequest) {
     dryRun: false,
     olderThanHours,
     scannedSessions: result.scannedSessions,
+    skippedCommittedMixedSessions,
     deletedSessions: result.deletedSessions,
     retainedSessions: result.retainedSessions,
     deletedStoragePaths: result.deletedStoragePaths,
