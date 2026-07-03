@@ -200,24 +200,63 @@ npm run audit:storage-assets -- --workspace-id <id> --cleanup-orphans
 - 既に削除済みの画像に対する DELETE は idempotent に 200 を返す（`alreadyDeleted: true`）。
 - UI: Gallery 詳細パネル（desktop/mobile）に削除ボタン。削除後は一覧から即除去しパネルを閉じる。
 
-### Known issue: soft delete 後の同一 fileHash 再アップロード
+### soft delete 後の同一 fileHash 再アップロード（Phase 6C で解決済み）
 
-`workspaceId + fileHash` は plain unique 制約（削除済み行も含めて一意）のため、
-soft delete 後に同じ画像を再アップロードすると衝突し得る。**根本解決は Phase 6C の
-partial unique index（`WHERE deleted_at IS NULL AND status <> 'DELETED'`）で行う。**
+**解決済み。** `(workspace_id, file_hash)` の一意性は **partial unique index** で
+「生存画像のみ」に限定される（migration `*_partial_unique_filehash`）:
 
-Phase 6A（現状）で入れた整合・緩和:
-- **重複判定の統一**: 対話フロー（`uploads/items` / `check-duplicates` / `commit` pre-check）は
-  すべて「非削除画像のみを重複扱い」（`deletedAt:null, status≠DELETED`）に統一。削除済み画像が
-  「重複」として表示される混乱を解消。
-- **明示エラー化**: commit の transaction で unique 衝突（P2002）が起きた場合、raw エラーではなく
-  `FILE_HASH_CONFLICT_WITH_DELETED_IMAGE` として failed 結果に分かりやすい reason/message を返す。
-- **import の hard fail 防止**: `scripts/import-xlsx-run.ts` に P2002 recovery を追加（skip 扱い）。
-  `scripts/_lib/importManifest.ts` は元々 P2002 recovery あり。なお batch importer は
-  **意図的に**削除済みも重複として skip する（storage 二重アップロード回避のため。上記コメント参照）。
+```sql
+DROP INDEX IF EXISTS "images_workspace_id_file_hash_key";
+CREATE UNIQUE INDEX "idx_images_workspace_file_hash_not_deleted_unique"
+ON "images" ("workspace_id", "file_hash")
+WHERE "deleted_at" IS NULL AND "status" <> 'DELETED';
+```
 
-Phase 6A は混乱軽減・明示エラー化であり、**再アップロードを完全成功させる根本解決ではない**。
-完全対応は Phase 6C（partial unique index、drift PoC = Phase 6B を経て実施）。
+これにより、soft delete 済み画像は一意空間を占有せず、**同じ画像を削除後に再アップロード可能**。
+生存画像同士の重複アップロードは引き続き拒否される。Prisma schema では partial index を
+表現できないため、`@@unique([workspaceId, fileHash])` は schema から外し、この index は
+migration で管理する（`@@index([fileHash])` は検索用に保持）。
+
+Phase 6A で入れた整合・緩和（統一された重複判定、commit の P2002 明示化、import の
+P2002 recovery）はそのまま有効。partial index 導入後は、生存画像に重複が無い限り
+commit/import で P2002 自体が発生しなくなる。
+
+#### 本番適用前チェック（必須）
+
+partial unique index の作成は、**既に生存画像同士で同一 `(workspace_id, file_hash)` の
+重複が存在すると失敗する**。適用前に本番 DB で以下を実行し、**0 rows** を確認すること:
+
+```sql
+SELECT workspace_id, file_hash, COUNT(*) AS cnt
+FROM images
+WHERE deleted_at IS NULL AND status <> 'DELETED'
+GROUP BY workspace_id, file_hash
+HAVING COUNT(*) > 1;
+```
+
+0 rows なら `npm run db:migrate:prod` 実行可。1行でも出たら先に重複解消が必要。
+
+#### rollback
+
+```sql
+DROP INDEX IF EXISTS "idx_images_workspace_file_hash_not_deleted_unique";
+CREATE UNIQUE INDEX "images_workspace_id_file_hash_key"
+ON "images" ("workspace_id", "file_hash");
+```
+
+※ plain unique へ戻す際、**生存でない重複（削除済み含む全行）で衝突があると再作成に失敗**する。
+必要なら先に重複解消する。schema 側も `@@unique([workspaceId, fileHash])` を戻すこと。
+
+#### Prisma 7.8 での drift 確認コマンド
+
+`migrate diff` は Prisma 7.8 で `--from-url` が廃止。DB 実体 vs schema の drift 確認は:
+
+```bash
+# DB(datasource) を基準に schema への差分を見る（空 = drift なし）
+dotenv -e <env> -- npx prisma migrate diff \
+  --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+# exit code: 0=空(drift なし) / 2=差分あり / 1=エラー
+```
 
 ---
 
