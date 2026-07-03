@@ -106,6 +106,7 @@ grep -r "service_role\|supabaseAdmin" /Volumes/Extreme\ SSD/photobox/app/src \
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 公開可 | anon/public key |
 | `NEXT_PUBLIC_SITE_URL` | 公開可 | サイト URL |
 | `ENABLE_DEV_API_CHECK` | 非機密 | Production は `false` |
+| `CRON_SECRET` | サーバー専用 | cleanup cron の Bearer 認証。未設定だと cron は 401（fail-closed） |
 
 `DATABASE_URL` と `DIRECT_URL` には DB password が含まれるため、`SUPABASE_SERVICE_ROLE_KEY` と同様に扱う。
 

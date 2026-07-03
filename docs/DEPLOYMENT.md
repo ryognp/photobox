@@ -62,6 +62,9 @@ Vercel Dashboard → **Project Settings → Environment Variables** に以下を
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → **anon public** | |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → **service_role** | ⚠️ 下記参照 |
 | `NEXT_PUBLIC_SITE_URL` | `https://<your-vercel-domain>.vercel.app` | auth callback 用 |
+| `UPSTASH_REDIS_REST_URL` | Upstash Console → Redis → REST | 任意（キャッシュ / rate limit。未設定でも fail-open で動作） |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Console → Redis → REST | 任意（同上） |
+| `CRON_SECRET` | 十分に長いランダム値を生成（例: `openssl rand -hex 32`） | cleanup cron の Bearer 認証。未設定だと cron は 401 |
 
 ### ⚠️ SUPABASE_SERVICE_ROLE_KEY は必須
 
@@ -78,6 +81,13 @@ Vercel Dashboard → **Project Settings → Environment Variables** に以下を
 |---|---|
 | Production | `false` または未設定 |
 | Preview / Development | `true`（任意） |
+
+### CRON_SECRET と cleanup cron
+
+`vercel.json` の `crons` で `/api/cron/cleanup-uploads` を6時間ごとに実行する。
+Production で `CRON_SECRET` を設定すると、Vercel Cron が自動で
+`Authorization: Bearer ${CRON_SECRET}` を付与して呼ぶ。未設定の場合 cron は 401 で
+何もしない（fail-closed）ため、必ず設定すること。運用詳細は [OPERATIONS.md](OPERATIONS.md)。
 
 ---
 

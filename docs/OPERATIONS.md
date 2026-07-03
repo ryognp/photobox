@@ -184,6 +184,55 @@ curl -X POST http://localhost:3007/api/uploads/cleanup \
 
 または `/dev/api-check` → AX テスト。
 
+上記のユーザー向け `/api/uploads/cleanup` は「自分の workspace の自分のセッション」のみ対象。
+全 workspace を横断する自動清掃は下記の cron が担当する。
+
+---
+
+## cleanup cron（自動清掃）
+
+`GET /api/cron/cleanup-uploads` — 全 workspace の古い未コミット Upload Session を清掃する。
+Vercel Cron が **6時間ごと**（`0 */6 * * *`, `vercel.json` の `crons`）に自動実行する。
+
+### 認証
+
+- `CRON_SECRET` 環境変数（サーバー専用）で保護。fail-CLOSED（未設定 or 不一致は 401）。
+- Vercel Cron は `CRON_SECRET` が設定されていれば自動で
+  `Authorization: Bearer ${CRON_SECRET}` を付けて呼ぶ。
+- Vercel ダッシュボード（Settings → Environment Variables）で `CRON_SECRET` に
+  十分に長いランダム値を設定すること。未設定だと cron は 401 で何もしない。
+
+### 動作の安全性
+
+- COMMITTED session / COMMITTED item は絶対に削除しない。
+- **temp storage の削除が成功したセッションだけ** DB レコードを物理削除する。
+  storage 削除が失敗したセッションは DB を残し、次回実行で再試行する
+  （「DB だけ消えてファイルが孤児化」を防ぐ）。
+- 1回あたり最大 200 セッション処理（cron が高頻度なので順次消化される）。
+- 実行結果に `deletedSessions` / `retainedSessions` / `deletedStoragePaths` /
+  `warnings` を返し、warning があれば server log にも出す。
+
+### 手動テスト（デプロイ後）
+
+```bash
+# dry-run（削除せず対象数のみ確認）
+curl "https://<app>/api/cron/cleanup-uploads?dryRun=1" \
+  -H "Authorization: Bearer ${CRON_SECRET}"
+
+# 実行
+curl "https://<app>/api/cron/cleanup-uploads" \
+  -H "Authorization: Bearer ${CRON_SECRET}"
+```
+
+`olderThanHours`（1〜168、既定 24）でカットオフ時間を調整可能。
+
+### 孤児ファイルの監査
+
+cron は「DB に紐づく古い temp セッション」を清掃するが、
+DB 参照が既に無い storage 上の孤児ファイルは対象外。
+その監査・削除は `npm run audit:storage-assets`（[SCRIPTS.md](SCRIPTS.md)）で行う。
+下記「import 後の Storage audit 手順」も参照。
+
 ---
 
 ## 定期的に確認する SQL（Prisma Studio / Supabase SQL Editor）

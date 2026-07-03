@@ -3,5 +3,11 @@
     "src/app/api/**": {
       "regions": ["hnd1"]
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-uploads",
+      "schedule": "0 */6 * * *"
+    }
+  ]
 }
