@@ -258,10 +258,12 @@ async function processRecord(
   const originalBuffer = fs.readFileSync(imagePath);
   const fileHash = sha256(originalBuffer);
 
-  // Check duplicate by fileHash
+  // Check duplicate by fileHash — non-deleted images only (統一方針)。
+  // soft-deleted image は重複扱いしない。ただしDB unique制約は削除済みも数えるため、
+  // 実際のcreateで P2002 が出る可能性があり、下の transaction で捕捉する。
   if (!dryRun) {
     const existing = await prisma.image.findFirst({
-      where: { workspaceId, fileHash },
+      where: { workspaceId, fileHash, deletedAt: null, status: { not: "DELETED" } },
       select: { id: true },
     });
     if (existing) {
@@ -335,41 +337,61 @@ async function processRecord(
   const promptBody = record.promptEn || record.promptJa || "";
 
   // DB: create Image + Prompt in a transaction
-  await prisma.$transaction(async (tx) => {
-    await tx.image.create({
-      data: {
-        id: imageId,
-        workspaceId,
-        sceneId,
-        storageBucket: BUCKET,
-        storagePath: originalPath,
-        thumbnailPath: thumbnailBuffer ? thumbnailPath : null,
-        previewPath: previewBuffer ? previewPath : null,
-        originalName: record.imageFileName,
-        originalExt: ext,
-        mimeType,
-        fileSizeBytes: originalBuffer.length,
-        widthPx,
-        heightPx,
-        fileHash,
-        sourceSheetName: record.sheetName,
-        sourceRow: record.rowNumber,
-        sourceColumn: record.imageCol0,
-        searchText: [record.promptEn, record.promptJa].filter(Boolean).join(" ").slice(0, 2000),
-      },
-    });
-
-    if (promptBody) {
-      await tx.prompt.create({
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.image.create({
         data: {
+          id: imageId,
           workspaceId,
-          imageId,
-          originalBody: promptBody,
-          currentBody: promptBody,
+          sceneId,
+          storageBucket: BUCKET,
+          storagePath: originalPath,
+          thumbnailPath: thumbnailBuffer ? thumbnailPath : null,
+          previewPath: previewBuffer ? previewPath : null,
+          originalName: record.imageFileName,
+          originalExt: ext,
+          mimeType,
+          fileSizeBytes: originalBuffer.length,
+          widthPx,
+          heightPx,
+          fileHash,
+          sourceSheetName: record.sheetName,
+          sourceRow: record.rowNumber,
+          sourceColumn: record.imageCol0,
+          searchText: [record.promptEn, record.promptJa].filter(Boolean).join(" ").slice(0, 2000),
         },
       });
+
+      if (promptBody) {
+        await tx.prompt.create({
+          data: {
+            workspaceId,
+            imageId,
+            originalBody: promptBody,
+            currentBody: promptBody,
+          },
+        });
+      }
+    });
+  } catch (e: unknown) {
+    // P2002 = unique (workspaceId, fileHash) violation. The dup check above
+    // excludes soft-deleted images, but the DB constraint still counts them.
+    // Recover gracefully (no hard fail): treat as skipped duplicate.
+    const isP2002 =
+      typeof e === "object" && e !== null && "code" in e &&
+      (e as { code?: unknown }).code === "P2002";
+    if (isP2002) {
+      const conflicting = await prisma.image.findFirst({
+        where: { workspaceId, fileHash },
+        select: { id: true, status: true },
+      });
+      warnings.push(
+        `P2002 on (workspaceId, fileHash); likely conflicts with a soft-deleted image (existingId=${conflicting?.id ?? "?"}, status=${conflicting?.status ?? "?"}). Skipped. Full re-import support is pending (Phase 6C).`,
+      );
+      return { record, outcome: "skipped_duplicate", imageId: conflicting?.id, warnings };
     }
-  });
+    throw e;
+  }
 
   return { record, outcome: "imported", imageId, warnings };
 }

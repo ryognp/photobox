@@ -148,8 +148,15 @@ export async function POST(request: NextRequest) {
 
   // 12. duplicate check (images テーブルに対して)
   // 注: upload_items 同士の重複はMVPでは判定しない
-  const existingImage = await prisma.image.findUnique({
-    where: { workspaceId_fileHash: { workspaceId: session.workspaceId, fileHash: serverHash } },
+  // soft-deleted image (status=DELETED / deletedAt) は重複として扱わない。
+  // check-duplicates / commit pre-check と同じフィルタで統一する。
+  const existingImage = await prisma.image.findFirst({
+    where: {
+      workspaceId: session.workspaceId,
+      fileHash: serverHash,
+      deletedAt: null,
+      status: { not: "DELETED" },
+    },
     select: { id: true },
   });
   const duplicateStatus = existingImage ? "DUPLICATE" : "CLEAN";

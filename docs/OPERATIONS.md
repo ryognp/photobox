@@ -200,11 +200,24 @@ npm run audit:storage-assets -- --workspace-id <id> --cleanup-orphans
 - 既に削除済みの画像に対する DELETE は idempotent に 200 を返す（`alreadyDeleted: true`）。
 - UI: Gallery 詳細パネル（desktop/mobile）に削除ボタン。削除後は一覧から即除去しパネルを閉じる。
 
-### Known issue（別タスクで対応）
+### Known issue: soft delete 後の同一 fileHash 再アップロード
 
-soft delete 後、同じ画像を再アップロードすると `workspaceId + fileHash` の unique 制約により
-再登録できない可能性がある。この挙動は別タスクで、restore・partial unique index・
-deleted fileHash 退避のいずれかを検討する。
+`workspaceId + fileHash` は plain unique 制約（削除済み行も含めて一意）のため、
+soft delete 後に同じ画像を再アップロードすると衝突し得る。**根本解決は Phase 6C の
+partial unique index（`WHERE deleted_at IS NULL AND status <> 'DELETED'`）で行う。**
+
+Phase 6A（現状）で入れた整合・緩和:
+- **重複判定の統一**: 対話フロー（`uploads/items` / `check-duplicates` / `commit` pre-check）は
+  すべて「非削除画像のみを重複扱い」（`deletedAt:null, status≠DELETED`）に統一。削除済み画像が
+  「重複」として表示される混乱を解消。
+- **明示エラー化**: commit の transaction で unique 衝突（P2002）が起きた場合、raw エラーではなく
+  `FILE_HASH_CONFLICT_WITH_DELETED_IMAGE` として failed 結果に分かりやすい reason/message を返す。
+- **import の hard fail 防止**: `scripts/import-xlsx-run.ts` に P2002 recovery を追加（skip 扱い）。
+  `scripts/_lib/importManifest.ts` は元々 P2002 recovery あり。なお batch importer は
+  **意図的に**削除済みも重複として skip する（storage 二重アップロード回避のため。上記コメント参照）。
+
+Phase 6A は混乱軽減・明示エラー化であり、**再アップロードを完全成功させる根本解決ではない**。
+完全対応は Phase 6C（partial unique index、drift PoC = Phase 6B を経て実施）。
 
 ---
 

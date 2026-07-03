@@ -613,7 +613,17 @@ async function processItem(
 
     return { kind: "committed", uploadItemId, imageId: reservedImageId! };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown transaction error";
+    // P2002 = unique constraint violation. The pre-commit duplicate re-check
+    // excludes soft-deleted images, but the DB unique (workspaceId, fileHash)
+    // still counts them — so a same-hash re-upload after soft delete lands here.
+    // Surface it as an explicit, understandable conflict rather than a raw error.
+    const isP2002 =
+      typeof err === "object" && err !== null && "code" in err &&
+      (err as { code?: unknown }).code === "P2002";
+    const reason = isP2002 ? "FILE_HASH_CONFLICT_WITH_DELETED_IMAGE" : "TRANSACTION_FAILED";
+    const message = isP2002
+      ? "A previously deleted image with the same file hash still occupies the unique constraint. Full re-upload support is pending (Phase 6C)."
+      : err instanceof Error ? err.message : "Unknown transaction error";
     await prisma.uploadItem
       .update({
         where: { id: uploadItemId },
@@ -623,7 +633,7 @@ async function processItem(
     return {
       kind: "failed",
       uploadItemId,
-      reason: "TRANSACTION_FAILED",
+      reason,
       message,
     };
   }

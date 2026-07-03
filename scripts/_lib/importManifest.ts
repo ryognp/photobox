@@ -252,7 +252,13 @@ export async function importManifest(
     }
   });
 
-  // Bulk DB lookup — chunk at 500 to stay within parameter limits
+  // Bulk DB lookup — chunk at 500 to stay within parameter limits.
+  // NOTE (Phase 6A): this batch importer intentionally treats ALL images with a
+  // matching fileHash — including soft-deleted ones — as duplicates and skips
+  // them (no deletedAt/status filter). This avoids uploading storage then hitting
+  // the (workspaceId, fileHash) unique constraint and rolling back. The
+  // interactive Quick Add path filters soft-deleted out; the divergence is
+  // deliberate and both paths are documented in docs/OPERATIONS.md.
   const HASH_CHUNK_SIZE = 500;
   const allHashes = [...new Set(prepassHashes.values())];
   const existingByHash = new Map<string, string>(); // fileHash → imageId
