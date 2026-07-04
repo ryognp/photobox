@@ -56,6 +56,12 @@ enum ImageStatus {
   DELETED
 }
 
+enum ImagePurgeStatus {
+  NONE    // 未purge（初期状態）
+  PURGED  // storage 物理削除済み
+  FAILED  // purge 試行が失敗（次回再試行対象）
+}
+
 enum PromptVersionType {
   EDIT
   SCENE_TRANSFORM
@@ -232,6 +238,12 @@ model Image {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at") // soft delete
 
+  // Storage purge (Phase 7): physical deletion of storage objects for
+  // soft-deleted images past the retention window. DB row is kept for audit.
+  storagePurgeStatus ImagePurgeStatus @default(NONE) @map("storage_purge_status")
+  storagePurgedAt    DateTime?        @map("storage_purged_at")
+  storagePurgeError  String?          @map("storage_purge_error")
+
   workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   scene        Scene?       @relation(fields: [sceneId], references: [id], onDelete: SetNull)
   importBatch  ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
@@ -251,6 +263,8 @@ model Image {
   @@index([fileHash])
   // Gallery list: WHERE workspaceId=? AND status='ACTIVE' AND deletedAt IS NULL ORDER BY createdAt DESC, id DESC
   @@index([workspaceId, status, createdAt(sort: Desc), id(sort: Desc)], name: "idx_images_gallery_list")
+  // Purge scan: WHERE status='DELETED' AND storagePurgeStatus IN (NONE,FAILED) AND deletedAt < cutoff
+  @@index([status, storagePurgeStatus, deletedAt])
   @@map("images")
 }
 
