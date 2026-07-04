@@ -253,19 +253,23 @@ export async function importManifest(
   });
 
   // Bulk DB lookup — chunk at 500 to stay within parameter limits.
-  // NOTE (Phase 6A): this batch importer intentionally treats ALL images with a
-  // matching fileHash — including soft-deleted ones — as duplicates and skips
-  // them (no deletedAt/status filter). This avoids uploading storage then hitting
-  // the (workspaceId, fileHash) unique constraint and rolling back. The
-  // interactive Quick Add path filters soft-deleted out; the divergence is
-  // deliberate and both paths are documented in docs/OPERATIONS.md.
+  // NOTE (Phase 6C): dedup considers only LIVE images (deletedAt IS NULL AND
+  // status != DELETED), matching the partial unique index and the interactive
+  // Quick Add path. Soft-deleted images are no longer treated as duplicates, so
+  // a previously deleted file can be re-imported. (Any genuine live-duplicate
+  // race is still caught by the P2002 recovery below.)
   const HASH_CHUNK_SIZE = 500;
   const allHashes = [...new Set(prepassHashes.values())];
   const existingByHash = new Map<string, string>(); // fileHash → imageId
   for (let i = 0; i < allHashes.length; i += HASH_CHUNK_SIZE) {
     const chunk = allHashes.slice(i, i + HASH_CHUNK_SIZE);
     const found = await prisma.image.findMany({
-      where: { workspaceId: opts.workspaceId, fileHash: { in: chunk } },
+      where: {
+        workspaceId: opts.workspaceId,
+        fileHash: { in: chunk },
+        deletedAt: null,
+        status: { not: "DELETED" },
+      },
       select: { id: true, fileHash: true },
     });
     for (const img of found) {
@@ -329,7 +333,7 @@ export async function importManifest(
       const resolvedId =
         existingId ??
         // Fallback: if original in-flight worker failed, verify DB state
-        ((await prisma.image.findFirst({ where: { workspaceId: opts.workspaceId, fileHash: prepassHash } }))?.id ?? null);
+        ((await prisma.image.findFirst({ where: { workspaceId: opts.workspaceId, fileHash: prepassHash, deletedAt: null, status: { not: "DELETED" } } }))?.id ?? null);
       if (resolvedId) {
         console.log(
           `[${label}] SKIP_DUPLICATE (pre-pass) ${rowTag}: hash=${prepassHash.slice(0, 12)}… existingId=${resolvedId}`,
@@ -369,7 +373,7 @@ export async function importManifest(
       const existingId = await inFlight.get(fileHash)!;
       const resolvedId =
         existingId ??
-        ((await prisma.image.findFirst({ where: { workspaceId: opts.workspaceId, fileHash } }))?.id ?? null);
+        ((await prisma.image.findFirst({ where: { workspaceId: opts.workspaceId, fileHash, deletedAt: null, status: { not: "DELETED" } } }))?.id ?? null);
       if (resolvedId) {
         console.log(`[${label}] SKIP_DUPLICATE (in-flight) ${rowTag}: hash=${fileHash.slice(0, 12)}… existingId=${resolvedId}`);
         skippedDuplicate++;
@@ -388,7 +392,7 @@ export async function importManifest(
     // failure during pre-pass). Keeps correctness when pre-pass is incomplete.
     // -----------------------------------------------------------------------
     const existingImage = await prisma.image.findFirst({
-      where: { workspaceId: opts.workspaceId, fileHash },
+      where: { workspaceId: opts.workspaceId, fileHash, deletedAt: null, status: { not: "DELETED" } },
     });
     if (existingImage) {
       console.log(
@@ -569,13 +573,14 @@ export async function importManifest(
 
     } catch (err) {
       // -----------------------------------------------------------------------
-      // P2002 recovery: unique constraint on (workspace_id, file_hash)
-      // This means a concurrent worker inserted the same image between our DB
-      // check and our insert. Treat as duplicate skip (not an error).
+      // P2002 recovery: partial unique index on (workspace_id, file_hash) for
+      // LIVE images. This now only fires when a concurrent worker inserted the
+      // same *live* image between our check and our insert. Find that live row
+      // (soft-deleted rows are excluded, matching the partial index).
       // -----------------------------------------------------------------------
       if (isP2002(err)) {
         const conflictingImage = await prisma.image.findFirst({
-          where: { workspaceId: opts.workspaceId, fileHash },
+          where: { workspaceId: opts.workspaceId, fileHash, deletedAt: null, status: { not: "DELETED" } },
         });
         if (conflictingImage) {
           console.log(

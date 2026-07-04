@@ -239,7 +239,11 @@ model Image {
   imageTags    ImageTag[]
   imagePersons ImagePerson[]
 
-  @@unique([workspaceId, fileHash])
+  // Uniqueness of (workspaceId, fileHash) is enforced by a PARTIAL unique index
+  // scoped to live images (deleted_at IS NULL AND status <> 'DELETED') — see the
+  // hand-written migration. Prisma schema cannot express partial indexes, so
+  // there is no @@unique here. Soft-deleted rows do not occupy the unique space,
+  // allowing the same file to be re-uploaded after deletion.
   @@index([workspaceId, status])
   @@index([workspaceId, sceneId])
   @@index([workspaceId, createdAt])
