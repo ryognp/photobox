@@ -11,6 +11,12 @@
 /** Max length stored in storage_purge_error to avoid unbounded strings. */
 export const PURGE_ERROR_MAX_LEN = 500;
 
+/**
+ * Sentinel stored in storage_purge_error when an image has no storage paths.
+ * Retrying such rows never succeeds, so the scan query excludes them.
+ */
+export const NO_STORAGE_PATHS_ERROR = "NO_STORAGE_PATHS";
+
 export type PurgeImage = {
   id: string;
   /** Candidate storage paths (storagePath/thumbnailPath/previewPath); may contain nulls/dupes. */
@@ -60,9 +66,9 @@ export async function purgeDeletedImagesCore(
     // No storage paths — do not mark PURGED (nothing verified as removed).
     if (paths.length === 0) {
       result.failed++;
-      result.warnings.push(`image ${img.id}: NO_STORAGE_PATHS; not purged`);
+      result.warnings.push(`image ${img.id}: ${NO_STORAGE_PATHS_ERROR}; not purged`);
       try {
-        await deps.markFailed(img.id, "NO_STORAGE_PATHS");
+        await deps.markFailed(img.id, NO_STORAGE_PATHS_ERROR);
       } catch (e) {
         result.warnings.push(
           `image ${img.id}: markFailed threw (${e instanceof Error ? e.message : String(e)})`,

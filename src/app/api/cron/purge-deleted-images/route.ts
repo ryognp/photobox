@@ -10,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, err, Errors } from "@/lib/apiResponse";
 import { createPerfLog } from "@/lib/perfLog";
-import { purgeDeletedImagesCore, type PurgeImage } from "@/lib/purge/purgeDeletedImagesCore";
+import { purgeDeletedImagesCore, NO_STORAGE_PATHS_ERROR, type PurgeImage } from "@/lib/purge/purgeDeletedImagesCore";
 
 const BUCKET = "photobox-private";
 const DEFAULT_RETENTION_DAYS = 30;
@@ -82,11 +82,15 @@ export async function GET(request: NextRequest) {
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
   // ── Fetch eligible images (DELETED, past retention, not yet PURGED) ───────
+  // Exclude rows that failed with NO_STORAGE_PATHS: retrying them never
+  // succeeds (there is nothing to remove), so they would burn a scan slot
+  // every run. They stay FAILED and are surfaced only via audit.
   const images = await prisma.image.findMany({
     where: {
       status: "DELETED",
       deletedAt: { lt: cutoff },
       storagePurgeStatus: { in: ["NONE", "FAILED"] },
+      NOT: { storagePurgeError: NO_STORAGE_PATHS_ERROR },
     },
     take: MAX_IMAGES,
     orderBy: { deletedAt: "asc" },
@@ -118,6 +122,10 @@ export async function GET(request: NextRequest) {
   // ── Execute: storage-safe per-image purge ────────────────────────────────
   const result = await purgeDeletedImagesCore(purgeImages, {
     removeStorage: async (paths) => {
+      // Supabase Storage remove() is idempotent: already-absent paths are NOT
+      // errors (they are simply omitted from the result). So a re-run after a
+      // markPurged DB failure finds the files gone, returns error=null, and
+      // converges to PURGED — never a permanent FAILED.
       const { error } = await supabaseAdmin.storage.from(BUCKET).remove(paths);
       return { error: error ? error.message : null };
     },

@@ -283,6 +283,19 @@ purge した storage object は復旧できない。多重防御:
 - retention（既定30日）+ 1回200件上限 + storage-safe invariant。
 - remove 失敗は warning/`FAILED` で継続し hard fail させない。
 
+> ⚠️ **GET だが副作用あり。** Vercel Cron の都合で GET だが、
+> `dryRun=0&confirm=purge-deleted-images` を付けた actual URL は**不可逆な物理削除を実行する**。
+> この actual URL をブラウザのアドレスバー・履歴・ブックマーク・チャット等に貼って
+> 不用意に開かないこと（プリフェッチや再読み込みで実削除が走り得る）。実行は
+> `CRON_SECRET` 付きの `curl` からのみ行う。dry-run（`dryRun=1` または未指定）は副作用なし。
+
+### 再試行されない FAILED
+
+storage path を持たない画像（通常発生しないが防御的に）は
+`storage_purge_status=FAILED` / `storage_purge_error=NO_STORAGE_PATHS` になる。
+再試行しても成功しないため scan 条件から除外され、以後 cron の対象にならない。
+必要なら audit で個別に確認する。それ以外の `FAILED`（storage/DB エラー）は次回 scan で再試行される。
+
 ### signed URL cache 無効化は不要
 
 purge 対象は retention 超過の DELETED 画像で、gallery/detail から除外されるため
