@@ -260,6 +260,56 @@ dotenv -e <env> -- npx prisma migrate diff \
 
 ---
 
+## soft-deleted image の storage purge（Phase 7）
+
+soft delete された画像（`status=DELETED`）は DB row と storage object（original /
+thumbnail / preview）が残る。retention 期間を過ぎたものの **storage object のみ物理削除**し、
+DB row は監査のため残す（`storage_purge_status` で状態管理）。
+
+- **エンドポイント**: `GET /api/cron/purge-deleted-images`（Bearer `CRON_SECRET`、fail-closed）
+- **対象**: `status='DELETED'` かつ `deleted_at < now − retentionDays` かつ
+  `storage_purge_status IN (NONE, FAILED)`（PURGED は除外、FAILED は再試行）
+- **retention**: 既定 30 日（`?retentionDays=` で 7〜365 にクランプ）
+- **1回あたり最大**: 200 件（`MAX_IMAGES`）
+- **状態遷移**: storage 削除成功 → `PURGED`（`storage_purged_at` 記録）。失敗 → `FAILED`
+  （`storage_purge_error` 記録、次回再試行）。**storage 削除が成功するまで PURGED にしない**。
+  markPurged が DB エラーで失敗しても storage は既に消えており、次回 remove は冪等なので
+  収束する（orphan にならない）。
+
+### ⚠️ 物理削除は不可逆
+
+purge した storage object は復旧できない。多重防御:
+- **既定は dry-run**。実削除は **`?dryRun=0&confirm=purge-deleted-images` の二重明示が必須**。
+- retention（既定30日）+ 1回200件上限 + storage-safe invariant。
+- remove 失敗は warning/`FAILED` で継続し hard fail させない。
+
+### signed URL cache 無効化は不要
+
+purge 対象は retention 超過の DELETED 画像で、gallery/detail から除外されるため
+新規署名 URL は発行されない。既発行の署名 URL も TTL（最大 ~15分）で失効。よって
+signed URL cache の明示的無効化は行わない。
+
+### 手動実行（Phase 7A: cron 未有効。手動のみ）
+
+```bash
+# dry-run（対象数のみ・削除しない。dryRun 未指定でも dry-run）
+curl "https://<app>/api/cron/purge-deleted-images?dryRun=1" \
+  -H "Authorization: Bearer ${CRON_SECRET}"
+
+# 実削除（二重明示が必須）
+curl "https://<app>/api/cron/purge-deleted-images?dryRun=0&confirm=purge-deleted-images" \
+  -H "Authorization: Bearer ${CRON_SECRET}"
+```
+
+### Phase 7B（別途）
+
+本番 migration 適用 → dry-run で対象確認 →（必要なら初回 manual actual）→ 問題なければ
+`vercel.json` の `crons` に追加して自動化する。**cron 時刻は UTC/JST を明示確認**
+（JST 深夜3時 = UTC `0 18 * * *`。`0 3 * * *` は UTC 03:00 = JST 正午なので注意）。
+Phase 7A では `vercel.json` に cron を**追加しない**。
+
+---
+
 ## cleanup API の使い方
 
 古い未コミット Upload Session を削除する。
