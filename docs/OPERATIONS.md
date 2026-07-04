@@ -314,12 +314,23 @@ curl "https://<app>/api/cron/purge-deleted-images?dryRun=0&confirm=purge-deleted
   -H "Authorization: Bearer ${CRON_SECRET}"
 ```
 
-### Phase 7B（別途）
+### cron 自動実行（Phase 7B で有効化済み）
 
-本番 migration 適用 → dry-run で対象確認 →（必要なら初回 manual actual）→ 問題なければ
-`vercel.json` の `crons` に追加して自動化する。**cron 時刻は UTC/JST を明示確認**
-（JST 深夜3時 = UTC `0 18 * * *`。`0 3 * * *` は UTC 03:00 = JST 正午なので注意）。
-Phase 7A では `vercel.json` に cron を**追加しない**。
+`vercel.json` の `crons` に登録済み: `/api/cron/purge-deleted-images` を
+**`0 18 * * *`（UTC 18:00 = JST 深夜3時）** に実行。
+
+cron からの actual 発火判定（route 側）:
+- **実質認証は `CRON_SECRET` Bearer**（fail-closed）。
+- それに加え「cron 由来」を次の2ヘッダで識別（認証ではなく識別用・偽装可能）:
+  - `User-Agent` に `vercel-cron/1.0` を含む
+  - `x-vercel-cron-schedule === "0 18 * * *"`
+- 上記をすべて満たすと actual purge（query 不要）。満たさない手動アクセスは既定 dry-run。
+- 手動 actual は従来どおり `?dryRun=0&confirm=purge-deleted-images`。
+
+`x-vercel-cron-schedule` の値は `vercel.json` の schedule 文字列と厳密一致が必要。
+schedule を変更した場合は route 側の `PURGE_CRON_SCHEDULE` 定数も合わせて更新すること。
+初回 cron 実行後は perf ログ（`trigger:"cron"` / `purged` / `failed` / `warningCount`）で
+正常動作を確認する。
 
 ---
 
