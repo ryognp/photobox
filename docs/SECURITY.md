@@ -127,7 +127,10 @@ user/workspace ベース rate limit を適用している（Upstash Redis slidin
 運用上の注意:
 
 - この rate limit は **post-auth user/workspace ベースの制限であり、未認証DoS対策ではない**。
-  未認証DoS対策には、将来的に middleware/proxy レイヤーで IP ベース制限を追加する。
+  未認証/DoS 寄りアクセスは、まず **Vercel Firewall + Supabase Auth のレート制限**
+  （プラットフォーム層）で対応する方針。運用チェックリストは [RATE_LIMITING.md](RATE_LIMITING.md)。
+  アプリコードでの pre-auth IP 制限（middleware 全体 / auth 系2本）は現時点では見送り
+  （Phase 9A 判断・判断基準は RATE_LIMITING.md §4）。
 - **Redis 未設定・Redis 障害時は fail-open** する（リクエストは通る）。
   本番では perf log の `rateLimitEnabled` / `rateLimitSource` で有効性を確認する。
   本番で Redis 未設定の場合は起動後最初のチェック時に `console.warn` が一度出る。

@@ -514,3 +514,5 @@ WHERE id = '<import_batch_id>';
 - [ ] 新規 Prisma query は `withWorkspaceWhere()` で workspaceId を合成しているか
       （raw SQL は `Prisma.sql` パラメータ化、cron は workspace 横断が正しい場合のみ例外）
 - [ ] fetch-then-check の箇所は、認可確認前の結果をレスポンス/副作用に使っていないか
+- [ ] pre-auth / DoS 対策は [RATE_LIMITING.md](RATE_LIMITING.md) のチェックリストに沿って
+      Vercel Firewall / Supabase Auth 側で確認されているか
