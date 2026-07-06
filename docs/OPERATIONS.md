@@ -83,7 +83,10 @@ npm run db:studio
 - **fetch-then-check が必要な場合**（例: `findUnique({ where: { id } })` の後で
   membership を確認する形にせざるを得ない場合）は、取得直後に認可確認を行い、
   **認可が通るまでレスポンス組み立てや副作用（更新・削除・外部通知等）に
-  取得結果を使わない**こと。
+  取得結果を使わない**こと。`images/[id]`（GET/DELETE）のような fetch-then-check
+  route では、取得と認可を1関数に閉じ込める **`resolveWorkspaceImage()`**
+  （`src/lib/images/resolveWorkspaceImage.ts`、`{ kind: "ok"|"not_found"|"forbidden" }`
+  を返し image は `ok` 分岐でのみ露出）のような「取得+認可統合 helper」を使う。
 - **raw SQL には使わない。** `$queryRaw` は `Prisma.sql` テンプレートで
   `${workspaceId}` のようにパラメータ化し、workspaceId 条件を明示する
   （文字列結合は禁止）。
