@@ -534,7 +534,7 @@ model ImageAnalysis {
   source           AnalysisSource @default(PROMPT)
   schemaVersion    String         @default("prompt-v1") @map("schema_version")
   modelId          String         @map("model_id") // e.g. "gpt-4o-mini" / "mock"
-  promptHash       String         @map("prompt_hash") // SHA-256 of analyzed input (change detection)
+  promptHash       String?        @map("prompt_hash") // SHA-256 of analyzed input; null for SKIPPED_NO_PROMPT
   status           AnalysisStatus @default(PENDING)
   error            String?
   // provider の構造化出力本体のみ保存（APIレスポンス全体や機密情報は入れない）

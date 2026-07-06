@@ -7,7 +7,8 @@ export type RateLimitPreset =
   | "uploadItem"
   | "uploadCommit"
   | "importParse"
-  | "galleryRead";
+  | "galleryRead"
+  | "aiAnalyze";
 
 export type RateLimitSource = "shared" | "disabled" | "error";
 
