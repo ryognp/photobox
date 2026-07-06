@@ -82,9 +82,20 @@ export async function analyzePromptCore(
   const out = parsed.data;
 
   // Defense-in-depth: strip person-attribute terms from tags & keywords.
+  // Then dedupe tag labels case-insensitively — TagSuggestion is unique on
+  // (analysisId, label), so duplicate labels from the provider would collide
+  // on persistence (Phase 10-2). First occurrence wins.
+  const seenLabels = new Set<string>();
   const tags = out.tags
-    .filter((t) => filterAttributeTerms([t.label]).length > 0)
-    .map((t) => ({ label: t.label.trim(), ...(t.confidence !== undefined ? { confidence: t.confidence } : {}) }));
+    .map((t) => ({ label: t.label.trim(), confidence: t.confidence }))
+    .filter((t) => t.label !== "" && filterAttributeTerms([t.label]).length > 0)
+    .filter((t) => {
+      const key = t.label.toLowerCase();
+      if (seenLabels.has(key)) return false;
+      seenLabels.add(key);
+      return true;
+    })
+    .map((t) => ({ label: t.label, ...(t.confidence !== undefined ? { confidence: t.confidence } : {}) }));
   const keywordsJa = filterAttributeTerms(out.keywords_ja.map((k) => k.trim()));
   const keywordsEn = filterAttributeTerms(out.keywords_en.map((k) => k.trim()));
 

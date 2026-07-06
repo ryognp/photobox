@@ -69,6 +69,28 @@ describe("analyzePromptCore — DONE", () => {
     }
   });
 
+  it("dedupes tag labels case-insensitively (first occurrence wins)", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [
+          { label: "Landscape", confidence: 0.9 },
+          { label: "landscape", confidence: 0.1 },
+          { label: " landscape ", confidence: 0.2 },
+          { label: "mountain" },
+        ],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "scene_reference",
+        language_detected: "en",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") {
+      expect(r.tags).toEqual([{ label: "Landscape", confidence: 0.9 }, { label: "mountain" }]);
+    }
+  });
+
   it("unknown usage_category coerced to 'other'", async () => {
     const r = await analyzePromptCore(
       { currentBody: "x", notes: null },

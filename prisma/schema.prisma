@@ -161,9 +161,10 @@ model Tag {
   name        String
   createdAt   DateTime @default(now()) @map("created_at")
 
-  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  imageTags      ImageTag[]
-  uploadItemTags UploadItemTag[]
+  workspace           Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  imageTags           ImageTag[]
+  uploadItemTags      UploadItemTag[]
+  approvedSuggestions TagSuggestion[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -568,11 +569,13 @@ model TagSuggestion {
   approvedTagId String?          @map("approved_tag_id") // 昇格先 Tag.id（承認時）
   createdAt     DateTime         @default(now()) @map("created_at")
 
-  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  image     Image         @relation(fields: [imageId], references: [id], onDelete: Cascade)
-  analysis  ImageAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  image       Image         @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  analysis    ImageAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  approvedTag Tag?          @relation(fields: [approvedTagId], references: [id], onDelete: SetNull)
 
   @@unique([analysisId, label])
   @@index([workspaceId, imageId, status])
+  @@index([approvedTagId])
   @@map("tag_suggestions")
 }

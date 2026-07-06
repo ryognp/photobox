@@ -57,6 +57,9 @@ CREATE UNIQUE INDEX "image_analyses_image_id_source_model_id_schema_version_key"
 CREATE INDEX "tag_suggestions_workspace_id_image_id_status_idx" ON "tag_suggestions"("workspace_id", "image_id", "status");
 
 -- CreateIndex
+CREATE INDEX "tag_suggestions_approved_tag_id_idx" ON "tag_suggestions"("approved_tag_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "tag_suggestions_analysis_id_label_key" ON "tag_suggestions"("analysis_id", "label");
 
 -- AddForeignKey
@@ -73,3 +76,6 @@ ALTER TABLE "tag_suggestions" ADD CONSTRAINT "tag_suggestions_image_id_fkey" FOR
 
 -- AddForeignKey
 ALTER TABLE "tag_suggestions" ADD CONSTRAINT "tag_suggestions_analysis_id_fkey" FOREIGN KEY ("analysis_id") REFERENCES "image_analyses"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "tag_suggestions" ADD CONSTRAINT "tag_suggestions_approved_tag_id_fkey" FOREIGN KEY ("approved_tag_id") REFERENCES "tags"("id") ON DELETE SET NULL ON UPDATE CASCADE;
