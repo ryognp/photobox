@@ -59,14 +59,40 @@ npm run db:studio
 
 ---
 
-## RLS (Row Level Security)
+## RLS (Row Level Security) / workspace scoping policy
 
 現在の設計では **RLS は無効**、サーバー側の service_role client + API Route での workspace 権限チェックで代替。
+つまり **`workspaceId` 条件は代替不可のセキュリティ境界**であり、DB 側の制約では守られていない。
 
 - API Route 内で `workspaceId` が一致するレコードのみアクセス
 - `request.body` の `workspaceId` / `userId` は信用しない（必ず auth から取得）
 
 将来 RLS を有効化する場合は全 table に対して policy を作成する必要がある。
+
+### 新規 Prisma query の書き方（Phase 8B〜）
+
+- 新規に書く Prisma `where` は原則 `withWorkspaceWhere(workspaceId, extra)`
+  （`src/lib/workspace/where.ts`）を使って組み立てる。
+  ```ts
+  const where = withWorkspaceWhere(workspace.id, { status: "ACTIVE" as const });
+  // => { status: "ACTIVE", workspaceId: workspace.id }
+  ```
+- **`withWorkspaceWhere()` は where 合成のみを行う。membership check の代替ではない。**
+  呼び出し前に `requireWorkspaceMember()` / `getDefaultWorkspaceForUserCached()` 等で
+  そのユーザーが `workspaceId` のメンバーであることを確認しておくこと。
+- **fetch-then-check が必要な場合**（例: `findUnique({ where: { id } })` の後で
+  membership を確認する形にせざるを得ない場合）は、取得直後に認可確認を行い、
+  **認可が通るまでレスポンス組み立てや副作用（更新・削除・外部通知等）に
+  取得結果を使わない**こと。
+- **raw SQL には使わない。** `$queryRaw` は `Prisma.sql` テンプレートで
+  `${workspaceId}` のようにパラメータ化し、workspaceId 条件を明示する
+  （文字列結合は禁止）。
+- **cron には使わない。** `cleanup-uploads` / `purge-deleted-images` のように
+  意図的に全 workspace を横断する処理は、`CRON_SECRET` 認証で代替し
+  workspaceId フィルタを付けないのが正しい設計。
+- **既存route の一括置換はしない。** 段階移行方針とし、新規コードまたは
+  個別の改修ついでにのみ適用する（Phase 8A 調査で既存コードに重大な IDOR は
+  確認されていないため、無理に一括書き換えるリスクの方が大きいと判断）。
 
 ---
 
@@ -482,3 +508,6 @@ WHERE id = '<import_batch_id>';
 - [ ] Storage bucket が private であること
 - [ ] signed URL 以外で画像を公開していない
 - [ ] RLS 無効の代わりに API Route での workspace 権限チェックが実装されている
+- [ ] 新規 Prisma query は `withWorkspaceWhere()` で workspaceId を合成しているか
+      （raw SQL は `Prisma.sql` パラメータ化、cron は workspace 横断が正しい場合のみ例外）
+- [ ] fetch-then-check の箇所は、認可確認前の結果をレスポンス/副作用に使っていないか
