@@ -67,6 +67,25 @@ enum PromptVersionType {
   SCENE_TRANSFORM
 }
 
+enum AnalysisSource {
+  PROMPT
+  VISION
+  HYBRID
+}
+
+enum AnalysisStatus {
+  PENDING
+  DONE
+  FAILED
+  SKIPPED_NO_PROMPT
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // ================================================================
 // Workspace / Auth
 // ================================================================
@@ -94,6 +113,8 @@ model Workspace {
   imagePersons      ImagePerson[]
   uploadItemTags    UploadItemTag[]
   uploadItemPersons UploadItemPerson[]
+  imageAnalyses     ImageAnalysis[]
+  tagSuggestions    TagSuggestion[]
 
   @@map("workspaces")
 }
@@ -140,9 +161,10 @@ model Tag {
   name        String
   createdAt   DateTime @default(now()) @map("created_at")
 
-  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  imageTags      ImageTag[]
-  uploadItemTags UploadItemTag[]
+  workspace           Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  imageTags           ImageTag[]
+  uploadItemTags      UploadItemTag[]
+  approvedSuggestions TagSuggestion[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -250,6 +272,8 @@ model Image {
   prompt       Prompt?
   imageTags    ImageTag[]
   imagePersons ImagePerson[]
+  analyses     ImageAnalysis[]
+  tagSuggestions TagSuggestion[]
 
   // Uniqueness of (workspaceId, fileHash) is enforced by a PARTIAL unique index
   // scoped to live images (deleted_at IS NULL AND status <> 'DELETED') — see the
@@ -495,4 +519,63 @@ model ImportBatch {
   @@index([workspaceId])
   @@index([workspaceId, createdAt])
   @@map("import_batches")
+}
+
+// ================================================================
+// AI analysis (Phase 10: prompt-first tag suggestion)
+// ================================================================
+
+// 1 row per (image, source, modelId, schemaVersion). Re-analysis upserts on
+// that unique key. AI results are NOT auto-promoted to Tags — see TagSuggestion.
+model ImageAnalysis {
+  id               String         @id @default(cuid())
+  workspaceId      String         @map("workspace_id")
+  imageId          String         @map("image_id")
+  source           AnalysisSource @default(PROMPT)
+  schemaVersion    String         @default("prompt-v1") @map("schema_version")
+  modelId          String         @map("model_id") // e.g. "gpt-4o-mini" / "mock"
+  promptHash       String         @map("prompt_hash") // SHA-256 of analyzed input (change detection)
+  status           AnalysisStatus @default(PENDING)
+  error            String?
+  // provider の構造化出力本体のみ保存（APIレスポンス全体や機密情報は入れない）
+  rawJson          Json?          @map("raw_json")
+  usageCategory    String?        @map("usage_category") // 候補・未昇格
+  keywordsJa       Json?          @map("keywords_ja") // string[]（承認後に searchText へ: Phase 10-4）
+  keywordsEn       Json?          @map("keywords_en") // string[]
+  languageDetected String?        @map("language_detected")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  image       Image           @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  suggestions TagSuggestion[]
+
+  @@unique([imageId, source, modelId, schemaVersion])
+  @@index([workspaceId, status])
+  @@index([imageId])
+  @@map("image_analyses")
+}
+
+// AI tag candidate. Never a real Tag until approved (status=APPROVED sets
+// approvedTagId). Kept for audit even after approval/rejection.
+model TagSuggestion {
+  id            String           @id @default(cuid())
+  workspaceId   String           @map("workspace_id")
+  imageId       String           @map("image_id")
+  analysisId    String           @map("analysis_id")
+  label         String
+  confidence    Float?
+  status        SuggestionStatus @default(PENDING)
+  approvedTagId String?          @map("approved_tag_id") // 昇格先 Tag.id（承認時）
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  image       Image         @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  analysis    ImageAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  approvedTag Tag?          @relation(fields: [approvedTagId], references: [id], onDelete: SetNull)
+
+  @@unique([analysisId, label])
+  @@index([workspaceId, imageId, status])
+  @@index([approvedTagId])
+  @@map("tag_suggestions")
 }
