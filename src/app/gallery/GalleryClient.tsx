@@ -45,6 +45,12 @@ type GalleryAction =
   | { type: "detail_ok"; detail: ImageDetail }
   | { type: "detail_error"; message: string }
   | { type: "delete_ok"; id: string }
+  | {
+      type: "suggestion_resolved"
+      suggestionId: string
+      action: "approved" | "rejected"
+      tag?: { id: string; name: string } | null
+    }
 
 function reducer(s: GalleryState, a: GalleryAction): GalleryState {
   switch (a.type) {
@@ -79,6 +85,15 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
         detailLoading: false,
         detailError: null,
       }
+    case "suggestion_resolved": {
+      if (!s.detail) return s
+      const tagSuggestions = s.detail.tagSuggestions.filter((sug) => sug.id !== a.suggestionId)
+      let tags = s.detail.tags
+      if (a.action === "approved" && a.tag && !tags.some((t) => t.id === a.tag!.id)) {
+        tags = [...tags, a.tag]
+      }
+      return { ...s, detail: { ...s.detail, tags, tagSuggestions } }
+    }
   }
 }
 
@@ -265,6 +280,7 @@ function GalleryInner() {
             imageId={state.selectedId}
             onClose={() => dispatch({ type: "select", id: null })}
             onDeleted={(id) => dispatch({ type: "delete_ok", id })}
+            onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
             prefetchedDetail={state.detail}
             prefetchedLoading={state.detailLoading}
             prefetchedError={state.detailError}
@@ -277,6 +293,7 @@ function GalleryInner() {
         imageId={state.selectedId}
         onClose={() => dispatch({ type: "select", id: null })}
         onDeleted={(id) => dispatch({ type: "delete_ok", id })}
+        onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
         prefetchedDetail={state.detail}
         prefetchedLoading={state.detailLoading}
         prefetchedError={state.detailError}

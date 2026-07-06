@@ -13,6 +13,14 @@ export type GalleryImage = {
   thumbnailUrl: string | null;
 };
 
+/** AI tag candidate awaiting review. Never a real Tag until approved. */
+export type TagSuggestion = {
+  id: string;
+  label: string;
+  confidence: number | null;
+  status: "PENDING";
+};
+
 export type PromptVersionSummary = {
   id: string;
   versionType: "EDIT" | "SCENE_TRANSFORM";
@@ -43,6 +51,7 @@ export type ImageDetail = {
   scene: { id: string; name: string } | null;
   tags: { id: string; name: string }[];
   persons: { id: string; name: string }[];
+  tagSuggestions: TagSuggestion[];
   prompt: {
     id: string;
     currentBody: string;
@@ -116,5 +125,50 @@ export async function deleteImage(id: string): Promise<DeleteImageResult> {
     throw new Error(err.error?.message ?? `Failed to delete image (${res.status})`);
   }
   const json = (await res.json()) as { data: DeleteImageResult };
+  return json.data;
+}
+
+export type ApproveSuggestionResult = {
+  suggestion: { id: string; status: "APPROVED" };
+  tag: { id: string; name: string } | null;
+  alreadyApproved: boolean;
+};
+
+export type RejectSuggestionResult = {
+  suggestion: { id: string; status: "REJECTED" };
+  alreadyRejected: boolean;
+};
+
+/** Approves an AI tag candidate. `label` edits only apply while PENDING. */
+export async function approveSuggestion(
+  imageId: string,
+  suggestionId: string,
+  label?: string,
+): Promise<ApproveSuggestionResult> {
+  const res = await fetch(`/api/images/${imageId}/suggestions/${suggestionId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(label !== undefined ? { label } : {}),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to approve suggestion (${res.status})`);
+  }
+  const json = (await res.json()) as { data: ApproveSuggestionResult };
+  return json.data;
+}
+
+export async function rejectSuggestion(
+  imageId: string,
+  suggestionId: string,
+): Promise<RejectSuggestionResult> {
+  const res = await fetch(`/api/images/${imageId}/suggestions/${suggestionId}/reject`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to reject suggestion (${res.status})`);
+  }
+  const json = (await res.json()) as { data: RejectSuggestionResult };
   return json.data;
 }
