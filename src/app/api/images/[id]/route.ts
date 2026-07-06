@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
 import { getSignedUrlCache, setSignedUrlCache } from "@/lib/supabase/signedUrlCache";
+import { resolveWorkspaceImage } from "@/lib/images/resolveWorkspaceImage";
 
 const BUCKET = "photobox-private";
 
@@ -32,8 +33,10 @@ export async function GET(
 
   const { id } = await params;
 
-  const image = await prisma.image.findUnique({
-    where: { id },
+  // Fetch + workspace membership in one call; image is exposed only when ok.
+  const resolved = await resolveWorkspaceImage({
+    id,
+    userId: user.id,
     select: {
       id: true,
       workspaceId: true,
@@ -84,18 +87,16 @@ export async function GET(
     },
   });
 
-  if (!image || image.deletedAt !== null || image.status !== "ACTIVE") {
+  if (resolved.kind === "not_found") return Errors.notFound("Image not found");
+  if (resolved.kind === "forbidden") return Errors.forbidden();
+  const image = resolved.image;
+
+  // Deleted / non-ACTIVE images are 404 (evaluated after auth — Phase 8B Step 2,
+  // case A: a cross-workspace deleted image now returns 403 instead of the prior
+  // 404, which is an intentional, more-consistent hardening).
+  if (image.deletedAt !== null || image.status !== "ACTIVE") {
     return Errors.notFound("Image not found");
   }
-
-  // workspace membership check
-  const member = await prisma.workspaceMember.findUnique({
-    where: {
-      workspaceId_userId: { workspaceId: image.workspaceId, userId: user.id },
-    },
-    select: { workspaceId: true },
-  });
-  if (!member) return Errors.forbidden();
 
   const [thumbnailUrl, previewUrl, originalUrl] = await Promise.all([
     signedUrl(image.thumbnailPath ?? image.previewPath ?? image.storagePath, 900),
@@ -144,20 +145,15 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const image = await prisma.image.findUnique({
-    where: { id },
+  const resolved = await resolveWorkspaceImage({
+    id,
+    userId: user.id,
     select: { id: true, workspaceId: true, status: true, deletedAt: true },
   });
 
-  if (!image) return Errors.notFound("Image not found");
-
-  const member = await prisma.workspaceMember.findUnique({
-    where: {
-      workspaceId_userId: { workspaceId: image.workspaceId, userId: user.id },
-    },
-    select: { workspaceId: true },
-  });
-  if (!member) return Errors.forbidden();
+  if (resolved.kind === "not_found") return Errors.notFound("Image not found");
+  if (resolved.kind === "forbidden") return Errors.forbidden();
+  const image = resolved.image;
 
   if (image.deletedAt !== null || image.status === "DELETED") {
     return ok({ deleted: true, alreadyDeleted: true, imageId: image.id });
