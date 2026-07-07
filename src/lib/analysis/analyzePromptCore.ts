@@ -10,6 +10,13 @@ import { promptAnalysisSchema, filterAttributeTerms, type UsageCategory } from "
 export type AnalyzePromptInput = {
   currentBody: string | null;
   notes: string | null;
+  /**
+   * Phase 10-5C: the caller's pre-validated Japanese translation of
+   * currentBody (see getEffectiveJapanesePromptBody — status+hash checked
+   * there, NOT here). When present and non-empty, used in place of
+   * currentBody; currentBody remains the fallback when this is null/absent.
+   */
+  effectiveJapaneseBody?: string | null;
 };
 
 export type AnalyzePromptDeps = {
@@ -36,12 +43,15 @@ function normalize(s: string | null): string {
 }
 
 /**
- * Builds the analyzed text from currentBody + notes (JA original often lives in
- * notes). Non-empty parts are joined with a single space; empty result means
- * "no prompt".
+ * Builds the analyzed text from body + notes (JA original often lives in
+ * notes). `effectiveJapaneseBody` (Phase 10-5C, pre-validated by the caller
+ * via getEffectiveJapanesePromptBody) takes priority over currentBody when
+ * present and non-empty; currentBody is the fallback. Non-empty parts are
+ * joined with a single space; empty result means "no prompt".
  */
 export function buildAnalysisText(input: AnalyzePromptInput): string {
-  const parts = [normalize(input.currentBody), normalize(input.notes)].filter(Boolean);
+  const body = normalize(input.effectiveJapaneseBody ?? null) || normalize(input.currentBody);
+  const parts = [body, normalize(input.notes)].filter(Boolean);
   return parts.join(" ");
 }
 

@@ -23,6 +23,7 @@ import {
   planPersistence,
   type AnalysisPersistencePlan,
 } from "@/lib/analysis/analysisPersistence";
+import { getEffectiveJapanesePromptBody } from "@/lib/translation/translationCore";
 
 // Phase 10-2: fixed to the mock provider (no real LLM). source/model/version
 // are constant for this phase.
@@ -99,7 +100,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       status: true,
       deletedAt: true,
       notes: true,
-      prompt: { select: { currentBody: true } },
+      prompt: {
+        select: {
+          currentBody: true,
+          translatedBodyJa: true,
+          translatedFromBodyHash: true,
+          translationStatus: true,
+        },
+      },
     },
   });
   if (resolved.kind === "not_found") return Errors.notFound("Image not found");
@@ -121,7 +129,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const force = request.nextUrl.searchParams.get("force") === "1";
   const currentBody = image.prompt?.currentBody ?? null;
   const notes = image.notes ?? null;
-  const text = buildAnalysisText({ currentBody, notes });
+  // Phase 10-5C: prefer a validated Japanese translation over currentBody.
+  // getEffectiveJapanesePromptBody re-checks status+hash itself — presence
+  // of translatedBodyJa alone is never trusted.
+  const effectiveJapaneseBody = image.prompt
+    ? getEffectiveJapanesePromptBody({
+        currentBody: image.prompt.currentBody,
+        translatedBodyJa: image.prompt.translatedBodyJa,
+        translatedFromBodyHash: image.prompt.translatedFromBodyHash,
+        translationStatus: image.prompt.translationStatus,
+      })
+    : null;
+  const text = buildAnalysisText({ currentBody, notes, effectiveJapaneseBody });
   const hasPrompt = text !== "";
   const currentHash = hasPrompt ? computePromptHash(text) : null;
 
@@ -144,7 +163,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return ok({ cached: true, analysis });
   }
 
-  const result = await analyzePromptCore({ currentBody, notes }, { provider, schemaVersion: SCHEMA_VERSION });
+  const result = await analyzePromptCore(
+    { currentBody, notes, effectiveJapaneseBody },
+    { provider, schemaVersion: SCHEMA_VERSION },
+  );
   const plan = planPersistence(result);
 
   try {

@@ -26,6 +26,40 @@ describe("buildAnalysisText", () => {
   it("both joined + whitespace normalized", () => {
     expect(buildAnalysisText({ currentBody: "a   cat", notes: "  猫 " })).toBe("a cat 猫");
   });
+
+  // Phase 10-5C: effectiveJapaneseBody priority
+  it("effectiveJapaneseBody takes priority over currentBody when present", () => {
+    expect(
+      buildAnalysisText({
+        currentBody: "a cute cat",
+        notes: null,
+        effectiveJapaneseBody: "可愛い猫",
+      }),
+    ).toBe("可愛い猫");
+  });
+
+  it("effectiveJapaneseBody + notes are joined (currentBody dropped)", () => {
+    expect(
+      buildAnalysisText({
+        currentBody: "a cute cat",
+        notes: "備考",
+        effectiveJapaneseBody: "可愛い猫",
+      }),
+    ).toBe("可愛い猫 備考");
+  });
+
+  it("falls back to currentBody + notes when effectiveJapaneseBody is null/absent", () => {
+    expect(
+      buildAnalysisText({ currentBody: "a cute cat", notes: "note", effectiveJapaneseBody: null }),
+    ).toBe("a cute cat note");
+    expect(buildAnalysisText({ currentBody: "a cute cat", notes: "note" })).toBe("a cute cat note");
+  });
+
+  it("falls back to currentBody when effectiveJapaneseBody is an empty/blank string", () => {
+    expect(
+      buildAnalysisText({ currentBody: "a cute cat", notes: null, effectiveJapaneseBody: "   " }),
+    ).toBe("a cute cat");
+  });
 });
 
 describe("computePromptHash", () => {
