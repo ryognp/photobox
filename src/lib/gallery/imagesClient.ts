@@ -172,3 +172,45 @@ export async function rejectSuggestion(
   const json = (await res.json()) as { data: RejectSuggestionResult };
   return json.data;
 }
+
+export type AnalyzeImageResult = {
+  cached: boolean;
+  analysis: {
+    id: string;
+    status: "DONE" | "FAILED" | "SKIPPED_NO_PROMPT";
+    error: string | null;
+    updatedAt: string;
+    suggestions: TagSuggestion[];
+  };
+};
+
+/**
+ * Runs prompt-first analysis (mock provider, Phase 10-2/10-4). `force: true`
+ * re-runs even if a cached DONE result matches the current prompt hash.
+ */
+export async function analyzeImage(
+  imageId: string,
+  opts?: { force?: boolean },
+): Promise<AnalyzeImageResult> {
+  const sp = new URLSearchParams();
+  if (opts?.force) sp.set("force", "1");
+  const res = await fetch(`/api/images/${imageId}/analyze?${sp.toString()}`, { method: "POST" });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      throw new Error(
+        err.error?.message ??
+          (retryAfter ? `しばらく待ってから再試行してください（${retryAfter}秒後）` : "リクエストが多すぎます"),
+      );
+    }
+    throw new Error(err.error?.message ?? `Failed to analyze image (${res.status})`);
+  }
+  const json = (await res.json()) as { data: AnalyzeImageResult };
+  // Defensive guard: the server should always populate `analysis` on a 2xx
+  // response, but never trust that blindly in the UI layer.
+  if (!json.data || !json.data.analysis) {
+    throw new Error("解析結果を取得できませんでした");
+  }
+  return json.data;
+}

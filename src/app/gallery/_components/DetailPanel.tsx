@@ -2,6 +2,7 @@
 
 import { useEffect, useReducer, useState } from "react"
 import {
+  analyzeImage,
   approveSuggestion,
   deleteImage,
   fetchImageDetail,
@@ -23,6 +24,7 @@ interface DetailPanelProps {
   onClose: () => void
   onDeleted?: (imageId: string) => void
   onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
+  onAnalyzed?: (suggestions: TagSuggestion[]) => void
   hideHeader?: boolean
   /** 外部からfetch済みdetailを渡す場合（二重fetch防止） */
   prefetchedDetail?: ImageDetail | null
@@ -429,6 +431,100 @@ function SuggestionChip({
   )
 }
 
+// ---- AnalyzeSection: AI解析トリガー（mock provider, Phase 10-4） ----
+
+type AnalyzePhase = "idle" | "analyzing"
+type AnalyzeMessage = { text: string; tone: "ok" | "info" | "error" }
+
+function describeAnalysisResult(analysis: {
+  status: "DONE" | "FAILED" | "SKIPPED_NO_PROMPT"
+  error: string | null
+  suggestions: TagSuggestion[]
+}, cached: boolean): AnalyzeMessage {
+  const suffix = cached ? "（キャッシュ済み）" : ""
+  if (analysis.status === "SKIPPED_NO_PROMPT") {
+    return { text: `プロンプトがないため解析をスキップしました${suffix}`, tone: "info" }
+  }
+  if (analysis.status === "FAILED") {
+    return { text: `解析に失敗しました${suffix}: ${analysis.error ?? "不明なエラー"}`, tone: "error" }
+  }
+  const n = analysis.suggestions.length
+  return n > 0
+    ? { text: `AIタグ候補を${n}件見つけました${suffix}`, tone: "ok" }
+    : { text: `解析は完了しましたが候補はありませんでした${suffix}`, tone: "ok" }
+}
+
+function AnalyzeSection({
+  imageId,
+  onAnalyzed,
+}: {
+  imageId: string
+  onAnalyzed?: (suggestions: TagSuggestion[]) => void
+}) {
+  const [phase, setPhase] = useState<AnalyzePhase>("idle")
+  const [message, setMessage] = useState<AnalyzeMessage | null>(null)
+  const [hasResult, setHasResult] = useState(false)
+  // 画像切り替え時にリセット
+  const [prevImageId, setPrevImageId] = useState(imageId)
+  if (imageId !== prevImageId) {
+    setPrevImageId(imageId)
+    setPhase("idle")
+    setMessage(null)
+    setHasResult(false)
+  }
+
+  const run = async (force: boolean) => {
+    setPhase("analyzing")
+    setMessage(null)
+    try {
+      const result = await analyzeImage(imageId, { force })
+      setHasResult(true)
+      setMessage(describeAnalysisResult(result.analysis, result.cached))
+      onAnalyzed?.(result.analysis.suggestions)
+    } catch (e: unknown) {
+      setMessage({ text: (e as Error).message ?? "解析に失敗しました", tone: "error" })
+    } finally {
+      setPhase("idle")
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => void run(false)}
+          disabled={phase === "analyzing"}
+          className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {phase === "analyzing" ? "解析中..." : "AI解析する"}
+        </button>
+        {hasResult && (
+          <button
+            onClick={() => void run(true)}
+            disabled={phase === "analyzing"}
+            className="text-xs text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
+          >
+            強制再解析
+          </button>
+        )}
+      </div>
+      {message && (
+        <p
+          className={`mt-1 text-xs ${
+            message.tone === "error"
+              ? "text-red-500"
+              : message.tone === "info"
+                ? "text-zinc-500"
+                : "text-green-600"
+          }`}
+        >
+          {message.text}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ---- Main ----
 
 export default function DetailPanel({
@@ -436,6 +532,7 @@ export default function DetailPanel({
   onClose,
   onDeleted,
   onSuggestionResolved,
+  onAnalyzed,
   hideHeader = false,
   prefetchedDetail,
   prefetchedLoading,
@@ -575,6 +672,8 @@ export default function DetailPanel({
               </div>
             </div>
           )}
+
+          <AnalyzeSection imageId={state.detail.id} onAnalyzed={onAnalyzed} />
 
           {state.detail.tagSuggestions.length > 0 && (
             <div>
