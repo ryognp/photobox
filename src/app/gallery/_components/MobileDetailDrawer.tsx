@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import type { ImageDetail } from "@/lib/gallery/imagesClient"
+import type { ImageDetail, TagSuggestion } from "@/lib/gallery/imagesClient"
 import DetailPanel, { type SuggestionResolvedPayload } from "./DetailPanel"
 
 interface MobileDetailDrawerProps {
@@ -9,6 +9,7 @@ interface MobileDetailDrawerProps {
   onClose: () => void
   onDeleted?: (imageId: string) => void
   onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
+  onAnalyzed?: (suggestions: TagSuggestion[]) => void
   prefetchedDetail?: ImageDetail | null
   prefetchedLoading?: boolean
   prefetchedError?: string | null
@@ -19,6 +20,7 @@ export default function MobileDetailDrawer({
   onClose,
   onDeleted,
   onSuggestionResolved,
+  onAnalyzed,
   prefetchedDetail,
   prefetchedLoading,
   prefetchedError,
@@ -64,6 +66,7 @@ export default function MobileDetailDrawer({
             onClose={onClose}
             onDeleted={onDeleted}
             onSuggestionResolved={onSuggestionResolved}
+            onAnalyzed={onAnalyzed}
             prefetchedDetail={prefetchedDetail}
             prefetchedLoading={prefetchedLoading}
             prefetchedError={prefetchedError}

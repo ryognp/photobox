@@ -8,6 +8,7 @@ import {
   type GalleryFilters,
   type GalleryImage,
   type ImageDetail,
+  type TagSuggestion,
 } from "@/lib/gallery/imagesClient"
 import SearchBar from "./_components/SearchBar"
 import FilterSidebar from "./_components/FilterSidebar"
@@ -51,6 +52,7 @@ type GalleryAction =
       action: "approved" | "rejected"
       tag?: { id: string; name: string } | null
     }
+  | { type: "analysis_result"; suggestions: TagSuggestion[] }
 
 function reducer(s: GalleryState, a: GalleryAction): GalleryState {
   switch (a.type) {
@@ -93,6 +95,10 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
         tags = [...tags, a.tag]
       }
       return { ...s, detail: { ...s.detail, tags, tagSuggestions } }
+    }
+    case "analysis_result": {
+      if (!s.detail) return s
+      return { ...s, detail: { ...s.detail, tagSuggestions: a.suggestions } }
     }
   }
 }
@@ -281,6 +287,7 @@ function GalleryInner() {
             onClose={() => dispatch({ type: "select", id: null })}
             onDeleted={(id) => dispatch({ type: "delete_ok", id })}
             onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
+            onAnalyzed={(suggestions) => dispatch({ type: "analysis_result", suggestions })}
             prefetchedDetail={state.detail}
             prefetchedLoading={state.detailLoading}
             prefetchedError={state.detailError}
@@ -294,6 +301,7 @@ function GalleryInner() {
         onClose={() => dispatch({ type: "select", id: null })}
         onDeleted={(id) => dispatch({ type: "delete_ok", id })}
         onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
+        onAnalyzed={(suggestions) => dispatch({ type: "analysis_result", suggestions })}
         prefetchedDetail={state.detail}
         prefetchedLoading={state.detailLoading}
         prefetchedError={state.detailError}
