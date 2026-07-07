@@ -329,11 +329,11 @@ function PromptVersionsSection({ versions }: { versions: PromptVersionSummary[] 
   )
 }
 
-// ---- SuggestionChip: AIタグ候補1件の承認/却下/編集して承認 ----
+// ---- SuggestionCard: AIタグ候補1件の承認/却下/編集して承認（カード型・押しやすいボタン） ----
 
 type SuggestionPhase = "view" | "editing" | "submitting" | "error"
 
-function SuggestionChip({
+function SuggestionCard({
   imageId,
   suggestion,
   onResolved,
@@ -378,55 +378,64 @@ function SuggestionChip({
 
   if (phase === "editing") {
     return (
-      <div className="flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5">
         <input
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={40}
-          className="w-28 rounded border border-amber-300 bg-white px-1.5 py-0.5 text-xs text-zinc-800 focus:outline-none"
+          className="w-full rounded border border-amber-300 bg-white px-2 py-2 text-sm text-zinc-800 focus:outline-none"
         />
-        <button
-          onClick={() => void approve(draft)}
-          className="text-xs text-amber-700 hover:text-amber-900"
-          aria-label="編集して承認"
-        >
-          ✓
-        </button>
-        <button
-          onClick={() => setPhase("view")}
-          className="text-xs text-zinc-400 hover:text-zinc-700"
-          aria-label="キャンセル"
-        >
-          ×
-        </button>
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={() => void approve(draft)}
+            className="flex-1 rounded-md bg-amber-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-amber-700"
+          >
+            保存して承認
+          </button>
+          <button
+            onClick={() => setPhase("view")}
+            className="flex-1 rounded-md border border-zinc-200 px-3 py-2.5 text-center text-sm text-zinc-600 hover:bg-zinc-50"
+          >
+            キャンセル
+          </button>
+        </div>
       </div>
     )
   }
 
   if (phase === "submitting") {
     return (
-      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-400">
+      <div className="rounded-md border border-amber-100 bg-amber-50 p-2.5 text-sm text-amber-400">
         {suggestion.label} …
-      </span>
+      </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-        <span>{suggestion.label}</span>
-        <button onClick={() => void approve()} className="text-amber-600 hover:text-amber-900" aria-label="承認">
-          ✓
+    <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5">
+      <p className="text-sm text-amber-800">{suggestion.label}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          onClick={() => void approve()}
+          className="min-w-[64px] flex-1 rounded-md bg-amber-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-amber-700"
+        >
+          承認
         </button>
-        <button onClick={startEdit} className="text-amber-500 hover:text-amber-800" aria-label="編集して承認">
-          ✎
+        <button
+          onClick={startEdit}
+          className="min-w-[64px] flex-1 rounded-md border border-amber-300 bg-white px-3 py-2.5 text-center text-sm text-amber-700 hover:bg-amber-50"
+        >
+          編集
         </button>
-        <button onClick={() => void reject()} className="text-amber-500 hover:text-red-600" aria-label="却下">
-          ×
+        <button
+          onClick={() => void reject()}
+          className="min-w-[64px] flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2.5 text-center text-sm text-zinc-600 hover:bg-red-50 hover:text-red-600"
+        >
+          却下
         </button>
       </div>
-      {phase === "error" && errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+      {phase === "error" && errorMsg && <p className="mt-1.5 text-xs text-red-500">{errorMsg}</p>}
     </div>
   )
 }
@@ -678,9 +687,9 @@ export default function DetailPanel({
           {state.detail.tagSuggestions.length > 0 && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">AIタグ候補</p>
-              <div className="mt-1 flex flex-wrap gap-1.5">
+              <div className="mt-1.5 flex flex-col gap-2">
                 {state.detail.tagSuggestions.map((s) => (
-                  <SuggestionChip
+                  <SuggestionCard
                     key={s.id}
                     imageId={state.detail.id}
                     suggestion={s}
