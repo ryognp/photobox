@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ok, Errors } from "@/lib/apiResponse";
+import { resetTranslationCacheData } from "@/lib/translation/translationCore";
 
 export async function PATCH(
   request: NextRequest,
@@ -92,6 +93,9 @@ export async function PATCH(
       where: { id: image.prompt.id },
       data: {
         currentBody: newBody,
+        // Phase 10-5B: currentBody changed, so any cached translation is
+        // for the old body — invalidate it (see resetTranslationCacheData).
+        ...resetTranslationCacheData(),
         versions: {
           create: {
             workspaceId: workspace.id,

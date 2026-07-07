@@ -27,6 +27,7 @@ const PRESETS: Record<RateLimitPreset, { limit: number; window: `${number} ${"s"
   galleryRead: { limit: 300, window: "1 m" }, // defined but not applied yet
   aiAnalyze: { limit: 20, window: "1 m" }, // POST /api/images/[id]/analyze
   tagSuggestionAction: { limit: 60, window: "1 m" }, // approve/reject suggestion
+  translationBatch: { limit: 10, window: "1 m" }, // POST /api/prompts/translate-batch
 };
 
 const limiters = new Map<RateLimitPreset, LimiterLike>();
