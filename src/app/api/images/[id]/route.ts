@@ -64,6 +64,11 @@ export async function GET(
       scene: { select: { id: true, name: true } },
       imageTags: { select: { tag: { select: { id: true, name: true } } } },
       imagePersons: { select: { person: { select: { id: true, name: true } } } },
+      tagSuggestions: {
+        where: { status: "PENDING" },
+        select: { id: true, label: true, confidence: true, status: true },
+        orderBy: { createdAt: "asc" },
+      },
       prompt: {
         select: {
           id: true,
@@ -125,6 +130,7 @@ export async function GET(
     scene: image.scene,
     tags: image.imageTags.map((t) => t.tag),
     persons: image.imagePersons.map((p) => p.person),
+    tagSuggestions: image.tagSuggestions,
     prompt: image.prompt,
     signedUrls: { thumbnailUrl, previewUrl, originalUrl },
   });

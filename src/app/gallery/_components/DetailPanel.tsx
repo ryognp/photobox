@@ -1,12 +1,28 @@
 "use client"
 
 import { useEffect, useReducer, useState } from "react"
-import { deleteImage, fetchImageDetail, type ImageDetail, type PromptVersionSummary } from "@/lib/gallery/imagesClient"
+import {
+  approveSuggestion,
+  deleteImage,
+  fetchImageDetail,
+  rejectSuggestion,
+  type ImageDetail,
+  type PromptVersionSummary,
+  type TagSuggestion,
+} from "@/lib/gallery/imagesClient"
+
+/** Emitted after an AI tag candidate is approved or rejected (server call already succeeded). */
+export type SuggestionResolvedPayload = {
+  suggestionId: string
+  action: "approved" | "rejected"
+  tag?: { id: string; name: string } | null
+}
 
 interface DetailPanelProps {
   imageId: string | null
   onClose: () => void
   onDeleted?: (imageId: string) => void
+  onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
   hideHeader?: boolean
   /** 外部からfetch済みdetailを渡す場合（二重fetch防止） */
   prefetchedDetail?: ImageDetail | null
@@ -311,12 +327,115 @@ function PromptVersionsSection({ versions }: { versions: PromptVersionSummary[] 
   )
 }
 
+// ---- SuggestionChip: AIタグ候補1件の承認/却下/編集して承認 ----
+
+type SuggestionPhase = "view" | "editing" | "submitting" | "error"
+
+function SuggestionChip({
+  imageId,
+  suggestion,
+  onResolved,
+}: {
+  imageId: string
+  suggestion: TagSuggestion
+  onResolved: (payload: SuggestionResolvedPayload) => void
+}) {
+  const [phase, setPhase] = useState<SuggestionPhase>("view")
+  const [draft, setDraft] = useState(suggestion.label)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  const startEdit = () => {
+    setDraft(suggestion.label)
+    setErrorMsg(null)
+    setPhase("editing")
+  }
+
+  const approve = async (label?: string) => {
+    setPhase("submitting")
+    setErrorMsg(null)
+    try {
+      const res = await approveSuggestion(imageId, suggestion.id, label)
+      onResolved({ suggestionId: suggestion.id, action: "approved", tag: res.tag })
+    } catch (e: unknown) {
+      setErrorMsg((e as Error).message ?? "承認に失敗しました")
+      setPhase("error")
+    }
+  }
+
+  const reject = async () => {
+    setPhase("submitting")
+    setErrorMsg(null)
+    try {
+      await rejectSuggestion(imageId, suggestion.id)
+      onResolved({ suggestionId: suggestion.id, action: "rejected" })
+    } catch (e: unknown) {
+      setErrorMsg((e as Error).message ?? "却下に失敗しました")
+      setPhase("error")
+    }
+  }
+
+  if (phase === "editing") {
+    return (
+      <div className="flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          maxLength={40}
+          className="w-28 rounded border border-amber-300 bg-white px-1.5 py-0.5 text-xs text-zinc-800 focus:outline-none"
+        />
+        <button
+          onClick={() => void approve(draft)}
+          className="text-xs text-amber-700 hover:text-amber-900"
+          aria-label="編集して承認"
+        >
+          ✓
+        </button>
+        <button
+          onClick={() => setPhase("view")}
+          className="text-xs text-zinc-400 hover:text-zinc-700"
+          aria-label="キャンセル"
+        >
+          ×
+        </button>
+      </div>
+    )
+  }
+
+  if (phase === "submitting") {
+    return (
+      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-400">
+        {suggestion.label} …
+      </span>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+        <span>{suggestion.label}</span>
+        <button onClick={() => void approve()} className="text-amber-600 hover:text-amber-900" aria-label="承認">
+          ✓
+        </button>
+        <button onClick={startEdit} className="text-amber-500 hover:text-amber-800" aria-label="編集して承認">
+          ✎
+        </button>
+        <button onClick={() => void reject()} className="text-amber-500 hover:text-red-600" aria-label="却下">
+          ×
+        </button>
+      </div>
+      {phase === "error" && errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+    </div>
+  )
+}
+
 // ---- Main ----
 
 export default function DetailPanel({
   imageId,
   onClose,
   onDeleted,
+  onSuggestionResolved,
   hideHeader = false,
   prefetchedDetail,
   prefetchedLoading,
@@ -452,6 +571,22 @@ export default function DetailPanel({
                   <span key={t.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
                     {t.name}
                   </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {state.detail.tagSuggestions.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">AIタグ候補</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {state.detail.tagSuggestions.map((s) => (
+                  <SuggestionChip
+                    key={s.id}
+                    imageId={state.detail.id}
+                    suggestion={s}
+                    onResolved={(payload) => onSuggestionResolved?.(payload)}
+                  />
                 ))}
               </div>
             </div>
