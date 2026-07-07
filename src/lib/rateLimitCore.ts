@@ -9,7 +9,8 @@ export type RateLimitPreset =
   | "importParse"
   | "galleryRead"
   | "aiAnalyze"
-  | "tagSuggestionAction";
+  | "tagSuggestionAction"
+  | "translationBatch";
 
 export type RateLimitSource = "shared" | "disabled" | "error";
 

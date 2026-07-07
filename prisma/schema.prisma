@@ -86,6 +86,14 @@ enum SuggestionStatus {
   REJECTED
 }
 
+enum TranslationStatus {
+  NONE
+  PENDING
+  DONE
+  FAILED
+  SKIPPED_ALREADY_JA
+}
+
 // ================================================================
 // Workspace / Auth
 // ================================================================
@@ -338,12 +346,25 @@ model Prompt {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
+  // Phase 10-5B: 日本語翻訳キャッシュ。currentBody更新時は必ずNONEにリセットする
+  // (resetTranslationCacheData を参照)。
+  translatedBodyJa       String?           @map("translated_body_ja")
+  translatedFromBodyHash String?           @map("translated_from_body_hash")
+  translationStatus      TranslationStatus @default(NONE) @map("translation_status")
+  translationProvider    String?           @map("translation_provider")
+  translationModel       String?           @map("translation_model")
+  translatedAt           DateTime?         @map("translated_at")
+  translationStartedAt   DateTime?         @map("translation_started_at")
+  translationError       String?           @map("translation_error")
+
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   image       Image         @relation(fields: [imageId], references: [id], onDelete: Cascade)
   promptGroup PromptGroup?  @relation(fields: [promptGroupId], references: [id], onDelete: SetNull)
   versions    PromptVersion[]
 
   @@index([workspaceId])
+  @@index([workspaceId, translationStatus])
+  @@index([workspaceId, translationStatus, translationStartedAt])
   @@map("prompts")
 }
 
