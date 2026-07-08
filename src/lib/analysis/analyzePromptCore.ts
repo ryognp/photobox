@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import type { PromptAnalysisProvider } from "./provider";
 import { promptAnalysisSchema, filterAttributeTerms, type UsageCategory } from "./analysisSchema";
+import { sanitizeAnalysisError } from "./analysisError";
 
 export type AnalyzePromptInput = {
   currentBody: string | null;
@@ -17,6 +18,14 @@ export type AnalyzePromptInput = {
    * currentBody; currentBody remains the fallback when this is null/absent.
    */
   effectiveJapaneseBody?: string | null;
+  /**
+   * Phase 10-5D: pre-built (and possibly truncated) analysis text. When
+   * provided, it is used verbatim as the text to hash and send to the
+   * provider — the route builds + truncates it once so the promptHash,
+   * cache key, and the text the provider sees all match. When absent, the
+   * text is rebuilt from the fields above via buildAnalysisText.
+   */
+  preparedText?: string | null;
 };
 
 export type AnalyzePromptDeps = {
@@ -64,7 +73,9 @@ export async function analyzePromptCore(
   input: AnalyzePromptInput,
   deps: AnalyzePromptDeps,
 ): Promise<AnalyzePromptResult> {
-  const text = buildAnalysisText(input);
+  // Phase 10-5D: use the route-prepared (truncated) text verbatim when given,
+  // so hash/cache-key/provider-input all match; otherwise rebuild from fields.
+  const text = input.preparedText != null ? input.preparedText : buildAnalysisText(input);
 
   // No prompt text at all → skip (provider is never called).
   if (text === "") {
@@ -77,10 +88,12 @@ export async function analyzePromptCore(
   try {
     raw = await deps.provider.analyze(text);
   } catch (e) {
+    // Phase 10-5D: sanitize so a real provider's error (possible secrets /
+    // huge payloads) never reaches ImageAnalysis.error or the API response.
     return {
       status: "FAILED",
       promptHash,
-      error: e instanceof Error ? e.message : String(e),
+      error: sanitizeAnalysisError(e),
     };
   }
 

@@ -39,6 +39,44 @@ export const promptAnalysisSchema = z.object({
 export type PromptAnalysisOutput = z.infer<typeof promptAnalysisSchema>;
 
 /**
+ * Phase 10-5D: hand-written JSON Schema for OpenAI Structured Outputs
+ * (strict mode). Kept in lockstep with `promptAnalysisSchema` (zod) above —
+ * a diff test asserts required keys / enum / maxItems / maxLength match, so
+ * the two never drift. `confidence` is REQUIRED here (strict schemas dislike
+ * optional fields); the zod side keeps it `.optional()`, which still accepts
+ * a present value, so they stay compatible. The zod `safeParse` in
+ * analyzePromptCore is retained as a second wall regardless of this schema.
+ */
+export const promptAnalysisJsonSchema = {
+  name: "prompt_analysis",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["tags", "keywords_ja", "keywords_en", "usage_category", "language_detected"],
+    properties: {
+      tags: {
+        type: "array",
+        maxItems: 15,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["label", "confidence"],
+          properties: {
+            label: { type: "string", minLength: 1, maxLength: 40 },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+          },
+        },
+      },
+      keywords_ja: { type: "array", maxItems: 20, items: { type: "string", minLength: 1, maxLength: 40 } },
+      keywords_en: { type: "array", maxItems: 20, items: { type: "string", minLength: 1, maxLength: 40 } },
+      usage_category: { type: "string", enum: [...USAGE_CATEGORIES] },
+      language_detected: { type: "string", enum: ["ja", "en", "mixed"] },
+    },
+  },
+} as const;
+
+/**
  * Denylist for person-attribute inference (defense-in-depth alongside the
  * system prompt). We do NOT emit tags/keywords about age, gender, race,
  * identity, health, religion, etc. A term is dropped if any denylist entry is

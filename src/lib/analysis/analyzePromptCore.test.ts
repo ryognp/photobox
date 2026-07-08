@@ -177,6 +177,61 @@ describe("analyzePromptCore — FAILED", () => {
       expect(r.raw).toBeDefined();
     }
   });
+
+  // Phase 10-5D: provider errors are sanitized before becoming result.error
+  it("provider error containing an API key is sanitized (Phase 10-5D)", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      { provider: createThrowingProvider("boom sk-secretKEY123_-"), schemaVersion: "prompt-v1" },
+    );
+    expect(r.status).toBe("FAILED");
+    if (r.status === "FAILED") {
+      expect(r.error).not.toContain("sk-secretKEY123_-");
+      expect(r.error).toContain("[REDACTED_API_KEY]");
+    }
+  });
+});
+
+// Phase 10-5D: preparedText is used verbatim (route builds + truncates once)
+describe("analyzePromptCore — preparedText", () => {
+  it("uses preparedText verbatim instead of rebuilding from fields", async () => {
+    let seen = "";
+    const provider = {
+      modelId: "mock",
+      analyze: async (text: string) => {
+        seen = text;
+        return { tags: [], keywords_ja: [], keywords_en: [], usage_category: "other", language_detected: "ja" };
+      },
+    };
+    const r = await analyzePromptCore(
+      { currentBody: "IGNORED english body", notes: "IGNORED", preparedText: "切り詰め済み日本語テキスト" },
+      { provider, schemaVersion: "prompt-v1" },
+    );
+    expect(seen).toBe("切り詰め済み日本語テキスト");
+    expect(r.status).toBe("DONE");
+  });
+
+  it("empty preparedText → SKIPPED_NO_PROMPT, provider not called", async () => {
+    let called = false;
+    const provider = { modelId: "mock", analyze: async () => { called = true; return {}; } };
+    const r = await analyzePromptCore(
+      { currentBody: "has body", notes: null, preparedText: "" },
+      { provider, schemaVersion: "prompt-v1" },
+    );
+    expect(r.status).toBe("SKIPPED_NO_PROMPT");
+    expect(called).toBe(false);
+  });
+
+  it("promptHash reflects preparedText, not the raw fields", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "raw", notes: null, preparedText: "prepared text A" },
+      DEPS({ tags: [], keywords_ja: [], keywords_en: [], usage_category: "other", language_detected: "ja" }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") {
+      expect(r.promptHash).toBe(computePromptHash("prepared text A"));
+    }
+  });
 });
 
 describe("attribute denylist", () => {
