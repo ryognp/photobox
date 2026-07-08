@@ -85,7 +85,7 @@ async function readAnalysisResponse(analysisId: string) {
  *
  * On-demand prompt-first analysis. The provider is resolved from env
  * (Phase 10-5D: getAnalysisProviderFromEnv — mock unless AI_ANALYSIS_ENABLED
- * and a real provider are configured; in 10-5D-1 only mock is ever "ok").
+ * is "true" and a real provider (openai) is configured with a key).
  * Persists ImageAnalysis + PENDING TagSuggestion candidates. AI results are
  * candidates only — never auto-promoted to Tags.
  *
