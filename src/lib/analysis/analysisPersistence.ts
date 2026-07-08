@@ -35,8 +35,9 @@ export type AnalysisPersistencePlan = {
   error: string | null;
   usageCategory: string | null;
   languageDetected: string | null;
-  /** provider structured output (DONE) or raw invalid output (FAILED); null otherwise. */
-  raw: unknown | null;
+  /** Phase 10-5D: SANITIZED structured output (DONE); null otherwise. Never
+   * the un-filtered provider raw — see analyzePromptCore.safeRaw. */
+  safeRaw: unknown | null;
   keywordsJa: string[] | null;
   keywordsEn: string[] | null;
   /** DONE / SKIPPED reset PENDING suggestions (keep APPROVED/REJECTED); FAILED does not touch them. */
@@ -53,7 +54,7 @@ export function planPersistence(result: AnalyzePromptResult): AnalysisPersistenc
       error: null,
       usageCategory: null,
       languageDetected: null,
-      raw: null,
+      safeRaw: null,
       keywordsJa: null,
       keywordsEn: null,
       resetPendingSuggestions: true,
@@ -68,7 +69,7 @@ export function planPersistence(result: AnalyzePromptResult): AnalysisPersistenc
       error: result.error,
       usageCategory: null,
       languageDetected: null,
-      raw: result.raw ?? null,
+      safeRaw: result.safeRaw ?? null,
       keywordsJa: null,
       keywordsEn: null,
       resetPendingSuggestions: false, // leave existing suggestions untouched
@@ -83,7 +84,7 @@ export function planPersistence(result: AnalyzePromptResult): AnalysisPersistenc
     error: null,
     usageCategory: result.usageCategory,
     languageDetected: result.languageDetected,
-    raw: result.raw ?? null,
+    safeRaw: result.safeRaw ?? null,
     keywordsJa: result.keywordsJa,
     keywordsEn: result.keywordsEn,
     resetPendingSuggestions: true,

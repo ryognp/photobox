@@ -34,8 +34,10 @@ export type LimiterLike = {
   }>;
 };
 
-/** SHA-256 hash so userId/workspaceId never appear as raw Redis keys. */
-function hashIdentity(input: string): string {
+/** SHA-256 hash so userId/workspaceId never appear as raw Redis keys.
+ * Exported so other Redis-keyed features (e.g. analysis cost guard) can hash
+ * identifiers the same way. */
+export function hashIdentity(input: string): string {
   return createHash("sha256").update(input).digest("hex").slice(0, 32);
 }
 

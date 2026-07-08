@@ -25,8 +25,14 @@ import {
 } from "@/lib/analysis/analysisPersistence";
 import { getEffectiveJapanesePromptBody } from "@/lib/translation/translationCore";
 import { getAnalysisProviderFromEnv } from "@/lib/analysis/analysisProvider";
+import { createOpenAIProvider } from "@/lib/analysis/openaiProvider";
 import { sanitizeAnalysisError } from "@/lib/analysis/analysisError";
-import { readAnalysisMaxInputChars, truncateAnalysisInput } from "@/lib/analysis/analysisConfig";
+import {
+  readAnalysisMaxInputChars,
+  readAnalysisDailyCallLimit,
+  truncateAnalysisInput,
+} from "@/lib/analysis/analysisConfig";
+import { reserveAnalysisBudget } from "@/lib/analysis/analysisBudget";
 
 // source/schema version are constant. modelId is per-request (provider factory
 // returns a composite provider:model:promptVersion id — Phase 10-5D).
@@ -45,7 +51,7 @@ function toAnalysisData(plan: AnalysisPersistencePlan) {
     error: plan.error,
     usageCategory: plan.usageCategory,
     languageDetected: plan.languageDetected,
-    rawJson: jsonOrNull(plan.raw),
+    rawJson: jsonOrNull(plan.safeRaw),
     keywordsJa: jsonOrNull(plan.keywordsJa),
     keywordsEn: jsonOrNull(plan.keywordsEn),
   };
@@ -79,7 +85,7 @@ async function readAnalysisResponse(analysisId: string) {
  *
  * On-demand prompt-first analysis. The provider is resolved from env
  * (Phase 10-5D: getAnalysisProviderFromEnv — mock unless AI_ANALYSIS_ENABLED
- * and a real provider are configured; in 10-5D-1 only mock is ever "ok").
+ * is "true" and a real provider (openai) is configured with a key).
  * Persists ImageAnalysis + PENDING TagSuggestion candidates. AI results are
  * candidates only — never auto-promoted to Tags.
  *
@@ -147,7 +153,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // Phase 10-5D: provider resolution (composite modelId), then truncate BEFORE
   // hashing so the cache key + provider input match exactly.
-  const resolution = getAnalysisProviderFromEnv(process.env);
+  const resolution = getAnalysisProviderFromEnv(process.env, { createOpenAI: createOpenAIProvider });
   const modelId = resolution.modelId;
 
   const builtText = buildAnalysisText({ currentBody, notes, effectiveJapaneseBody });
@@ -177,13 +183,39 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Phase 10-5D: config_error (provider unavailable/misconfigured) is persisted
   // as a visible FAILED — never a bare HTTP 500. When there is no prompt text
   // at all it is a SKIP (the provider would never have been called anyway).
-  // Cost guard / real provider call arrive in 10-5D-2.
+  //
+  // Cost guard (reserveAnalysisBudget) runs ONLY for a non-mock provider that
+  // is actually about to be called — after the cache miss above, before the
+  // provider call. mock (no external cost) and no-prompt (provider not called)
+  // skip it. Budget-exceeded is persisted as a visible FAILED too.
   let result: AnalyzePromptResult;
+  let budgetRemaining: number | undefined;
   if (resolution.kind === "config_error") {
     result = hasPrompt
       ? { status: "FAILED", promptHash: computePromptHash(analysisText), error: sanitizeAnalysisError(resolution.error) }
       : { status: "SKIPPED_NO_PROMPT", promptHash: null };
+  } else if (resolution.providerId !== "mock" && hasPrompt) {
+    const budget = await reserveAnalysisBudget({
+      workspaceId: image.workspaceId,
+      providerId: resolution.providerId,
+      modelId,
+      limit: readAnalysisDailyCallLimit(process.env),
+    });
+    if (!budget.allowed) {
+      result = {
+        status: "FAILED",
+        promptHash: computePromptHash(analysisText),
+        error: sanitizeAnalysisError(budget.reason),
+      };
+    } else {
+      budgetRemaining = budget.remaining;
+      result = await analyzePromptCore(
+        { currentBody, notes, effectiveJapaneseBody, preparedText: analysisText },
+        { provider: resolution.provider, schemaVersion: SCHEMA_VERSION },
+      );
+    }
   } else {
+    // mock provider, or no-prompt (provider will short-circuit to SKIPPED).
     result = await analyzePromptCore(
       { currentBody, notes, effectiveJapaneseBody, preparedText: analysisText },
       { provider: resolution.provider, schemaVersion: SCHEMA_VERSION },
@@ -228,7 +260,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
 
     const analysis = await readAnalysisResponse(analysisId);
-    return ok({ cached: false, analysis });
+    // budget.remaining is included only when a real provider call consumed
+    // budget this request (omitted for mock / cached / config_error paths).
+    return ok(
+      budgetRemaining !== undefined
+        ? { cached: false, analysis, budget: { remaining: budgetRemaining } }
+        : { cached: false, analysis },
+    );
   } catch (e) {
     // Unexpected DB/code error (NOT a core FAILED — that was persisted as 200).
     console.error("[analyze] persistence error", e instanceof Error ? e.message : String(e));

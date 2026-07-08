@@ -4,16 +4,29 @@
 // HTTP 500). A config_error still carries a composite modelId so the failure
 // is recorded under the same cache key the eventual success would use.
 //
-// 10-5D-1 scope: the real OpenAI provider does NOT exist yet (arrives in
-// 10-5D-2). So AI_ANALYSIS_PROVIDER=openai — even with a key present —
-// resolves to config_error here. Only mock is ever "ok" in this phase.
+// The real OpenAI provider is injected via deps.createOpenAI (Phase 10-5D-2)
+// rather than statically imported, so this module (and its unit test) stay
+// free of the openai SDK import — the analyze route wires the real factory.
 import type { PromptAnalysisProvider } from "./provider";
 import { createMockProvider } from "./mockProvider";
 import { ANALYSIS_PROMPT_VERSION, buildAnalysisModelId } from "./analysisModelId";
+import { readAnalysisTimeoutMs } from "./analysisConfig";
 
 export type AnalysisProviderResolution =
   | { kind: "ok"; provider: PromptAnalysisProvider; providerId: "mock" | "openai" | "gemini"; modelId: string }
   | { kind: "config_error"; providerId: "openai" | "gemini"; modelId: string; error: string };
+
+/** Signature of createOpenAIProvider — injected so this module avoids the SDK import. */
+export type CreateOpenAIProvider = (config: {
+  apiKey: string;
+  model: string;
+  modelId: string;
+  timeoutMs: number;
+}) => PromptAnalysisProvider;
+
+export type AnalysisProviderDeps = {
+  createOpenAI?: CreateOpenAIProvider;
+};
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -22,7 +35,7 @@ function mockResolution(): AnalysisProviderResolution {
   return { kind: "ok", provider: createMockProvider(undefined, modelId), providerId: "mock", modelId };
 }
 
-export function getAnalysisProviderFromEnv(env: EnvLike): AnalysisProviderResolution {
+export function getAnalysisProviderFromEnv(env: EnvLike, deps?: AnalysisProviderDeps): AnalysisProviderResolution {
   // Killswitch: unless explicitly enabled, always mock (production default).
   if (env.AI_ANALYSIS_ENABLED !== "true") return mockResolution();
 
@@ -33,15 +46,21 @@ export function getAnalysisProviderFromEnv(env: EnvLike): AnalysisProviderResolu
   if (providerName === "openai") {
     const model = env.AI_ANALYSIS_MODEL || "gpt-4o-mini";
     const modelId = buildAnalysisModelId({ provider: "openai", model, promptVersion: ANALYSIS_PROMPT_VERSION });
-    // 10-5D-1: real provider not implemented yet. Surface as config_error so it
-    // persists as a visible FAILED rather than silently returning nothing.
-    // (10-5D-2 replaces this branch with createOpenAIProvider, and adds the
-    //  OPENAI_API_KEY-missing → config_error check.)
+    const apiKey = env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return { kind: "config_error", providerId: "openai", modelId, error: "OPENAI_API_KEY is not configured" };
+    }
+    if (!deps?.createOpenAI) {
+      // Should not happen in the route (it always wires the factory); guards
+      // against a caller forgetting to inject it.
+      return { kind: "config_error", providerId: "openai", modelId, error: "OpenAI provider factory not wired" };
+    }
+    const timeoutMs = readAnalysisTimeoutMs(env);
     return {
-      kind: "config_error",
+      kind: "ok",
       providerId: "openai",
       modelId,
-      error: "OpenAI provider is not available yet (Phase 10-5D-2)",
+      provider: deps.createOpenAI({ apiKey, model, modelId, timeoutMs }),
     };
   }
 

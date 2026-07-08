@@ -37,19 +37,19 @@ describe("planPersistence", () => {
     expect(p.keywordsJa).toBeNull();
   });
 
-  it("FAILED: keeps error + raw, does NOT reset suggestions", () => {
-    const r: AnalyzePromptResult = { status: "FAILED", promptHash: "h", error: "boom", raw: { x: 1 } };
+  it("FAILED: keeps error + safeRaw, does NOT reset suggestions", () => {
+    const r: AnalyzePromptResult = { status: "FAILED", promptHash: "h", error: "boom", safeRaw: { x: 1 } };
     const p = planPersistence(r);
     expect(p.status).toBe("FAILED");
     expect(p.error).toBe("boom");
-    expect(p.raw).toEqual({ x: 1 });
+    expect(p.safeRaw).toEqual({ x: 1 });
     expect(p.resetPendingSuggestions).toBe(false);
     expect(p.suggestionRows).toEqual([]);
   });
 
-  it("FAILED without raw → raw null", () => {
+  it("FAILED without safeRaw → safeRaw null", () => {
     const p = planPersistence({ status: "FAILED", promptHash: "h", error: "boom" });
-    expect(p.raw).toBeNull();
+    expect(p.safeRaw).toBeNull();
   });
 
   it("DONE: maps keywords, usage, and suggestion rows (confidence null when absent)", () => {
@@ -61,7 +61,7 @@ describe("planPersistence", () => {
       keywordsEn: ["mountain"],
       usageCategory: "scene_reference",
       languageDetected: "en",
-      raw: { ok: true },
+      safeRaw: { ok: true },
     };
     const p = planPersistence(r);
     expect(p.status).toBe("DONE");
@@ -70,7 +70,7 @@ describe("planPersistence", () => {
     expect(p.languageDetected).toBe("en");
     expect(p.keywordsJa).toEqual(["山"]);
     expect(p.keywordsEn).toEqual(["mountain"]);
-    expect(p.raw).toEqual({ ok: true });
+    expect(p.safeRaw).toEqual({ ok: true });
     expect(p.resetPendingSuggestions).toBe(true);
     expect(p.suggestionRows).toEqual([
       { label: "landscape", confidence: 0.9 },

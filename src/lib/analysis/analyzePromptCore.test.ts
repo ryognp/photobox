@@ -149,6 +149,19 @@ describe("analyzePromptCore — DONE", () => {
       expect(r.tags.map((t) => t.label)).toEqual(["portrait"]);
       expect(r.keywordsJa).toEqual(["風景"]);
       expect(r.keywordsEn).toEqual(["sunset"]);
+      // Phase 10-5D: safeRaw is built from FILTERED values — attribute terms
+      // (female / asian / 女性 / woman) must not survive into rawJson.
+      expect(r.safeRaw).toEqual({
+        tags: [{ label: "portrait" }],
+        keywords_ja: ["風景"],
+        keywords_en: ["sunset"],
+        usage_category: "portrait",
+        language_detected: "mixed",
+      });
+      const safeRawStr = JSON.stringify(r.safeRaw);
+      for (const banned of ["female", "asian", "女性", "woman"]) {
+        expect(safeRawStr).not.toContain(banned);
+      }
     }
   });
 });
@@ -166,7 +179,7 @@ describe("analyzePromptCore — FAILED", () => {
     }
   });
 
-  it("schema-invalid output → FAILED with raw retained", async () => {
+  it("schema-invalid output → FAILED, does NOT retain the un-filterable raw (Phase 10-5D)", async () => {
     const r = await analyzePromptCore(
       { currentBody: "x", notes: null },
       DEPS({ tags: "not-an-array", keywords_ja: [], keywords_en: [] }),
@@ -174,7 +187,8 @@ describe("analyzePromptCore — FAILED", () => {
     expect(r.status).toBe("FAILED");
     if (r.status === "FAILED") {
       expect(r.error).toBe("schema_validation_failed");
-      expect(r.raw).toBeDefined();
+      // safeRaw is intentionally absent: schema-invalid output can't be filtered.
+      expect(r.safeRaw).toBeUndefined();
     }
   });
 

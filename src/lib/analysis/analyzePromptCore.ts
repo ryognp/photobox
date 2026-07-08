@@ -43,9 +43,13 @@ export type AnalyzePromptResult =
       keywordsEn: string[];
       usageCategory: UsageCategory;
       languageDetected: string;
-      raw: unknown;
+      // Phase 10-5D: the SANITIZED (attribute-filtered, deduped, normalized)
+      // structured output — NOT the raw provider output. This is what gets
+      // stored in ImageAnalysis.rawJson, so no un-filtered person-attribute
+      // terms ever reach the DB.
+      safeRaw: unknown;
     }
-  | { status: "FAILED"; promptHash: string | null; error: string; raw?: unknown };
+  | { status: "FAILED"; promptHash: string | null; error: string; safeRaw?: unknown };
 
 function normalize(s: string | null): string {
   return (s ?? "").replace(/\s+/g, " ").trim();
@@ -99,7 +103,9 @@ export async function analyzePromptCore(
 
   const parsed = promptAnalysisSchema.safeParse(raw);
   if (!parsed.success) {
-    return { status: "FAILED", promptHash, error: "schema_validation_failed", raw };
+    // Phase 10-5D: do NOT persist the raw (schema-invalid, hence un-filterable)
+    // output — it cannot be safety-filtered, so it never reaches the DB.
+    return { status: "FAILED", promptHash, error: "schema_validation_failed" };
   }
 
   const out = parsed.data;
@@ -122,6 +128,17 @@ export async function analyzePromptCore(
   const keywordsJa = filterAttributeTerms(out.keywords_ja.map((k) => k.trim()));
   const keywordsEn = filterAttributeTerms(out.keywords_en.map((k) => k.trim()));
 
+  // Phase 10-5D: safeRaw is built from the FILTERED values (never the provider
+  // raw), so ImageAnalysis.rawJson matches what the UI/API shows and carries
+  // no un-filtered person-attribute terms.
+  const safeRaw = {
+    tags,
+    keywords_ja: keywordsJa,
+    keywords_en: keywordsEn,
+    usage_category: out.usage_category,
+    language_detected: out.language_detected,
+  };
+
   return {
     status: "DONE",
     promptHash,
@@ -130,6 +147,6 @@ export async function analyzePromptCore(
     keywordsEn,
     usageCategory: out.usage_category,
     languageDetected: out.language_detected,
-    raw,
+    safeRaw,
   };
 }
