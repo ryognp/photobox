@@ -503,6 +503,54 @@ WHERE id = '<import_batch_id>';
 
 ---
 
+## AI タグ解析 provider（Phase 10-5D）
+
+`POST /api/images/[id]/analyze` の解析 provider は環境変数で切り替える。**デフォルトは mock**
+（外部 AI 未接続）。実 OpenAI を使うには本番環境変数の変更が必要で、これはコードデプロイとは
+独立した運用判断（ユーザー操作）である。
+
+### 環境変数
+
+| 変数 | 意味 | デフォルト |
+|---|---|---|
+| `AI_ANALYSIS_ENABLED` | `"true"` で実 provider 有効化。killswitch（最優先） | `false` |
+| `AI_ANALYSIS_PROVIDER` | `mock` \| `openai`（`gemini` は未対応） | `mock` |
+| `AI_ANALYSIS_MODEL` | OpenAI モデル名 | `gpt-4o-mini` |
+| `OPENAI_API_KEY` | OpenAI API キー（`openai` 選択時のみ必須） | なし |
+| `AI_ANALYSIS_DAILY_CALL_LIMIT` | workspace/日あたりの実 provider 呼び出し上限（cost guard） | `100` |
+| `AI_ANALYSIS_TIMEOUT_MS` | provider 呼び出し timeout | `20000` |
+| `AI_ANALYSIS_MAX_INPUT_CHARS` | provider へ渡す入力の最大文字数（超過は切り詰め） | `8000` |
+
+### 本番有効化手順（ユーザー操作のみ）
+
+1. Vercel → Settings → Environment Variables で `OPENAI_API_KEY` を設定。
+2. `AI_ANALYSIS_PROVIDER=openai` を設定。
+3. 必要なら `AI_ANALYSIS_MODEL` / `AI_ANALYSIS_DAILY_CALL_LIMIT` を設定。
+4. 最後に `AI_ANALYSIS_ENABLED=true` を設定して有効化。
+5. まず少数の画像で「AI解析する」を試し、日本語タグ候補・cost guard の挙動を確認してから拡大する。
+
+### 安全性・挙動
+
+- **cost guard は fail-closed**: Upstash Redis 未設定/障害時は解析を拒否（`FAILED: analysis daily budget unavailable`）。
+  post-auth rate limit（fail-open）とは意図的に非対称——予算を検証できない時に通すと日次上限が無意味になるため。
+- **cached 応答は budget を消費しない**（既存 DONE を返すだけ＝外部コスト 0）。mock provider も消費しない。
+- provider エラーは HTTP 500 ではなく `ImageAnalysis.status=FAILED` として保存し、UI に表示する。
+  正規化メッセージ: 429→`analysis provider rate limited` / 5xx→`analysis provider unavailable` /
+  timeout→`analysis provider timeout`。自動 retry はしない（UI の「強制再解析」で対応）。
+- **rawJson には filter 後の安全化済み JSON のみ保存**する。未 filter の provider 生出力・usage・token・
+  request id・headers・API キーは DB にもログにも残さない（人物属性語が rawJson に残らない）。
+- **modelId は `provider:model:promptVersion` の複合 ID**（例 `openai:gpt-4o-mini:ja-tags-v1`）。
+  system prompt / JSON schema の意味を変えたら `ANALYSIS_PROMPT_VERSION` を bump し、古い解析 cache と分離する。
+
+### 無効化・rollback
+
+- 即時無効化: `AI_ANALYSIS_ENABLED=false`（env 変更のみ、コード変更不要）で mock に復帰。
+- 二重の保険: `AI_ANALYSIS_PROVIDER=mock`。
+- API キー漏洩時: Vercel 環境変数でローテーション（コード変更不要）。
+- schema 変更なし＝DB レベルの rollback 不要。cost guard カウンタは Redis のみ（日次 TTL で自然消滅）。
+
+---
+
 ## セキュリティチェックリスト
 
 - [ ] `.env.local` が git に含まれていない

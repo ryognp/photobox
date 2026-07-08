@@ -1,5 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { getAnalysisProviderFromEnv } from "@/lib/analysis/analysisProvider";
+import { describe, it, expect, vi } from "vitest";
+import { getAnalysisProviderFromEnv, type CreateOpenAIProvider } from "@/lib/analysis/analysisProvider";
+
+// A stand-in for createOpenAIProvider so this test avoids the openai SDK.
+const fakeCreateOpenAI: CreateOpenAIProvider = vi.fn((cfg) => ({
+  modelId: cfg.modelId,
+  analyze: async () => ({ tags: [], keywords_ja: [], keywords_en: [], usage_category: "other", language_detected: "ja" }),
+}));
 
 describe("getAnalysisProviderFromEnv", () => {
   it("ENABLED unset → mock (production default)", () => {
@@ -23,19 +29,39 @@ describe("getAnalysisProviderFromEnv", () => {
     if (r.kind === "ok") expect(r.providerId).toBe("mock");
   });
 
-  it("ENABLED=true + PROVIDER=openai → config_error in 10-5D-1 (real provider not yet implemented), even with a key", () => {
-    const r = getAnalysisProviderFromEnv({
-      AI_ANALYSIS_ENABLED: "true",
-      AI_ANALYSIS_PROVIDER: "openai",
-      OPENAI_API_KEY: "sk-test",
-      AI_ANALYSIS_MODEL: "gpt-4o-mini",
-    });
+  it("ENABLED=true + PROVIDER=openai + key + factory wired → ok (real provider, Phase 10-5D-2)", () => {
+    const r = getAnalysisProviderFromEnv(
+      { AI_ANALYSIS_ENABLED: "true", AI_ANALYSIS_PROVIDER: "openai", OPENAI_API_KEY: "sk-test", AI_ANALYSIS_MODEL: "gpt-4o-mini" },
+      { createOpenAI: fakeCreateOpenAI },
+    );
+    expect(r.kind).toBe("ok");
+    if (r.kind === "ok") {
+      expect(r.providerId).toBe("openai");
+      expect(r.modelId).toBe("openai:gpt-4o-mini:ja-tags-v1");
+    }
+  });
+
+  it("ENABLED=true + PROVIDER=openai but OPENAI_API_KEY missing → config_error", () => {
+    const r = getAnalysisProviderFromEnv(
+      { AI_ANALYSIS_ENABLED: "true", AI_ANALYSIS_PROVIDER: "openai", AI_ANALYSIS_MODEL: "gpt-4o-mini" },
+      { createOpenAI: fakeCreateOpenAI },
+    );
     expect(r.kind).toBe("config_error");
     if (r.kind === "config_error") {
       expect(r.providerId).toBe("openai");
       expect(r.modelId).toBe("openai:gpt-4o-mini:ja-tags-v1");
-      expect(r.error).toMatch(/not available yet/i);
+      expect(r.error).toMatch(/OPENAI_API_KEY/);
     }
+  });
+
+  it("ENABLED=true + PROVIDER=openai + key but factory NOT wired → config_error", () => {
+    const r = getAnalysisProviderFromEnv({
+      AI_ANALYSIS_ENABLED: "true",
+      AI_ANALYSIS_PROVIDER: "openai",
+      OPENAI_API_KEY: "sk-test",
+    });
+    expect(r.kind).toBe("config_error");
+    if (r.kind === "config_error") expect(r.error).toMatch(/factory not wired/i);
   });
 
   it("ENABLED=true + PROVIDER=gemini → config_error (unsupported)", () => {
