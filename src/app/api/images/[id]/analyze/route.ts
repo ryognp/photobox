@@ -15,8 +15,8 @@ import {
   analyzePromptCore,
   buildAnalysisText,
   computePromptHash,
+  type AnalyzePromptResult,
 } from "@/lib/analysis/analyzePromptCore";
-import { createMockProvider } from "@/lib/analysis/mockProvider";
 import { PROMPT_ANALYSIS_SCHEMA_VERSION } from "@/lib/analysis/analysisSchema";
 import {
   isAnalysisCached,
@@ -24,13 +24,14 @@ import {
   type AnalysisPersistencePlan,
 } from "@/lib/analysis/analysisPersistence";
 import { getEffectiveJapanesePromptBody } from "@/lib/translation/translationCore";
+import { getAnalysisProviderFromEnv } from "@/lib/analysis/analysisProvider";
+import { sanitizeAnalysisError } from "@/lib/analysis/analysisError";
+import { readAnalysisMaxInputChars, truncateAnalysisInput } from "@/lib/analysis/analysisConfig";
 
-// Phase 10-2: fixed to the mock provider (no real LLM). source/model/version
-// are constant for this phase.
+// source/schema version are constant. modelId is per-request (provider factory
+// returns a composite provider:model:promptVersion id — Phase 10-5D).
 const SOURCE = "PROMPT" as const;
-const MODEL_ID = "mock";
 const SCHEMA_VERSION = PROMPT_ANALYSIS_SCHEMA_VERSION;
-const provider = createMockProvider(undefined, MODEL_ID);
 
 function jsonOrNull(v: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
   return v === null || v === undefined ? Prisma.JsonNull : (v as Prisma.InputJsonValue);
@@ -76,14 +77,17 @@ async function readAnalysisResponse(analysisId: string) {
 /**
  * POST /api/images/[id]/analyze  (?force=1)
  *
- * On-demand prompt-first analysis (Phase 10-2). Runs the mock provider (no real
- * LLM), persists ImageAnalysis + PENDING TagSuggestion candidates. AI results
- * are candidates only — never auto-promoted to Tags.
+ * On-demand prompt-first analysis. The provider is resolved from env
+ * (Phase 10-5D: getAnalysisProviderFromEnv — mock unless AI_ANALYSIS_ENABLED
+ * and a real provider are configured; in 10-5D-1 only mock is ever "ok").
+ * Persists ImageAnalysis + PENDING TagSuggestion candidates. AI results are
+ * candidates only — never auto-promoted to Tags.
  *
  * Order: auth → resolveWorkspaceImage → deleted/status 404 → rate limit →
- * cached check → analyze → persist. core FAILED is returned as HTTP 200 with
- * status:"FAILED" (it was handled + persisted); 500 is reserved for unexpected
- * DB/code errors.
+ * provider resolution → build+truncate text → hash → existing lookup →
+ * cached check → (config_error → FAILED | mock/real → analyze) → persist.
+ * core FAILED and config_error are returned as HTTP 200 with status:"FAILED"
+ * (handled + persisted); 500 is reserved for unexpected DB/code errors.
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -140,15 +144,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         translationStatus: image.prompt.translationStatus,
       })
     : null;
-  const text = buildAnalysisText({ currentBody, notes, effectiveJapaneseBody });
-  const hasPrompt = text !== "";
-  const currentHash = hasPrompt ? computePromptHash(text) : null;
+
+  // Phase 10-5D: provider resolution (composite modelId), then truncate BEFORE
+  // hashing so the cache key + provider input match exactly.
+  const resolution = getAnalysisProviderFromEnv(process.env);
+  const modelId = resolution.modelId;
+
+  const builtText = buildAnalysisText({ currentBody, notes, effectiveJapaneseBody });
+  const { text: analysisText } = truncateAnalysisInput(builtText, readAnalysisMaxInputChars(process.env));
+  const hasPrompt = analysisText !== "";
+  const currentHash = hasPrompt ? computePromptHash(analysisText) : null;
 
   const uniqueWhere = {
     imageId_source_modelId_schemaVersion: {
       imageId: image.id,
       source: SOURCE,
-      modelId: MODEL_ID,
+      modelId,
       schemaVersion: SCHEMA_VERSION,
     },
   };
@@ -163,10 +174,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return ok({ cached: true, analysis });
   }
 
-  const result = await analyzePromptCore(
-    { currentBody, notes, effectiveJapaneseBody },
-    { provider, schemaVersion: SCHEMA_VERSION },
-  );
+  // Phase 10-5D: config_error (provider unavailable/misconfigured) is persisted
+  // as a visible FAILED — never a bare HTTP 500. When there is no prompt text
+  // at all it is a SKIP (the provider would never have been called anyway).
+  // Cost guard / real provider call arrive in 10-5D-2.
+  let result: AnalyzePromptResult;
+  if (resolution.kind === "config_error") {
+    result = hasPrompt
+      ? { status: "FAILED", promptHash: computePromptHash(analysisText), error: sanitizeAnalysisError(resolution.error) }
+      : { status: "SKIPPED_NO_PROMPT", promptHash: null };
+  } else {
+    result = await analyzePromptCore(
+      { currentBody, notes, effectiveJapaneseBody, preparedText: analysisText },
+      { provider: resolution.provider, schemaVersion: SCHEMA_VERSION },
+    );
+  }
   const plan = planPersistence(result);
 
   try {
@@ -177,7 +199,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           workspaceId: image.workspaceId,
           imageId: image.id,
           source: SOURCE,
-          modelId: MODEL_ID,
+          modelId,
           schemaVersion: SCHEMA_VERSION,
           ...toAnalysisData(plan),
         },
