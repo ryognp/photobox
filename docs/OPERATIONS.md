@@ -534,7 +534,7 @@ WHERE id = '<import_batch_id>';
 
 ### 安全性・挙動
 
-- **cost guard は fail-closed**: Upstash Redis 未設定/障害時は解析を拒否（`FAILED: analysis daily budget unavailable`）。
+- **cost guard は fail-closed**: Upstash Redis 未設定/障害時は解析を拒否（`FAILED: analysis budget unavailable`。日次上限超過は `analysis daily budget exceeded`）。
   post-auth rate limit（fail-open）とは意図的に非対称——予算を検証できない時に通すと日次上限が無意味になるため。
 - **cached 応答は budget を消費しない**（既存 DONE を返すだけ＝外部コスト 0）。mock provider も消費しない。
 - provider エラーは HTTP 500 ではなく `ImageAnalysis.status=FAILED` として保存し、UI に表示する。
