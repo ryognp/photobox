@@ -509,6 +509,9 @@ WHERE id = '<import_batch_id>';
 （外部 AI 未接続）。実 OpenAI を使うには本番環境変数の変更が必要で、これはコードデプロイとは
 独立した運用判断（ユーザー操作）である。
 
+> **本番有効化の手順書 / 少数 QA チェックリスト:** [AI_ANALYSIS_RUNBOOK.md](AI_ANALYSIS_RUNBOOK.md)
+> （疎通確認・env 設定順序・QA・budget/FAILED 確認・rawJson 検査 SQL・rollback）。
+
 ### 環境変数
 
 | 変数 | 意味 | デフォルト |
@@ -531,7 +534,7 @@ WHERE id = '<import_batch_id>';
 
 ### 安全性・挙動
 
-- **cost guard は fail-closed**: Upstash Redis 未設定/障害時は解析を拒否（`FAILED: analysis daily budget unavailable`）。
+- **cost guard は fail-closed**: Upstash Redis 未設定/障害時は解析を拒否（`FAILED: analysis budget unavailable`。日次上限超過は `analysis daily budget exceeded`）。
   post-auth rate limit（fail-open）とは意図的に非対称——予算を検証できない時に通すと日次上限が無意味になるため。
 - **cached 応答は budget を消費しない**（既存 DONE を返すだけ＝外部コスト 0）。mock provider も消費しない。
 - provider エラーは HTTP 500 ではなく `ImageAnalysis.status=FAILED` として保存し、UI に表示する。
