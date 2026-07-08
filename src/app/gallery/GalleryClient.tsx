@@ -10,6 +10,7 @@ import {
   type ImageDetail,
   type TagSuggestion,
 } from "@/lib/gallery/imagesClient"
+import { removeTagById } from "@/lib/gallery/tagState"
 import SearchBar from "./_components/SearchBar"
 import FilterSidebar from "./_components/FilterSidebar"
 import ImageGrid from "./_components/ImageGrid"
@@ -53,6 +54,7 @@ type GalleryAction =
       tag?: { id: string; name: string } | null
     }
   | { type: "analysis_result"; suggestions: TagSuggestion[] }
+  | { type: "tag_removed"; tagId: string }
 
 function reducer(s: GalleryState, a: GalleryAction): GalleryState {
   switch (a.type) {
@@ -99,6 +101,10 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
     case "analysis_result": {
       if (!s.detail) return s
       return { ...s, detail: { ...s.detail, tagSuggestions: a.suggestions } }
+    }
+    case "tag_removed": {
+      if (!s.detail) return s
+      return { ...s, detail: { ...s.detail, tags: removeTagById(s.detail.tags, a.tagId) } }
     }
   }
 }
@@ -288,6 +294,7 @@ function GalleryInner() {
             onDeleted={(id) => dispatch({ type: "delete_ok", id })}
             onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
             onAnalyzed={(suggestions) => dispatch({ type: "analysis_result", suggestions })}
+            onTagRemoved={(tagId) => dispatch({ type: "tag_removed", tagId })}
             prefetchedDetail={state.detail}
             prefetchedLoading={state.detailLoading}
             prefetchedError={state.detailError}
@@ -302,6 +309,7 @@ function GalleryInner() {
         onDeleted={(id) => dispatch({ type: "delete_ok", id })}
         onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
         onAnalyzed={(suggestions) => dispatch({ type: "analysis_result", suggestions })}
+        onTagRemoved={(tagId) => dispatch({ type: "tag_removed", tagId })}
         prefetchedDetail={state.detail}
         prefetchedLoading={state.detailLoading}
         prefetchedError={state.detailError}
