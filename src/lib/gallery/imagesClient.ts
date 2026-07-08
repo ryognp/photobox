@@ -173,6 +173,23 @@ export async function rejectSuggestion(
   return json.data;
 }
 
+export type RemoveImageTagResult = {
+  removed: boolean;
+  imageId: string;
+  tagId: string;
+};
+
+/** Removes a tag from an image (ImageTag row only; the Tag itself is kept). */
+export async function removeImageTag(imageId: string, tagId: string): Promise<RemoveImageTagResult> {
+  const res = await fetch(`/api/images/${imageId}/tags/${tagId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to remove tag (${res.status})`);
+  }
+  const json = (await res.json()) as { data: RemoveImageTagResult };
+  return json.data;
+}
+
 export type AnalyzeImageResult = {
   cached: boolean;
   analysis: {

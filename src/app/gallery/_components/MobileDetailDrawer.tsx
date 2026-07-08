@@ -10,6 +10,7 @@ interface MobileDetailDrawerProps {
   onDeleted?: (imageId: string) => void
   onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
   onAnalyzed?: (suggestions: TagSuggestion[]) => void
+  onTagRemoved?: (tagId: string) => void
   prefetchedDetail?: ImageDetail | null
   prefetchedLoading?: boolean
   prefetchedError?: string | null
@@ -21,6 +22,7 @@ export default function MobileDetailDrawer({
   onDeleted,
   onSuggestionResolved,
   onAnalyzed,
+  onTagRemoved,
   prefetchedDetail,
   prefetchedLoading,
   prefetchedError,
@@ -67,6 +69,7 @@ export default function MobileDetailDrawer({
             onDeleted={onDeleted}
             onSuggestionResolved={onSuggestionResolved}
             onAnalyzed={onAnalyzed}
+            onTagRemoved={onTagRemoved}
             prefetchedDetail={prefetchedDetail}
             prefetchedLoading={prefetchedLoading}
             prefetchedError={prefetchedError}

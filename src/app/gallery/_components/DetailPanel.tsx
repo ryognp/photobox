@@ -7,6 +7,7 @@ import {
   deleteImage,
   fetchImageDetail,
   rejectSuggestion,
+  removeImageTag,
   type ImageDetail,
   type PromptVersionSummary,
   type TagSuggestion,
@@ -25,6 +26,7 @@ interface DetailPanelProps {
   onDeleted?: (imageId: string) => void
   onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
   onAnalyzed?: (suggestions: TagSuggestion[]) => void
+  onTagRemoved?: (tagId: string) => void
   hideHeader?: boolean
   /** 外部からfetch済みdetailを渡す場合（二重fetch防止） */
   prefetchedDetail?: ImageDetail | null
@@ -440,6 +442,74 @@ function SuggestionCard({
   )
 }
 
+// ---- TagChip: 承認済み/通常タグを画像から外す（2段階confirm, Phase 10-6B） ----
+
+type TagChipPhase = "view" | "confirm" | "removing" | "error"
+
+function TagChip({
+  imageId,
+  tag,
+  onRemoved,
+}: {
+  imageId: string
+  tag: { id: string; name: string }
+  onRemoved: (tagId: string) => void
+}) {
+  const [phase, setPhase] = useState<TagChipPhase>("view")
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  const remove = async () => {
+    setPhase("removing")
+    setErrorMsg(null)
+    try {
+      await removeImageTag(imageId, tag.id)
+      // 親stateから消える（GalleryClient reducer 経由）。ローカルphaseは戻さない。
+      onRemoved(tag.id)
+    } catch (e: unknown) {
+      setErrorMsg((e as Error).message ?? "タグを外せませんでした")
+      setPhase("error")
+    }
+  }
+
+  if (phase === "confirm") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
+        <span>{tag.name}</span>
+        <button onClick={() => void remove()} className="text-red-600 hover:text-red-800" aria-label="外す">
+          外す
+        </button>
+        <button onClick={() => setPhase("view")} className="text-zinc-400 hover:text-zinc-700" aria-label="キャンセル">
+          キャンセル
+        </button>
+      </span>
+    )
+  }
+
+  if (phase === "removing") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-400">
+        {tag.name} …
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex flex-col">
+      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
+        <span>{tag.name}</span>
+        <button
+          onClick={() => setPhase("confirm")}
+          className="text-zinc-400 hover:text-red-600"
+          aria-label={`タグ「${tag.name}」を外す`}
+        >
+          ×
+        </button>
+      </span>
+      {phase === "error" && errorMsg && <span className="mt-0.5 text-xs text-red-500">{errorMsg}</span>}
+    </span>
+  )
+}
+
 // ---- AnalyzeSection: AI解析トリガー（mock provider, Phase 10-4） ----
 
 type AnalyzePhase = "idle" | "analyzing"
@@ -542,6 +612,7 @@ export default function DetailPanel({
   onDeleted,
   onSuggestionResolved,
   onAnalyzed,
+  onTagRemoved,
   hideHeader = false,
   prefetchedDetail,
   prefetchedLoading,
@@ -672,11 +743,14 @@ export default function DetailPanel({
           {state.detail.tags.length > 0 && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">タグ</p>
-              <div className="mt-1 flex flex-wrap gap-1">
+              <div className="mt-1 flex flex-wrap items-start gap-1">
                 {state.detail.tags.map((t) => (
-                  <span key={t.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
-                    {t.name}
-                  </span>
+                  <TagChip
+                    key={t.id}
+                    imageId={state.detail.id}
+                    tag={t}
+                    onRemoved={(tagId) => onTagRemoved?.(tagId)}
+                  />
                 ))}
               </div>
             </div>
