@@ -509,6 +509,9 @@ WHERE id = '<import_batch_id>';
 （外部 AI 未接続）。実 OpenAI を使うには本番環境変数の変更が必要で、これはコードデプロイとは
 独立した運用判断（ユーザー操作）である。
 
+> **本番有効化の手順書 / 少数 QA チェックリスト:** [AI_ANALYSIS_RUNBOOK.md](AI_ANALYSIS_RUNBOOK.md)
+> （疎通確認・env 設定順序・QA・budget/FAILED 確認・rawJson 検査 SQL・rollback）。
+
 ### 環境変数
 
 | 変数 | 意味 | デフォルト |
