@@ -178,3 +178,90 @@ LIMIT 5;
 - 本番 migration は無関係（Phase 10-5D 系は schema 変更なし）。
 - エージェントが行うのは、問題が出た際の**コード修正提案・feature branch 実装・ゲート実行**まで。
   有効化スイッチは常にユーザーの手元。
+
+---
+
+## 9. 本番運用監視（Phase 10-5G）
+
+本番 OpenAI 解析の状態・失敗・使用状況・危険兆候を確認するための監視手順。**すべて
+読み取り専用 SELECT で、ユーザーが Supabase SQL Editor で実行する**（エージェントは
+本番 DB に接続しない — §8）。現状は SQL のみで運用し、専用の ops API / ops 画面は作らない。
+
+### 情報源の切り分け
+
+- **FAILED / 解析件数 / 候補件数 → DB（下記 SQL）が一次情報源。** FAILED は analyze route が
+  HTTP 200 + `status:"FAILED"` で返すため **Vercel logs には出ない**。
+- **Vercel logs は 500 系の想定外エラー確認用**（`[analyze] persistence error`）。FAILED 監視には使わない。
+- **OpenAI の使用量・コスト → OpenAI ダッシュボード**（DB では取得不可。予算アラート推奨）。
+- **Redis 可用性 → Upstash コンソール**（`budget:analysis:<UTC日付>:<hash>:openai:...` キーの増加・TTL）。
+
+### 監視 SQL（読み取り専用）
+
+> **複数 workspace 運用に移行した場合は、各 SQL に `WHERE workspace_id = '<id>'`（または既存
+> 条件へ AND 追加）を足すこと。** 以下は単一 workspace 前提で `workspace_id` 条件を省略している。
+
+```sql
+-- (1) 直近24h の status 別件数
+SELECT status, count(*) FROM image_analyses
+WHERE updated_at >= now() - interval '24 hours'
+GROUP BY status ORDER BY count(*) DESC;
+
+-- (2) 直近24h の FAILED を error 別に内訳
+SELECT error, count(*) FROM image_analyses
+WHERE status = 'FAILED' AND updated_at >= now() - interval '24 hours'
+GROUP BY error ORDER BY count(*) DESC;
+
+-- (3) model_id × status 別件数（model_id LIKE 'openai:%' が実 OpenAI 分）
+SELECT model_id, status, count(*) FROM image_analyses
+GROUP BY model_id, status ORDER BY model_id, status;
+
+-- (4) TagSuggestion の status 別件数（PENDING 滞留の把握）
+SELECT status, count(*) FROM tag_suggestions GROUP BY status;
+
+-- (5) 直近の FAILED 一覧
+SELECT id, image_id, model_id, error, updated_at FROM image_analyses
+WHERE status = 'FAILED' ORDER BY updated_at DESC LIMIT 20;
+
+-- (6) daily budget exceeded の有無（直近24h）
+SELECT count(*) FROM image_analyses
+WHERE error = 'analysis daily budget exceeded' AND updated_at >= now() - interval '24 hours';
+
+-- (7) 24h FAILED 率
+SELECT
+  count(*) FILTER (WHERE status = 'FAILED') AS failed,
+  count(*) AS total,
+  round(100.0 * count(*) FILTER (WHERE status = 'FAILED') / nullif(count(*), 0), 1) AS failed_pct
+FROM image_analyses WHERE updated_at >= now() - interval '24 hours';
+
+-- (8) 日別解析件数（トレンド）
+SELECT date_trunc('day', created_at) AS day, count(*) FROM image_analyses
+GROUP BY day ORDER BY day DESC LIMIT 14;
+
+-- (9) rawJson 確認（§6 と同じ・safeRaw のみか）
+SELECT id, model_id, status, raw_json FROM image_analyses
+WHERE model_id LIKE 'openai:%' AND status = 'DONE' ORDER BY updated_at DESC LIMIT 5;
+```
+
+### エラー別 一次対応表（`image_analyses.error`）
+
+| error 値 | 意味 | 一次対応 |
+|---|---|---|
+| `analysis provider timeout` | OpenAI 遅延 / timeout 不足 | OpenAI 遅延を確認、`AI_ANALYSIS_TIMEOUT_MS` を確認（本番既定 60000） |
+| `analysis provider rate limited` | OpenAI 429 | OpenAI ダッシュボードで usage / rate limit を確認、時間をおく |
+| `analysis provider unavailable` | OpenAI 5xx | OpenAI 側障害。時間をおいて再試行 |
+| `analysis budget unavailable` | **Redis 未設定 / 障害**（fail-closed 発火） | Upstash コンソールで Redis を確認（設定ミスの可能性大） |
+| `analysis daily budget exceeded` | 日次上限到達（正常なガード動作） | 想定内。必要なら `AI_ANALYSIS_DAILY_CALL_LIMIT` を調整 |
+| `schema_validation_failed` | OpenAI 出力が JSON Schema 不適合 | 単発なら無視可。頻発なら prompt / schema 見直し（別フェーズ） |
+| `OPENAI_API_KEY is not configured` | env 設定不足（config_error） | Vercel Production env の `OPENAI_API_KEY` を確認 |
+| その他 | sanitize 済みメッセージ | (5) で個別確認 |
+
+> FAILED が増えたら、まず (1)(2) で status / error 内訳を確認 → 上表で原因別に対応 →
+> 判断がつかない / 深刻なら即 `AI_ANALYSIS_ENABLED=false` → redeploy（OpenAI 課金停止・
+> mock 復帰。§7 の rollback 参照）。
+
+### ops API / ops 画面へ移行するトリガー（将来・現時点では作らない）
+
+次のいずれかが発生したら、別フェーズで ops API / 画面を設計する:
+- SQL の手打ち実行が日次ルーティン化して負担になった
+- 複数 workspace 運用になり横断集計が必要になった
+- 非エンジニアの運用者が GUI で監視したい

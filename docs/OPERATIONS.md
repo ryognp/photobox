@@ -511,6 +511,8 @@ WHERE id = '<import_batch_id>';
 
 > **本番有効化の手順書 / 少数 QA チェックリスト:** [AI_ANALYSIS_RUNBOOK.md](AI_ANALYSIS_RUNBOOK.md)
 > （疎通確認・env 設定順序・QA・budget/FAILED 確認・rawJson 検査 SQL・rollback）。
+> **本番運用監視（status/error 別件数・FAILED 率・エラー別一次対応表の SQL）** は同 runbook の
+> 「本番運用監視」節を参照（SQL 本体はそちらに集約・二重管理しない）。
 
 ### 環境変数
 
