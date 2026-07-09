@@ -36,7 +36,7 @@ export default function ImageCard({ image, selected, onClick }: ImageCardProps) 
           : "border-zinc-200 hover:border-zinc-300 hover:shadow-md"
       }`}
     >
-      {/* Thumbnail */}
+      {/* Thumbnail (Phase 10-9A: object-position 上寄せで顔/上半身が切れにくく) */}
       <div className="aspect-square w-full overflow-hidden bg-zinc-200">
         {image.thumbnailUrl && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -46,6 +46,7 @@ export default function ImageCard({ image, selected, onClick }: ImageCardProps) 
             loading="lazy"
             decoding="async"
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
+            style={{ objectPosition: "center 25%" }}
             onError={markError}
           />
         ) : (
@@ -53,29 +54,12 @@ export default function ImageCard({ image, selected, onClick }: ImageCardProps) 
         )}
       </div>
 
-      {/* Favorite badge */}
-      {image.isFavorite && (
-        <span className="absolute right-1.5 top-1.5 text-yellow-400 drop-shadow">★</span>
-      )}
-
-      {/* Prompt version badge */}
-      {image.promptVersionCount > 0 && (
-        <span className="absolute left-1.5 top-1.5 rounded bg-indigo-500/80 px-1 py-0.5 text-[10px] font-medium leading-none text-white">
-          履歴 {image.promptVersionCount}
-        </span>
-      )}
-
-      {/* Info */}
-      <div className="p-2">
-        <p className="truncate text-xs font-medium text-zinc-800">{image.originalName}</p>
-        {image.scene && (
-          <p className="mt-0.5 truncate text-xs text-zinc-500">{image.scene.name}</p>
-        )}
-        {image.promptSnippet && (
-          <p className="mt-0.5 truncate text-xs text-zinc-400">{image.promptSnippet}</p>
-        )}
-        {image.tags.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
+      {/* Phase 10-9A: カードはサムネイル + 承認済みタグのみ。originalName /
+          scene / promptSnippet / Favorite badge / 履歴 badge は非表示。
+          タグ0件なら情報部そのものを描画しない（文言も出さない）。 */}
+      {image.tags.length > 0 && (
+        <div className="p-2">
+          <div className="flex flex-wrap gap-1">
             {image.tags.slice(0, 3).map((t) => (
               <span
                 key={t.id}
@@ -88,8 +72,8 @@ export default function ImageCard({ image, selected, onClick }: ImageCardProps) 
               <span className="text-xs text-zinc-400">+{image.tags.length - 3}</span>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </button>
   )
 }
