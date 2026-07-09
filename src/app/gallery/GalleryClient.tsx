@@ -11,6 +11,7 @@ import {
   type TagSuggestion,
 } from "@/lib/gallery/imagesClient"
 import { removeTagById } from "@/lib/gallery/tagState"
+import { normalizeTagIds } from "@/lib/gallery/tagFilters"
 import SearchBar from "./_components/SearchBar"
 import FilterSidebar from "./_components/FilterSidebar"
 import ImageGrid from "./_components/ImageGrid"
@@ -129,7 +130,7 @@ function filtersToSearchParams(filters: GalleryFilters): URLSearchParams {
   const sp = new URLSearchParams()
   if (filters.personId) sp.set("personId", filters.personId)
   if (filters.sceneId) sp.set("sceneId", filters.sceneId)
-  if (filters.tagId) sp.set("tagId", filters.tagId)
+  if (filters.tagIds.length > 0) sp.set("tagIds", filters.tagIds.join(","))
   if (filters.favorite) sp.set("favorite", "true")
   if (filters.q) sp.set("q", filters.q)
   if (filters.sort !== "newest") sp.set("sort", filters.sort)
@@ -146,7 +147,8 @@ function GalleryInner() {
   const filters: GalleryFilters = {
     personId: searchParams.get("personId"),
     sceneId: searchParams.get("sceneId"),
-    tagId: searchParams.get("tagId"),
+    // Phase 10-7B: legacy ?tagId=xxx and new ?tagIds=a,b both read here.
+    tagIds: normalizeTagIds({ tagId: searchParams.get("tagId"), tagIdsParam: searchParams.get("tagIds") }),
     favorite: searchParams.get("favorite") === "true" ? true : null,
     q: searchParams.get("q") ?? "",
     sort: (searchParams.get("sort") as "newest" | "oldest") || "newest",
@@ -164,6 +166,10 @@ function GalleryInner() {
     if (qTimer.current) clearTimeout(qTimer.current)
     qTimer.current = setTimeout(() => dispatch({ type: "set_debounced_q", q: filters.q }), 300)
   }, [filters.q])
+
+  // filters.tagIds is a new array each render (normalizeTagIds) — join to a
+  // stable primitive so the effect below doesn't re-fire every render.
+  const tagIdsKey = filters.tagIds.join(",")
 
   // Fetch when URL-derived filters change (includes back/forward)
   useEffect(() => {
@@ -186,7 +192,7 @@ function GalleryInner() {
   }, [
     state.debouncedQ,
     filters.sceneId,
-    filters.tagId,
+    tagIdsKey,
     filters.personId,
     filters.favorite,
     filters.sort,
