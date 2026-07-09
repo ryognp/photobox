@@ -251,32 +251,35 @@ function GalleryInner() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-50">
-      {/* Header */}
-      <header className="flex items-center gap-4 border-b border-zinc-200 bg-white px-5 py-3">
+      {/* Header (Phase 10-8D: nav buttons hidden below md so the mobile
+          "フィルター" trigger always fits — it was being pushed off-screen
+          by Quick Add/Masters/Import + fixed-width SearchBar on narrow
+          viewports) */}
+      <header className="flex items-center gap-3 border-b border-zinc-200 bg-white px-4 py-3 sm:gap-4 sm:px-5">
         <button
           onClick={() => router.push("/quick-add")}
-          className="text-sm text-zinc-500 hover:text-zinc-900"
+          className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
         >
           Quick Add
         </button>
         <button
           onClick={() => router.push("/masters")}
-          className="text-sm text-zinc-500 hover:text-zinc-900"
+          className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
         >
           Masters
         </button>
         <button
           onClick={() => router.push("/import")}
-          className="text-sm text-zinc-500 hover:text-zinc-900"
+          className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
         >
           Import
         </button>
-        <h1 className="text-base font-semibold text-zinc-900">Gallery</h1>
-        <span className="text-sm text-zinc-400">
+        <h1 className="shrink-0 text-base font-semibold text-zinc-900">Gallery</h1>
+        <span className="hidden shrink-0 text-sm text-zinc-400 sm:inline">
           {state.loading ? "..." : `${state.images.length} 枚`}
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="w-40 sm:w-72">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+          <div className="min-w-0 flex-1 sm:max-w-72">
             <SearchBar value={filters.q} onChange={handleQChange} />
           </div>
           {/* md以上はFilterSidebarが常時表示のため不要 */}
@@ -285,7 +288,7 @@ function GalleryInner() {
               dispatch({ type: "select", id: null })
               setFilterDrawerOpen(true)
             }}
-            className="md:hidden rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+            className="shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 md:hidden"
             aria-label="フィルターを開く"
           >
             フィルター
