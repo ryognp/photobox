@@ -8,7 +8,7 @@
 // schema's meaning, the usage-category policy, or the person-attribute
 // prohibition wording changes — old DONE analyses then live under a different
 // modelId and are never returned as `cached`.
-export const ANALYSIS_PROMPT_VERSION = "ja-tags-v1";
+export const ANALYSIS_PROMPT_VERSION = "ja-tags-v2";
 
 export function buildAnalysisModelId(args: {
   provider: "mock" | "openai" | "gemini";

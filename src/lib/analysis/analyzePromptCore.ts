@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import type { PromptAnalysisProvider } from "./provider";
 import { promptAnalysisSchema, filterAttributeTerms, type UsageCategory } from "./analysisSchema";
 import { sanitizeAnalysisError } from "./analysisError";
+import { refineTagCandidates } from "./tagTaxonomy";
 
 export type AnalyzePromptInput = {
   currentBody: string | null;
@@ -110,21 +111,14 @@ export async function analyzePromptCore(
 
   const out = parsed.data;
 
-  // Defense-in-depth: strip person-attribute terms from tags & keywords.
-  // Then dedupe tag labels case-insensitively — TagSuggestion is unique on
-  // (analysisId, label), so duplicate labels from the provider would collide
-  // on persistence (Phase 10-2). First occurrence wins.
-  const seenLabels = new Set<string>();
-  const tags = out.tags
+  // Step 1 (safety, defense-in-depth): strip person-attribute terms.
+  const attributeFiltered = out.tags
     .map((t) => ({ label: t.label.trim(), confidence: t.confidence }))
-    .filter((t) => t.label !== "" && filterAttributeTerms([t.label]).length > 0)
-    .filter((t) => {
-      const key = t.label.toLowerCase();
-      if (seenLabels.has(key)) return false;
-      seenLabels.add(key);
-      return true;
-    })
-    .map((t) => ({ label: t.label, ...(t.confidence !== undefined ? { confidence: t.confidence } : {}) }));
+    .filter((t) => t.label !== "" && filterAttributeTerms([t.label]).length > 0);
+  // Step 2 (Phase 10-5E, quality/granularity): synonym-normalize, drop banned
+  // & out-of-vocabulary, dedupe, category-priority sort, mood cap, 8-item cap.
+  // Provider-independent so mock and OpenAI outputs are refined identically.
+  const tags = refineTagCandidates(attributeFiltered);
   const keywordsJa = filterAttributeTerms(out.keywords_ja.map((k) => k.trim()));
   const keywordsEn = filterAttributeTerms(out.keywords_en.map((k) => k.trim()));
 
