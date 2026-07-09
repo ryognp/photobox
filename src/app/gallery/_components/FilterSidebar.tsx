@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import type { GalleryFilters } from "@/lib/gallery/imagesClient"
+import { toggleTagId } from "@/lib/gallery/tagFilters"
 
 type SimpleItem = { id: string; name: string }
 
@@ -53,6 +54,65 @@ function Section({
   )
 }
 
+/**
+ * Multi-select tag filter (Phase 10-7B, AND semantics — an image must have
+ * ALL selected tags). Selected tags render as removable chips above the
+ * toggleable list.
+ */
+function TagFilterSection({
+  items,
+  selectedIds,
+  onToggle,
+}: {
+  items: SimpleItem[]
+  selectedIds: string[]
+  onToggle: (id: string) => void
+}) {
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">タグ</p>
+      {selectedIds.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap gap-1">
+          {selectedIds.map((id) => {
+            const item = items.find((i) => i.id === id)
+            return (
+              <span
+                key={id}
+                className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+              >
+                {item?.name ?? id}
+                <button
+                  onClick={() => onToggle(id)}
+                  aria-label={`${item?.name ?? id} を解除`}
+                  className="text-blue-500 hover:text-blue-800"
+                >
+                  ×
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      )}
+      <div className="flex flex-col gap-0.5">
+        {items.map((item) => {
+          const selected = selectedIds.includes(item.id)
+          return (
+            <button
+              key={item.id}
+              onClick={() => onToggle(item.id)}
+              className={`truncate rounded px-2 py-1 text-left text-sm ${
+                selected ? "bg-blue-50 font-medium text-blue-700" : "text-zinc-700 hover:bg-zinc-100"
+              }`}
+            >
+              {selected ? "✓ " : ""}{item.name}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function FilterSidebar({ filters, onChange }: FilterSidebarProps) {
   const [scenes, setScenes] = useState<SimpleItem[]>([])
   const [tags, setTags] = useState<SimpleItem[]>([])
@@ -68,7 +128,7 @@ export default function FilterSidebar({ filters, onChange }: FilterSidebarProps)
 
   const hasAnyFilter =
     filters.sceneId !== null ||
-    filters.tagId !== null ||
+    filters.tagIds.length > 0 ||
     filters.personId !== null ||
     filters.favorite !== null
 
@@ -119,11 +179,10 @@ export default function FilterSidebar({ filters, onChange }: FilterSidebarProps)
       )}
 
       {tags.length > 0 && (
-        <Section
-          title="タグ"
+        <TagFilterSection
           items={tags}
-          selectedId={filters.tagId}
-          onSelect={(id) => onChange({ tagId: id })}
+          selectedIds={filters.tagIds}
+          onToggle={(id) => onChange({ tagIds: toggleTagId(filters.tagIds, id) })}
         />
       )}
 
@@ -138,7 +197,7 @@ export default function FilterSidebar({ filters, onChange }: FilterSidebarProps)
 
       {hasAnyFilter && (
         <button
-          onClick={() => onChange({ sceneId: null, tagId: null, personId: null, favorite: null })}
+          onClick={() => onChange({ sceneId: null, tagIds: [], personId: null, favorite: null })}
           className="mt-auto rounded border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50"
         >
           フィルタをリセット
