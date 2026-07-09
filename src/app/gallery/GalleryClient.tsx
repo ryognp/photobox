@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useReducer, useRef, Suspense } from "react"
+import { useEffect, useReducer, useRef, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   fetchImages,
@@ -17,6 +17,7 @@ import FilterSidebar from "./_components/FilterSidebar"
 import ImageGrid from "./_components/ImageGrid"
 import DetailPanel from "./_components/DetailPanel"
 import MobileDetailDrawer from "./_components/MobileDetailDrawer"
+import MobileFilterDrawer from "./_components/MobileFilterDrawer"
 
 // ---- State (images/loading only — filters live in URL) ----
 
@@ -161,6 +162,11 @@ function GalleryInner() {
   const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchSeq = useRef(0)
 
+  // Phase 10-8B: mobile filter drawer is exclusive with the mobile detail
+  // drawer — ephemeral UI state, so it lives here as local state (not in the
+  // reducer, which only tracks fetched data).
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false)
+
   // Debounce q from URL → debouncedQ in state
   useEffect(() => {
     if (qTimer.current) clearTimeout(qTimer.current)
@@ -269,8 +275,21 @@ function GalleryInner() {
         <span className="text-sm text-zinc-400">
           {state.loading ? "..." : `${state.images.length} 枚`}
         </span>
-        <div className="ml-auto w-40 sm:w-72">
-          <SearchBar value={filters.q} onChange={handleQChange} />
+        <div className="ml-auto flex items-center gap-2">
+          <div className="w-40 sm:w-72">
+            <SearchBar value={filters.q} onChange={handleQChange} />
+          </div>
+          {/* md以上はFilterSidebarが常時表示のため不要 */}
+          <button
+            onClick={() => {
+              dispatch({ type: "select", id: null })
+              setFilterDrawerOpen(true)
+            }}
+            className="md:hidden rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+            aria-label="フィルターを開く"
+          >
+            フィルター
+          </button>
         </div>
       </header>
 
@@ -284,7 +303,10 @@ function GalleryInner() {
         <ImageGrid
           images={state.images}
           selectedId={state.selectedId}
-          onSelect={(id) => dispatch({ type: "select", id })}
+          onSelect={(id) => {
+            setFilterDrawerOpen(false)
+            dispatch({ type: "select", id })
+          }}
           loading={state.loading}
           loadingMore={state.loadingMore}
           hasMore={state.nextCursor !== null}
@@ -319,6 +341,14 @@ function GalleryInner() {
         prefetchedDetail={state.detail}
         prefetchedLoading={state.detailLoading}
         prefetchedError={state.detailError}
+      />
+
+      {/* Mobile filter drawer (md未満でのみ表示、detail drawerと排他) */}
+      <MobileFilterDrawer
+        open={filterDrawerOpen}
+        filters={filters}
+        onChange={handleFilterChange}
+        onClose={() => setFilterDrawerOpen(false)}
       />
     </div>
   )
