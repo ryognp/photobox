@@ -4,10 +4,10 @@ import { ANALYSIS_PROMPT_VERSION, buildAnalysisModelId } from "@/lib/analysis/an
 describe("buildAnalysisModelId", () => {
   it("composes provider:model:promptVersion", () => {
     expect(buildAnalysisModelId({ provider: "mock", model: "mock", promptVersion: ANALYSIS_PROMPT_VERSION })).toBe(
-      "mock:mock:ja-tags-v1",
+      "mock:mock:ja-tags-v2",
     );
     expect(buildAnalysisModelId({ provider: "openai", model: "gpt-4o-mini", promptVersion: ANALYSIS_PROMPT_VERSION })).toBe(
-      "openai:gpt-4o-mini:ja-tags-v1",
+      "openai:gpt-4o-mini:ja-tags-v2",
     );
   });
 

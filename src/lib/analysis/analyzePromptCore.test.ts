@@ -81,11 +81,11 @@ describe("analyzePromptCore — SKIPPED", () => {
 });
 
 describe("analyzePromptCore — DONE", () => {
-  it("valid output → DONE with normalized fields", async () => {
+  it("valid output → DONE with normalized fields (Phase 10-5E: controlled-vocab tags)", async () => {
     const r = await analyzePromptCore(
-      { currentBody: "a serene mountain lake at dawn", notes: null },
+      { currentBody: "a serene sea at dawn", notes: null },
       DEPS({
-        tags: [{ label: "landscape", confidence: 0.9 }, { label: "mountain" }],
+        tags: [{ label: "海", confidence: 0.9 }, { label: "風景" }],
         keywords_ja: ["山", "湖"],
         keywords_en: ["mountain", "lake"],
         usage_category: "scene_reference",
@@ -94,7 +94,8 @@ describe("analyzePromptCore — DONE", () => {
     );
     expect(r.status).toBe("DONE");
     if (r.status === "DONE") {
-      expect(r.tags).toEqual([{ label: "landscape", confidence: 0.9 }, { label: "mountain" }]);
+      // place (海) sorts before subject (風景) by category priority.
+      expect(r.tags).toEqual([{ label: "海", confidence: 0.9 }, { label: "風景" }]);
       expect(r.keywordsJa).toEqual(["山", "湖"]);
       expect(r.keywordsEn).toEqual(["mountain", "lake"]);
       expect(r.usageCategory).toBe("scene_reference");
@@ -103,15 +104,15 @@ describe("analyzePromptCore — DONE", () => {
     }
   });
 
-  it("dedupes tag labels case-insensitively (first occurrence wins)", async () => {
+  it("dedupes tags via synonym normalization (first occurrence wins, Phase 10-5E)", async () => {
     const r = await analyzePromptCore(
       { currentBody: "x", notes: null },
       DEPS({
         tags: [
-          { label: "Landscape", confidence: 0.9 },
-          { label: "landscape", confidence: 0.1 },
-          { label: " landscape ", confidence: 0.2 },
-          { label: "mountain" },
+          { label: "海辺", confidence: 0.9 },
+          { label: "海", confidence: 0.1 },
+          { label: " 海岸 ", confidence: 0.2 },
+          { label: "風景" },
         ],
         keywords_ja: [],
         keywords_en: [],
@@ -121,7 +122,8 @@ describe("analyzePromptCore — DONE", () => {
     );
     expect(r.status).toBe("DONE");
     if (r.status === "DONE") {
-      expect(r.tags).toEqual([{ label: "Landscape", confidence: 0.9 }, { label: "mountain" }]);
+      // 海辺/海/海岸 all normalize to 海; first (confidence 0.9) wins.
+      expect(r.tags).toEqual([{ label: "海", confidence: 0.9 }, { label: "風景" }]);
     }
   });
 
@@ -137,7 +139,7 @@ describe("analyzePromptCore — DONE", () => {
     const r = await analyzePromptCore(
       { currentBody: "portrait", notes: null },
       DEPS({
-        tags: [{ label: "portrait" }, { label: "female" }, { label: "asian" }],
+        tags: [{ label: "ポートレート" }, { label: "female" }, { label: "asian" }],
         keywords_ja: ["女性", "風景"],
         keywords_en: ["woman", "sunset"],
         usage_category: "portrait",
@@ -146,13 +148,15 @@ describe("analyzePromptCore — DONE", () => {
     );
     expect(r.status).toBe("DONE");
     if (r.status === "DONE") {
-      expect(r.tags.map((t) => t.label)).toEqual(["portrait"]);
+      // female/asian are removed by the attribute denylist; ポートレート is
+      // controlled-vocab and survives refinement.
+      expect(r.tags.map((t) => t.label)).toEqual(["ポートレート"]);
       expect(r.keywordsJa).toEqual(["風景"]);
       expect(r.keywordsEn).toEqual(["sunset"]);
       // Phase 10-5D: safeRaw is built from FILTERED values — attribute terms
       // (female / asian / 女性 / woman) must not survive into rawJson.
       expect(r.safeRaw).toEqual({
-        tags: [{ label: "portrait" }],
+        tags: [{ label: "ポートレート" }],
         keywords_ja: ["風景"],
         keywords_en: ["sunset"],
         usage_category: "portrait",
@@ -162,6 +166,94 @@ describe("analyzePromptCore — DONE", () => {
       for (const banned of ["female", "asian", "女性", "woman"]) {
         expect(safeRawStr).not.toContain(banned);
       }
+    }
+  });
+
+  // Phase 10-5E: end-to-end refinement through analyzePromptCore.
+  it("drops 素材 / 参考画像 and out-of-vocab tags, keeps controlled-vocab", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [{ label: "素材" }, { label: "参考画像" }, { label: "海" }, { label: "エアリー" }],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "ja",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") expect(r.tags.map((t) => t.label)).toEqual(["海"]);
+  });
+
+  it("drops description-style banned labels (〜の描写)", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [{ label: "夕暮れ時の光学用シーンの描写" }, { label: "夜" }],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "ja",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") expect(r.tags.map((t) => t.label)).toEqual(["夜"]);
+  });
+
+  it("normalizes synonyms (海辺→海, プールサイド→プール)", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [{ label: "海辺" }, { label: "プールサイド" }],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "ja",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") expect(r.tags.map((t) => t.label)).toEqual(["海", "プール"]);
+  });
+
+  it("limits mood tags to 1 and caps total to 8, sorted by category priority", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [
+          { label: "高級感" }, // mood
+          { label: "ナチュラル" }, // mood (should be dropped by mood cap)
+          { label: "人物" }, // subject
+          { label: "自然光" }, // light
+          { label: "ポートレート" }, // composition
+          { label: "海" }, // place
+          { label: "水着" }, // outfit
+          { label: "朝" }, // time
+          { label: "料理" }, // subject
+          { label: "商品" }, // subject
+        ],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "ja",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") {
+      expect(r.tags).toHaveLength(8);
+      // priority: time → outfit → place → composition → light → subject → mood
+      expect(r.tags.map((t) => t.label)).toEqual([
+        "朝",
+        "水着",
+        "海",
+        "ポートレート",
+        "自然光",
+        "人物",
+        "料理",
+        "商品",
+      ]);
+      // only 1 mood tag survived, and it was pushed out by the 8-cap here
+      const moods = r.tags.filter((t) => t.label === "高級感" || t.label === "ナチュラル");
+      expect(moods.length).toBeLessThanOrEqual(1);
     }
   });
 });

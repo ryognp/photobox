@@ -22,18 +22,16 @@ describe("createMockProvider — default output (Phase 10-5C: Japanese tags)", (
     expect(result.language_detected).toBe("ja");
   });
 
-  it("falls back to a generic Japanese label for unmapped words", async () => {
+  it("emits NO tags for unmapped words (Phase 10-5E: filler fallback removed)", async () => {
     const provider = createMockProvider();
     const result = (await provider.analyze("xyzzy quux")) as { tags: { label: string }[] };
-    for (const t of result.tags) {
-      expect(["素材", "参考画像"]).toContain(t.label);
-    }
+    expect(result.tags).toEqual([]);
   });
 
   it("mapped Japanese tags are never dropped by the attribute denylist", async () => {
     const provider = createMockProvider();
     const result = (await provider.analyze(
-      "portrait cafe dog cat food product background landscape",
+      "portrait cafe dog cat food product landscape",
     )) as { tags: { label: string }[] };
     const labels = result.tags.map((t) => t.label);
     expect(labels.length).toBeGreaterThan(0);
