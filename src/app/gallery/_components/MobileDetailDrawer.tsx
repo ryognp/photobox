@@ -56,9 +56,21 @@ export default function MobileDetailDrawer({
         className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl bg-white shadow-xl"
         style={{ maxHeight: "90dvh" }}
       >
-        {/* Pull handle */}
-        <div className="flex flex-shrink-0 justify-center py-2">
-          <div className="h-1 w-10 rounded-full bg-zinc-300" />
+        {/* Sticky header: pull handle + title + close (stays visible while
+            DetailPanel content below scrolls — DetailPanel's own header is
+            hidden via hideHeader) */}
+        <div className="flex flex-shrink-0 flex-col border-b border-zinc-200">
+          <div className="flex justify-center pt-2">
+            <div className="h-1 w-10 rounded-full bg-zinc-300" />
+          </div>
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-sm font-semibold text-zinc-800">詳細</span>
+            <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-700" aria-label="閉じる">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* DetailPanel with prefetched data (no extra fetch) */}
@@ -70,6 +82,8 @@ export default function MobileDetailDrawer({
             onSuggestionResolved={onSuggestionResolved}
             onAnalyzed={onAnalyzed}
             onTagRemoved={onTagRemoved}
+            hideHeader
+            fullWidth
             prefetchedDetail={prefetchedDetail}
             prefetchedLoading={prefetchedLoading}
             prefetchedError={prefetchedError}

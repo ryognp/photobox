@@ -28,6 +28,8 @@ interface DetailPanelProps {
   onAnalyzed?: (suggestions: TagSuggestion[]) => void
   onTagRemoved?: (tagId: string) => void
   hideHeader?: boolean
+  /** Phase 10-8C: モバイルdrawer用。デスクトップ幅 w-80 固定を解除する */
+  fullWidth?: boolean
   /** 外部からfetch済みdetailを渡す場合（二重fetch防止） */
   prefetchedDetail?: ImageDetail | null
   prefetchedLoading?: boolean
@@ -99,6 +101,8 @@ function PreviewImage({ detail }: { detail: ImageDetail }) {
 
 type EditPhase = "view" | "editing" | "saving" | "saved" | "error"
 
+const PROMPT_PREVIEW_LEN = 350
+
 function PromptEditor({
   imageId,
   prompt,
@@ -112,6 +116,13 @@ function PromptEditor({
   const [draft, setDraft] = useState(prompt.currentBody)
   const [changeNote, setChangeNote] = useState("")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  // 画像切り替え時に展開状態をリセット（他subcomponentと同じprevId比較パターン）
+  const [prevImageId, setPrevImageId] = useState(imageId)
+  if (imageId !== prevImageId) {
+    setPrevImageId(imageId)
+    setExpanded(false)
+  }
 
   const startEdit = () => {
     setDraft(prompt.currentBody)
@@ -154,6 +165,8 @@ function PromptEditor({
   }
 
   if (phase === "view" || phase === "saved") {
+    const isLong = prompt.currentBody.length > PROMPT_PREVIEW_LEN
+    const displayBody = expanded ? prompt.currentBody : prompt.currentBody.slice(0, PROMPT_PREVIEW_LEN)
     return (
       <div>
         <div className="flex items-center justify-between">
@@ -172,8 +185,17 @@ function PromptEditor({
           </div>
         </div>
         <p className="mt-1 whitespace-pre-wrap break-words rounded bg-zinc-50 p-2 text-xs text-zinc-700">
-          {prompt.currentBody}
+          {displayBody}
+          {!expanded && isLong && <span className="text-zinc-400">…</span>}
         </p>
+        {isLong && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="mt-1 text-xs text-zinc-400 hover:text-zinc-600"
+          >
+            {expanded ? "閉じる ▲" : "全文表示 ▼"}
+          </button>
+        )}
       </div>
     )
   }
@@ -473,12 +495,20 @@ function TagChip({
 
   if (phase === "confirm") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 py-1 pl-2.5 pr-1 text-xs text-zinc-700">
         <span>{tag.name}</span>
-        <button onClick={() => void remove()} className="text-red-600 hover:text-red-800" aria-label="外す">
+        <button
+          onClick={() => void remove()}
+          className="rounded px-1.5 py-1 text-red-600 hover:bg-red-50 hover:text-red-800"
+          aria-label="外す"
+        >
           外す
         </button>
-        <button onClick={() => setPhase("view")} className="text-zinc-400 hover:text-zinc-700" aria-label="キャンセル">
+        <button
+          onClick={() => setPhase("view")}
+          className="rounded px-1.5 py-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
+          aria-label="キャンセル"
+        >
           キャンセル
         </button>
       </span>
@@ -487,7 +517,7 @@ function TagChip({
 
   if (phase === "removing") {
     return (
-      <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-400">
+      <span className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-400">
         {tag.name} …
       </span>
     )
@@ -495,11 +525,11 @@ function TagChip({
 
   return (
     <span className="inline-flex flex-col">
-      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-zinc-100 py-1 pl-2.5 pr-1 text-xs text-zinc-700">
         <span>{tag.name}</span>
         <button
           onClick={() => setPhase("confirm")}
-          className="text-zinc-400 hover:text-red-600"
+          className="rounded px-1.5 py-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
           aria-label={`タグ「${tag.name}」を外す`}
         >
           ×
@@ -573,7 +603,7 @@ function AnalyzeSection({
         <button
           onClick={() => void run(false)}
           disabled={phase === "analyzing"}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
         >
           {phase === "analyzing" ? "解析中..." : "AI解析する"}
         </button>
@@ -581,7 +611,7 @@ function AnalyzeSection({
           <button
             onClick={() => void run(true)}
             disabled={phase === "analyzing"}
-            className="text-xs text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
+            className="px-2 py-2 text-xs text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
           >
             強制再解析
           </button>
@@ -614,6 +644,7 @@ export default function DetailPanel({
   onAnalyzed,
   onTagRemoved,
   hideHeader = false,
+  fullWidth = false,
   prefetchedDetail,
   prefetchedLoading,
   prefetchedError,
@@ -689,7 +720,13 @@ export default function DetailPanel({
   if (!imageId) return null
 
   return (
-    <aside className="flex w-80 flex-shrink-0 flex-col overflow-y-auto border-l border-zinc-200 bg-white">
+    <aside
+      className={
+        fullWidth
+          ? "flex w-full flex-1 flex-col overflow-y-auto bg-white"
+          : "flex w-80 flex-shrink-0 flex-col overflow-y-auto border-l border-zinc-200 bg-white"
+      }
+    >
       {/* Header */}
       {!hideHeader && (
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
