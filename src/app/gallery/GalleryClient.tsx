@@ -9,8 +9,10 @@ import {
   type GalleryImage,
   type ImageDetail,
   type TagSuggestion,
+  type TranslatePromptResult,
 } from "@/lib/gallery/imagesClient"
 import { removeTagById } from "@/lib/gallery/tagState"
+import { applyTranslationUpdate, applyPromptEditToDetailPrompt } from "@/lib/gallery/translationState"
 import { normalizeTagIds } from "@/lib/gallery/tagFilters"
 import { normalizeSuggestionLabels } from "@/lib/gallery/suggestionFilters"
 import SearchBar from "./_components/SearchBar"
@@ -58,6 +60,8 @@ type GalleryAction =
     }
   | { type: "analysis_result"; suggestions: TagSuggestion[] }
   | { type: "tag_removed"; tagId: string }
+  | { type: "translation_updated"; result: TranslatePromptResult }
+  | { type: "prompt_updated"; prompt: ImageDetail["prompt"] }
 
 function reducer(s: GalleryState, a: GalleryAction): GalleryState {
   switch (a.type) {
@@ -108,6 +112,16 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
     case "tag_removed": {
       if (!s.detail) return s
       return { ...s, detail: { ...s.detail, tags: removeTagById(s.detail.tags, a.tagId) } }
+    }
+    case "translation_updated": {
+      if (!s.detail) return s
+      return { ...s, detail: applyTranslationUpdate(s.detail, a.result) }
+    }
+    case "prompt_updated": {
+      // Keep the shared detail's currentBody + translation in sync with a prompt
+      // edit, so a subsequent translate uses the fresh body (not a stale one).
+      if (!s.detail || !s.detail.prompt || !a.prompt) return s
+      return { ...s, detail: { ...s.detail, prompt: applyPromptEditToDetailPrompt(s.detail.prompt, a.prompt) } }
     }
   }
 }
@@ -332,6 +346,8 @@ function GalleryInner() {
             onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
             onAnalyzed={(suggestions) => dispatch({ type: "analysis_result", suggestions })}
             onTagRemoved={(tagId) => dispatch({ type: "tag_removed", tagId })}
+            onTranslated={(result) => dispatch({ type: "translation_updated", result })}
+            onPromptSaved={(prompt) => dispatch({ type: "prompt_updated", prompt })}
             prefetchedDetail={state.detail}
             prefetchedLoading={state.detailLoading}
             prefetchedError={state.detailError}
@@ -347,6 +363,8 @@ function GalleryInner() {
         onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
         onAnalyzed={(suggestions) => dispatch({ type: "analysis_result", suggestions })}
         onTagRemoved={(tagId) => dispatch({ type: "tag_removed", tagId })}
+        onTranslated={(result) => dispatch({ type: "translation_updated", result })}
+        onPromptSaved={(prompt) => dispatch({ type: "prompt_updated", prompt })}
         prefetchedDetail={state.detail}
         prefetchedLoading={state.detailLoading}
         prefetchedError={state.detailError}
