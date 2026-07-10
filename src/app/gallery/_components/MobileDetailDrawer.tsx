@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import type { ImageDetail, TagSuggestion } from "@/lib/gallery/imagesClient"
+import type { ImageDetail, TagSuggestion, TranslatePromptResult } from "@/lib/gallery/imagesClient"
 import DetailPanel, { type SuggestionResolvedPayload } from "./DetailPanel"
 
 interface MobileDetailDrawerProps {
@@ -11,6 +11,8 @@ interface MobileDetailDrawerProps {
   onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
   onAnalyzed?: (suggestions: TagSuggestion[]) => void
   onTagRemoved?: (tagId: string) => void
+  onTranslated?: (result: TranslatePromptResult) => void
+  onPromptSaved?: (prompt: ImageDetail["prompt"]) => void
   prefetchedDetail?: ImageDetail | null
   prefetchedLoading?: boolean
   prefetchedError?: string | null
@@ -23,6 +25,8 @@ export default function MobileDetailDrawer({
   onSuggestionResolved,
   onAnalyzed,
   onTagRemoved,
+  onTranslated,
+  onPromptSaved,
   prefetchedDetail,
   prefetchedLoading,
   prefetchedError,
@@ -82,6 +86,8 @@ export default function MobileDetailDrawer({
             onSuggestionResolved={onSuggestionResolved}
             onAnalyzed={onAnalyzed}
             onTagRemoved={onTagRemoved}
+            onTranslated={onTranslated}
+            onPromptSaved={onPromptSaved}
             hideHeader
             fullWidth
             prefetchedDetail={prefetchedDetail}

@@ -8,10 +8,14 @@ import {
   fetchImageDetail,
   rejectSuggestion,
   removeImageTag,
+  translatePrompt,
   type ImageDetail,
   type PromptVersionSummary,
   type TagSuggestion,
+  type TranslatePromptResult,
 } from "@/lib/gallery/imagesClient"
+import { applyPromptEditToDetailPrompt } from "@/lib/gallery/translationState"
+import { describeTranslationResult, type TranslationDisplayMessage } from "@/lib/translation/translationResultDisplay"
 
 /** Emitted after an AI tag candidate is approved or rejected (server call already succeeded). */
 export type SuggestionResolvedPayload = {
@@ -27,6 +31,11 @@ interface DetailPanelProps {
   onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
   onAnalyzed?: (suggestions: TagSuggestion[]) => void
   onTagRemoved?: (tagId: string) => void
+  /** Phase 10-9C-4: single-image translation applied (fold into shared detail). */
+  onTranslated?: (result: TranslatePromptResult) => void
+  /** Phase 10-9C-4: prompt edited — propagate to shared state so a stale
+   *  translation is cleared and a later translate uses the fresh body. */
+  onPromptSaved?: (prompt: ImageDetail["prompt"]) => void
   hideHeader?: boolean
   /** Phase 10-8C: モバイルdrawer用。デスクトップ幅 w-80 固定を解除する */
   fullWidth?: boolean
@@ -57,7 +66,12 @@ function reducer(s: State, a: Action): State {
   if (a.type === "error") return { phase: "error", message: a.message }
   if (a.type === "copy_msg" && s.phase === "ok") return { ...s, copyMsg: a.msg }
   if (a.type === "update_prompt" && s.phase === "ok") {
-    return { ...s, detail: { ...s.detail, prompt: a.prompt } }
+    // Reset a stale translation on body change (mirrors resetTranslationCacheData).
+    const prompt =
+      s.detail.prompt && a.prompt
+        ? applyPromptEditToDetailPrompt(s.detail.prompt, a.prompt)
+        : a.prompt
+    return { ...s, detail: { ...s.detail, prompt } }
   }
   return s
 }
@@ -239,6 +253,118 @@ function PromptEditor({
           キャンセル
         </button>
       </div>
+    </div>
+  )
+}
+
+// ---- TranslationSection: プロンプトの日本語訳 表示/追加/再生成 (Phase 10-9C-4) ----
+//
+// 表示は server 計算の prompt.effectiveTranslatedBodyJa のみ (raw translatedBodyJa
+// や client hash は使わない → stale訳は出ない)。翻訳ボタンは translationEnabled=true
+// かつ prompt あり の時だけ表示 → mock/disabled 時に翻訳APIを呼ぶ導線を作らない。
+
+type TranslatePhase = "idle" | "translating"
+
+function TranslationSection({
+  imageId,
+  prompt,
+  translationEnabled,
+  onTranslated,
+}: {
+  imageId: string
+  prompt: NonNullable<ImageDetail["prompt"]>
+  translationEnabled: boolean
+  onTranslated?: (result: TranslatePromptResult) => void
+}) {
+  const [phase, setPhase] = useState<TranslatePhase>("idle")
+  const [message, setMessage] = useState<TranslationDisplayMessage | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  // 画像切り替え時にリセット (他subcomponentと同じ prevId 比較パターン)
+  const [prevImageId, setPrevImageId] = useState(imageId)
+  if (imageId !== prevImageId) {
+    setPrevImageId(imageId)
+    setPhase("idle")
+    setMessage(null)
+    setExpanded(false)
+  }
+
+  const effective = prompt.effectiveTranslatedBodyJa
+  const hasTranslation = effective != null && effective.trim() !== ""
+
+  // 翻訳もなく、機能も無効 (mock/disabled) なら何も描画しない。
+  if (!hasTranslation && !translationEnabled) return null
+
+  const run = async () => {
+    setPhase("translating")
+    setMessage(null)
+    try {
+      // 既存訳ありなら再生成 (force)。連打は phase=translating で disabled。
+      const result = await translatePrompt(imageId, hasTranslation ? { force: true } : undefined)
+      setMessage(describeTranslationResult(result))
+      onTranslated?.(result)
+    } catch (e: unknown) {
+      setMessage({ text: (e as Error).message ?? "翻訳に失敗しました", tone: "error" })
+    } finally {
+      setPhase("idle")
+    }
+  }
+
+  const isLong = hasTranslation && effective.length > PROMPT_PREVIEW_LEN
+  const displayBody = hasTranslation
+    ? expanded
+      ? effective
+      : effective.slice(0, PROMPT_PREVIEW_LEN)
+    : null
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">日本語訳</p>
+        {hasTranslation && <CopyButton text={effective} label="コピー" />}
+      </div>
+
+      {hasTranslation ? (
+        <>
+          <p className="mt-1 whitespace-pre-wrap break-words rounded bg-blue-50 p-2 text-xs text-zinc-700">
+            {displayBody}
+            {!expanded && isLong && <span className="text-zinc-400">…</span>}
+          </p>
+          {isLong && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="mt-1 text-xs text-zinc-400 hover:text-zinc-600"
+            >
+              {expanded ? "閉じる ▲" : "全文表示 ▼"}
+            </button>
+          )}
+        </>
+      ) : (
+        <p className="mt-1 text-xs text-zinc-400">日本語訳はまだありません</p>
+      )}
+
+      {translationEnabled && (
+        <button
+          onClick={() => void run()}
+          disabled={phase === "translating"}
+          className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {phase === "translating" ? "翻訳中..." : hasTranslation ? "日本語訳を再生成" : "日本語訳を追加"}
+        </button>
+      )}
+
+      {message && (
+        <p
+          className={`mt-1 text-xs ${
+            message.tone === "error"
+              ? "text-red-500"
+              : message.tone === "info"
+                ? "text-zinc-500"
+                : "text-green-600"
+          }`}
+        >
+          {message.text}
+        </p>
+      )}
     </div>
   )
 }
@@ -643,6 +769,8 @@ export default function DetailPanel({
   onSuggestionResolved,
   onAnalyzed,
   onTagRemoved,
+  onTranslated,
+  onPromptSaved,
   hideHeader = false,
   fullWidth = false,
   prefetchedDetail,
@@ -825,10 +953,22 @@ export default function DetailPanel({
           )}
 
           {state.detail.prompt && (
+            <TranslationSection
+              imageId={state.detail.id}
+              prompt={state.detail.prompt}
+              translationEnabled={state.detail.translationEnabled}
+              onTranslated={onTranslated}
+            />
+          )}
+
+          {state.detail.prompt && (
             <PromptEditor
               imageId={state.detail.id}
               prompt={state.detail.prompt}
-              onSaved={(updatedPrompt) => dispatch({ type: "update_prompt", prompt: updatedPrompt })}
+              onSaved={(updatedPrompt) => {
+                dispatch({ type: "update_prompt", prompt: updatedPrompt })
+                onPromptSaved?.(updatedPrompt)
+              }}
             />
           )}
 

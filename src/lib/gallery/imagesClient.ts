@@ -67,6 +67,9 @@ export type ImageDetail = {
     translatedAt: string | null;
     translationStartedAt: string | null;
     translationError: string | null;
+    // Phase 10-9C-4: server-computed effective JA translation (null when none
+    // or stale). The client never recomputes this — display reads it directly.
+    effectiveTranslatedBodyJa: string | null;
   } | null;
   signedUrls: {
     thumbnailUrl: string | null;

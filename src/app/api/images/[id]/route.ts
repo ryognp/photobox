@@ -10,6 +10,7 @@ import { ok, Errors } from "@/lib/apiResponse";
 import { getSignedUrlCache, setSignedUrlCache } from "@/lib/supabase/signedUrlCache";
 import { resolveWorkspaceImage } from "@/lib/images/resolveWorkspaceImage";
 import { isTranslationEnabled } from "@/lib/translation/translationProviderFactory";
+import { getEffectiveJapanesePromptBody } from "@/lib/translation/translationCore";
 
 const BUCKET = "photobox-private";
 
@@ -141,7 +142,11 @@ export async function GET(
     tags: image.imageTags.map((t) => t.tag),
     persons: image.imagePersons.map((p) => p.person),
     tagSuggestions: image.tagSuggestions,
-    prompt: image.prompt,
+    // Phase 10-9C-4: effectiveTranslatedBodyJa is computed here (server-side,
+    // hash-checked) so the client never imports translationCore / node:crypto.
+    prompt: image.prompt
+      ? { ...image.prompt, effectiveTranslatedBodyJa: getEffectiveJapanesePromptBody(image.prompt) }
+      : null,
     signedUrls: { thumbnailUrl, previewUrl, originalUrl },
     // Phase 10-9C-3: whether the DetailPanel translation UI (10-9C-4) may run.
     translationEnabled: isTranslationEnabled(process.env),
