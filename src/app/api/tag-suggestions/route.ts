@@ -3,6 +3,7 @@ import "server-only";
 import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ok, Errors } from "@/lib/apiResponse";
+import { isExcludedGenericLabel } from "@/lib/analysis/tagTaxonomy";
 
 /**
  * GET /api/tag-suggestions  (Phase 10-9B)
@@ -16,6 +17,10 @@ import { ok, Errors } from "@/lib/apiResponse";
  * - `imageCount` = number of DISTINCT images that have the label PENDING, NOT
  *   the TagSuggestion row count. Achieved via `distinct: ["label","imageId"]`
  *   (one row per (label,imageId) pair) then counting rows per label.
+ * - Phase 10-10A: labels in EXCLUDED_GENERIC_LABELS (人物/ポートレート) are
+ *   hidden here even if older PENDING rows still exist. Read-only display
+ *   filter only — the TagSuggestion rows themselves are left untouched (no
+ *   UPDATE/DELETE), and approve/reject remain available via the per-image API.
  */
 export async function GET() {
   const user = await getCurrentUser();
@@ -38,6 +43,7 @@ export async function GET() {
 
   const counts = new Map<string, number>();
   for (const r of rows) {
+    if (isExcludedGenericLabel(r.label)) continue;
     counts.set(r.label, (counts.get(r.label) ?? 0) + 1);
   }
 

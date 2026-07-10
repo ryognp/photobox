@@ -4,8 +4,8 @@
 // unit-testable and applied provider-independently inside analyzePromptCore.
 //
 // Pipeline (see refineTagCandidates): trim → synonym-normalize → drop banned →
-// drop out-of-vocabulary → dedupe → category-priority sort → mood cap (1) →
-// total cap (8).
+// drop excluded-generic (Phase 10-10A) → drop out-of-vocabulary → dedupe →
+// category-priority sort → mood cap (1) → total cap (8).
 //
 // The person-attribute denylist (analysisSchema.ts) is a SEPARATE safety
 // filter applied BEFORE this in analyzePromptCore; this file is about tag
@@ -73,8 +73,8 @@ export const CATEGORY_VOCAB: Record<string, TagCategory> = {
   スタジオ: "place",
   ホテル: "place",
   部屋: "place",
-  // 構図
-  ポートレート: "composition",
+  // 構図（Phase 10-10A: 「ポートレート」は全画像がほぼ該当し絞り込み価値が
+  // 低いため除外。差分が出る構図語のみ残す）
   全身: "composition",
   上半身: "composition",
   横顔: "composition",
@@ -89,8 +89,7 @@ export const CATEGORY_VOCAB: Record<string, TagCategory> = {
   暖色光: "light",
   日差し: "light",
   夕景: "light",
-  // 被写体
-  人物: "subject",
+  // 被写体（Phase 10-10A: 「人物」は全画像がほぼ該当し絞り込み価値が低いため除外）
   料理: "subject",
   商品: "subject",
   風景: "subject",
@@ -112,6 +111,12 @@ export const CATEGORY_VOCAB: Record<string, TagCategory> = {
  * vocab check, so common surface variants collapse onto a controlled term.
  * Multi-concept decomposition is intentionally NOT attempted (single-label
  * dictionary only, per Phase 10-5E decision).
+ *
+ * Phase 10-10A: added English time-of-day terms as a safety net for images
+ * whose prompt is analyzed in its original English (no Japanese translation
+ * yet) — the provider may emit the English word verbatim rather than
+ * translating it itself. English keys are matched case-insensitively (see
+ * normalizeTagLabel); write them in lowercase here.
  */
 export const SYNONYM_MAP: Record<string, string> = {
   海辺: "海",
@@ -126,6 +131,19 @@ export const SYNONYM_MAP: Record<string, string> = {
   ワンピースドレス: "ドレス",
   ビキニ: "水着",
   スイムウェア: "水着",
+  // English time-of-day (Phase 10-10A)
+  sunset: "夕方",
+  dusk: "夕方",
+  twilight: "夕方",
+  "golden hour": "夕方",
+  evening: "夕方",
+  night: "夜",
+  nighttime: "夜",
+  morning: "朝",
+  sunrise: "朝",
+  daytime: "昼",
+  noon: "昼",
+  afternoon: "昼",
 };
 
 /** Exact-match banned labels (description/atmosphere words we never want). */
@@ -146,13 +164,36 @@ const BANNED_EXACT = new Set<string>([
 /** Suffix patterns for description-style labels (〜の描写 / 〜な雰囲気 等). */
 const BANNED_SUFFIX = [/の描写$/, /の背景$/, /のシーン$/, /の質感$/, /な雰囲気$/];
 
+/**
+ * Phase 10-10A: labels that ARE valid controlled-vocabulary category members
+ * in spirit but are excluded because nearly every Photo.box image matches them
+ * (zero discriminating value for Gallery filtering). Distinct from BANNED_*
+ * (which targets free-form description/atmosphere phrasing, not vocabulary
+ * words) — kept as an explicit, separately-named list so the reason ("generic,
+ * not description") is traceable, even though removing them from
+ * CATEGORY_VOCAB already has the same practical effect (defense-in-depth: a
+ * future vocab re-addition would still be caught here).
+ */
+export const EXCLUDED_GENERIC_LABELS = new Set<string>(["人物", "ポートレート"]);
+
 const MAX_TAGS = 8;
 const MAX_MOOD_TAGS = 1;
 
-/** Trims and maps a label through the synonym table (identity if no entry). */
+/**
+ * Trims and maps a label through the synonym table (identity if no entry).
+ * Japanese entries match on exact trimmed text (as before); a lowercase
+ * fallback lookup additionally makes the English time-of-day entries
+ * case-insensitive ("Sunset" / "SUNSET" both resolve to 夕方) without
+ * affecting Japanese text (which has no case).
+ */
 export function normalizeTagLabel(label: string): string {
   const trimmed = label.trim();
-  return SYNONYM_MAP[trimmed] ?? trimmed;
+  return SYNONYM_MAP[trimmed] ?? SYNONYM_MAP[trimmed.toLowerCase()] ?? trimmed;
+}
+
+/** True if the label is excluded for being too generic (matches ~all images). */
+export function isExcludedGenericLabel(label: string): boolean {
+  return EXCLUDED_GENERIC_LABELS.has(label.trim());
 }
 
 /** True if the label is a banned description/atmosphere phrase. */
@@ -182,6 +223,7 @@ export function refineTagCandidates(tags: RawTagCandidate[]): RawTagCandidate[] 
   for (const t of tags) {
     const label = normalizeTagLabel(t.label);
     if (isBannedTagLabel(label)) continue;
+    if (isExcludedGenericLabel(label)) continue; // Phase 10-10A: too generic for Gallery filtering
     const category = getTagCategory(label);
     if (!category) continue; // controlled vocabulary: drop out-of-vocab
     const key = label.toLowerCase();

@@ -12,7 +12,7 @@ function fakeRedis(overrides?: Partial<BudgetRedisLike>): BudgetRedisLike {
 const BASE = {
   workspaceId: "ws1",
   providerId: "openai",
-  modelId: "openai:gpt-4o-mini:ja-tags-v2",
+  modelId: "openai:gpt-4o-mini:ja-tags-v3",
   limit: 100,
   now: new Date("2026-07-08T12:00:00.000Z"),
 };
@@ -63,7 +63,7 @@ describe("reserveBudgetWithRedis", () => {
     await reserveBudgetWithRedis({ redis, ...BASE });
     expect(seenKey).toContain("2026-07-08");
     expect(seenKey).toContain("openai");
-    expect(seenKey).toContain("openai:gpt-4o-mini:ja-tags-v2");
+    expect(seenKey).toContain("openai:gpt-4o-mini:ja-tags-v3");
     expect(seenKey).not.toContain("ws1"); // workspaceId is hashed
   });
 });
