@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (existing) {
-    const data = await fetchSessionWithItems(existing.id);
+    const data = await fetchSessionWithItems(existing.id, user.id);
     if (!data) return Errors.internal();
     return ok(data);
   }
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     select: { id: true },
   });
 
-  const data = await fetchSessionWithItems(session.id);
+  const data = await fetchSessionWithItems(session.id, user.id);
   if (!data) return Errors.internal();
   return ok(data, 201);
 }

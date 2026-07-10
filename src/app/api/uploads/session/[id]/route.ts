@@ -22,7 +22,7 @@ export async function GET(
     return auth.reason === "NOT_FOUND" ? Errors.notFound("Session not found") : Errors.forbidden();
   }
 
-  const data = await fetchSessionWithItems(id);
+  const data = await fetchSessionWithItems(id, user.id);
   if (!data) return Errors.internal();
   return ok(data);
 }
@@ -81,7 +81,7 @@ export async function PATCH(
     data: updates,
   });
 
-  const data = await fetchSessionWithItems(id);
+  const data = await fetchSessionWithItems(id, user.id);
   if (!data) return Errors.internal();
   return ok(data);
 }

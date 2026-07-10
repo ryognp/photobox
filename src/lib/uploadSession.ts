@@ -1,6 +1,8 @@
 import "server-only";
 
 import { prisma } from "./prisma";
+import { resolveSignedUrls, type BatchRequest } from "./signedUrl";
+import { attachThumbnailSignedUrls } from "./uploadSessionThumbnails";
 
 // items の include 定義（GET / POST 共通）
 export const ITEM_INCLUDE = {
@@ -103,8 +105,15 @@ export async function authorizeSession(
   return { ok: true, session };
 }
 
-// session + items を整形して返す形式
-export async function fetchSessionWithItems(sessionId: string) {
+// session + items を整形して返す形式。
+// userId を渡した場合のみ、各 item に private-bucket thumbnail の signed URL
+// (`signedUrls.thumbnail`) を付与する（Quick Add commit プレビューの画像表示用）。
+// userId は呼び出し元が既に session の所有者 / workspace membership を確認済み
+// のものを渡すこと — resolveSignedUrls 内部でも workspace membership を
+// 再チェックするため、service role で無条件に signed URL を発行することはない。
+// raw storage path (tempThumbnailPath 等) は ITEM_SELECT に残るが、UI 側では
+// signedUrls のみを画像表示に使う。
+export async function fetchSessionWithItems(sessionId: string, userId?: string) {
   const session = await prisma.uploadSession.findUnique({
     where: { id: sessionId },
     select: SESSION_SELECT,
@@ -122,5 +131,15 @@ export async function fetchSessionWithItems(sessionId: string) {
     },
   });
 
-  return { session, items };
+  if (!userId) return { session, items };
+
+  const requests: BatchRequest[] = items.map((item, index) => ({
+    index,
+    type: "uploadItem",
+    id: item.id,
+    variant: "thumbnail",
+  }));
+  const { results } = await resolveSignedUrls(requests, userId);
+
+  return { session, items: attachThumbnailSignedUrls(items, results) };
 }
