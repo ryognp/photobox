@@ -1,9 +1,50 @@
 "use client"
 
+import { useState } from "react";
+
 type Props = {
   item: Record<string, unknown>;
   reasons?: string[];
 };
+
+type ItemSignedUrls = { thumbnail?: { signedUrl: string | null } } | null;
+
+/** Private-bucket thumbnail. Renders the placeholder icon when no signed URL
+ *  was resolved, or when the signed URL fails to load (expired / broken).
+ *  Never receives a raw storage path — only a short-lived signed URL or null. */
+function Thumbnail({ signedUrl, alt }: { signedUrl: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  const showImage = signedUrl !== null && !failed;
+
+  return (
+    <div className="h-16 w-16 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 dark:text-zinc-600 text-xs select-none overflow-hidden">
+      {showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={signedUrl}
+          alt={alt}
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-6 w-6"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={1.5}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v13.5a1.5 1.5 0 001.5 1.5z"
+          />
+        </svg>
+      )}
+    </div>
+  );
+}
 
 type BadgeVariant = "green" | "zinc" | "blue" | "amber" | "red" | "zinc-strike";
 
@@ -81,6 +122,8 @@ export default function CommitItemCard({ item, reasons }: Props) {
     : "";
 
   const hasError = reasons && reasons.length > 0;
+  const thumbnailSignedUrl =
+    (item.signedUrls as ItemSignedUrls)?.thumbnail?.signedUrl ?? null;
 
   return (
     <div
@@ -90,23 +133,7 @@ export default function CommitItemCard({ item, reasons }: Props) {
           : "border-zinc-200 dark:border-zinc-700"
       }`}
     >
-      {/* Thumbnail placeholder */}
-      <div className="h-16 w-16 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 dark:text-zinc-600 text-xs select-none overflow-hidden">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-6 w-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={1.5}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v13.5a1.5 1.5 0 001.5 1.5z"
-          />
-        </svg>
-      </div>
+      <Thumbnail signedUrl={thumbnailSignedUrl} alt={originalName} />
 
       {/* Content */}
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
