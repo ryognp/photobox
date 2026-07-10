@@ -139,7 +139,7 @@ describe("analyzePromptCore — DONE", () => {
     const r = await analyzePromptCore(
       { currentBody: "portrait", notes: null },
       DEPS({
-        tags: [{ label: "ポートレート" }, { label: "female" }, { label: "asian" }],
+        tags: [{ label: "全身" }, { label: "female" }, { label: "asian" }],
         keywords_ja: ["女性", "風景"],
         keywords_en: ["woman", "sunset"],
         usage_category: "portrait",
@@ -148,15 +148,15 @@ describe("analyzePromptCore — DONE", () => {
     );
     expect(r.status).toBe("DONE");
     if (r.status === "DONE") {
-      // female/asian are removed by the attribute denylist; ポートレート is
+      // female/asian are removed by the attribute denylist; 全身 is
       // controlled-vocab and survives refinement.
-      expect(r.tags.map((t) => t.label)).toEqual(["ポートレート"]);
+      expect(r.tags.map((t) => t.label)).toEqual(["全身"]);
       expect(r.keywordsJa).toEqual(["風景"]);
       expect(r.keywordsEn).toEqual(["sunset"]);
       // Phase 10-5D: safeRaw is built from FILTERED values — attribute terms
       // (female / asian / 女性 / woman) must not survive into rawJson.
       expect(r.safeRaw).toEqual({
-        tags: [{ label: "ポートレート" }],
+        tags: [{ label: "全身" }],
         keywords_ja: ["風景"],
         keywords_en: ["sunset"],
         usage_category: "portrait",
@@ -166,6 +166,43 @@ describe("analyzePromptCore — DONE", () => {
       for (const banned of ["female", "asian", "女性", "woman"]) {
         expect(safeRawStr).not.toContain(banned);
       }
+    }
+  });
+
+  // Phase 10-10A: 人物/ポートレート are excluded end-to-end (too generic for
+  // Photo.box — nearly every image would match).
+  it("Phase 10-10A: excludes 人物 and ポートレート end-to-end", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [{ label: "人物" }, { label: "ポートレート" }, { label: "海" }],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "ja",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") expect(r.tags.map((t) => t.label)).toEqual(["海"]);
+  });
+
+  // Phase 10-10A: English time-of-day terms normalize to the JA tag end-to-end
+  // (safety net for images analyzed in their original English prompt).
+  it("Phase 10-10A: normalizes English time-of-day terms end-to-end (sunset → 夕方)", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [{ label: "sunset" }, { label: "海" }],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "en",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") {
+      // time (夕方) sorts before place (海) by category priority.
+      expect(r.tags.map((t) => t.label)).toEqual(["夕方", "海"]);
     }
   });
 
@@ -222,9 +259,9 @@ describe("analyzePromptCore — DONE", () => {
         tags: [
           { label: "高級感" }, // mood
           { label: "ナチュラル" }, // mood (should be dropped by mood cap)
-          { label: "人物" }, // subject
+          { label: "風景" }, // subject
           { label: "自然光" }, // light
-          { label: "ポートレート" }, // composition
+          { label: "全身" }, // composition
           { label: "海" }, // place
           { label: "水着" }, // outfit
           { label: "朝" }, // time
@@ -245,9 +282,9 @@ describe("analyzePromptCore — DONE", () => {
         "朝",
         "水着",
         "海",
-        "ポートレート",
+        "全身",
         "自然光",
-        "人物",
+        "風景",
         "料理",
         "商品",
       ]);

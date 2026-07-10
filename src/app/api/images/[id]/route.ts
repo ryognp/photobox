@@ -11,6 +11,7 @@ import { getSignedUrlCache, setSignedUrlCache } from "@/lib/supabase/signedUrlCa
 import { resolveWorkspaceImage } from "@/lib/images/resolveWorkspaceImage";
 import { isTranslationEnabled } from "@/lib/translation/translationProviderFactory";
 import { getEffectiveJapanesePromptBody } from "@/lib/translation/translationCore";
+import { isExcludedGenericLabel } from "@/lib/analysis/tagTaxonomy";
 
 const BUCKET = "photobox-private";
 
@@ -141,7 +142,9 @@ export async function GET(
     scene: image.scene,
     tags: image.imageTags.map((t) => t.tag),
     persons: image.imagePersons.map((p) => p.person),
-    tagSuggestions: image.tagSuggestions,
+    // Phase 10-10A: hide 人物/ポートレート from PENDING candidates (read-only
+    // display filter; the TagSuggestion rows themselves are not modified).
+    tagSuggestions: image.tagSuggestions.filter((s) => !isExcludedGenericLabel(s.label)),
     // Phase 10-9C-4: effectiveTranslatedBodyJa is computed here (server-side,
     // hash-checked) so the client never imports translationCore / node:crypto.
     prompt: image.prompt
