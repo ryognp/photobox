@@ -32,7 +32,6 @@ describe("normalizeTagLabel", () => {
     expect(normalizeTagLabel("sunset")).toBe("夕方");
     expect(normalizeTagLabel("dusk")).toBe("夕方");
     expect(normalizeTagLabel("twilight")).toBe("夕方");
-    expect(normalizeTagLabel("golden hour")).toBe("夕方");
     expect(normalizeTagLabel("evening")).toBe("夕方");
     expect(normalizeTagLabel("night")).toBe("夜");
     expect(normalizeTagLabel("nighttime")).toBe("夜");
@@ -46,7 +45,23 @@ describe("normalizeTagLabel", () => {
   it("Phase 10-10A: English synonym lookup is case-insensitive", () => {
     expect(normalizeTagLabel("Sunset")).toBe("夕方");
     expect(normalizeTagLabel("SUNSET")).toBe("夕方");
-    expect(normalizeTagLabel("Golden Hour")).toBe("夕方");
+  });
+
+  it("Phase 10-10B: 'golden hour' alone is NOT normalized to 夕方 (ambiguous — used for both sunrise and sunset)", () => {
+    expect(normalizeTagLabel("golden hour")).toBe("golden hour");
+    expect(normalizeTagLabel("Golden Hour")).toBe("Golden Hour"); // identity, no case-fold match either
+  });
+
+  it("Phase 10-10B: morning-qualified phrases normalize to 朝", () => {
+    expect(normalizeTagLabel("early morning")).toBe("朝");
+    expect(normalizeTagLabel("morning light")).toBe("朝");
+    expect(normalizeTagLabel("sunrise light")).toBe("朝");
+  });
+
+  it("Phase 10-10B: bare light-quality words are NOT normalized to any time-of-day label", () => {
+    for (const t of ["warm light", "golden light", "soft light", "natural light"]) {
+      expect(normalizeTagLabel(t)).toBe(t); // identity — no synonym entry
+    }
   });
 });
 
@@ -140,11 +155,26 @@ describe("refineTagCandidates", () => {
       { label: "sunset" },
       { label: "dusk" },
       { label: "twilight" },
-      { label: "golden hour" },
       { label: "evening" },
     ]);
     // all collapse to the single canonical 夕方 (dedupe)
     expect(out.map((t) => t.label)).toEqual(["夕方"]);
+  });
+
+  it("Phase 10-10B: bare 'golden hour' yields NO time-of-day tag (ambiguous)", () => {
+    expect(refineTagCandidates([{ label: "golden hour" }])).toEqual([]);
+  });
+
+  it("Phase 10-10B: morning-qualified phrases normalize to 朝 in the refined output", () => {
+    expect(refineTagCandidates([{ label: "early morning" }]).map((t) => t.label)).toEqual(["朝"]);
+    expect(refineTagCandidates([{ label: "morning light" }]).map((t) => t.label)).toEqual(["朝"]);
+    expect(refineTagCandidates([{ label: "sunrise light" }]).map((t) => t.label)).toEqual(["朝"]);
+  });
+
+  it("Phase 10-10B: bare light-quality words never yield a time-of-day tag", () => {
+    for (const t of ["warm light", "golden light", "soft light", "natural light"]) {
+      expect(refineTagCandidates([{ label: t }])).toEqual([]);
+    }
   });
 
   it("Phase 10-10A: night/morning/daytime English terms normalize correctly", () => {

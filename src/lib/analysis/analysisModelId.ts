@@ -18,7 +18,13 @@
 // buildAnalysisModelId — so a version bump alone changes modelId and correctly
 // misses the old v2 row, forcing re-analysis on next access (old v2 rows are
 // left in place, not deleted).
-export const ANALYSIS_PROMPT_VERSION = "ja-tags-v3";
+// ja-tags-v4 (Phase 10-10B): removed the ambiguous "golden hour" -> 夕方
+// mapping (it caused morning photos to be mistagged 夕方); golden hour now
+// requires an accompanying morning/evening word to resolve a time-of-day tag,
+// and bare light-quality words (warm/golden/soft/natural light) never yield a
+// time-of-day tag. Same reasoning as v3: this changes analysis output
+// meaning, so the version bump is required.
+export const ANALYSIS_PROMPT_VERSION = "ja-tags-v4";
 
 export function buildAnalysisModelId(args: {
   provider: "mock" | "openai" | "gemini";
