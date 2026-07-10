@@ -6,7 +6,9 @@
 //
 // Bump TRANSLATION_PROMPT_VERSION when the translation system prompt's meaning
 // changes.
-export const TRANSLATION_PROMPT_VERSION = "tr-v1";
+// tr-v2 (Phase 10-9C-5): system prompt strengthened to translation-only /
+// no-refusal (was tr-v1).
+export const TRANSLATION_PROMPT_VERSION = "tr-v2";
 
 export function buildTranslationModelId(args: {
   provider: "mock" | "openai";

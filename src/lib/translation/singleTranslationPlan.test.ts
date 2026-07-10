@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { truncateTranslationInput, buildTranslationUpdateData } from "@/lib/translation/singleTranslationPlan";
+import {
+  truncateTranslationInput,
+  buildTranslationUpdateData,
+  classifyTranslateOutcome,
+} from "@/lib/translation/singleTranslationPlan";
 
 const NOW = new Date("2026-07-10T00:00:00.000Z");
 
@@ -81,5 +85,43 @@ describe("buildTranslationUpdateData", () => {
     expect(data.translationProvider).toBeNull();
     expect(data.translationModel).toBeNull();
     expect(data.translationError).toBe("translation daily budget exceeded");
+  });
+});
+
+describe("classifyTranslateOutcome (Phase 10-9C-5 refusal guard)", () => {
+  const base = { bodyHash: "h1", providerId: "openai", modelId: "openai:gpt-4o-mini:tr-v2" };
+
+  it("normal translation → done", () => {
+    const outcome = classifyTranslateOutcome({ translatedText: "可愛い猫", ...base });
+    expect(outcome).toEqual({
+      kind: "done",
+      translatedText: "可愛い猫",
+      bodyHash: "h1",
+      providerId: "openai",
+      modelId: "openai:gpt-4o-mini:tr-v2",
+    });
+  });
+
+  it("refusal text → failed with 'translation provider refused' (translatedBodyJa NOT set)", () => {
+    const outcome = classifyTranslateOutcome({
+      translatedText: "申し訳ございませんが、そのリクエストにはお応えできません。",
+      ...base,
+    });
+    expect(outcome).toEqual({
+      kind: "failed",
+      error: "translation provider refused",
+      providerId: "openai",
+      modelId: "openai:gpt-4o-mini:tr-v2",
+    });
+    // The failed outcome carries no translation body → prior translation preserved.
+    expect(outcome).not.toHaveProperty("translatedText");
+  });
+
+  it("failed refusal outcome feeds buildTranslationUpdateData without overwriting translatedBodyJa", () => {
+    const outcome = classifyTranslateOutcome({ translatedText: "I'm sorry, but I can't assist.", ...base });
+    const data = buildTranslationUpdateData(outcome, NOW);
+    expect(data.translationStatus).toBe("FAILED");
+    expect(data.translationError).toBe("translation provider refused");
+    expect(data).not.toHaveProperty("translatedBodyJa");
   });
 });

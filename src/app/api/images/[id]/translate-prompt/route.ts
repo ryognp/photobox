@@ -24,6 +24,7 @@ import {
 import {
   truncateTranslationInput,
   buildTranslationUpdateData,
+  classifyTranslateOutcome,
   type TranslationUpdateOutcome,
 } from "@/lib/translation/singleTranslationPlan";
 import type { Prisma } from "@/generated/prisma/client";
@@ -196,13 +197,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let outcome: TranslationUpdateOutcome;
   try {
     const translated = await provider.translate(providerInput);
-    outcome = {
-      kind: "done",
+    // Phase 10-9C-5: a refusal comes back as normal output_text — downgrade it
+    // to FAILED here (before building a "done") so it is never saved as a
+    // translation. translatedBodyJa is left untouched → any prior valid
+    // translation is preserved.
+    outcome = classifyTranslateOutcome({
       translatedText: translated.text,
       bodyHash: decision.bodyHash,
       providerId: resolution.providerId,
       modelId: resolution.modelId,
-    };
+    });
   } catch (e) {
     outcome = {
       kind: "failed",
