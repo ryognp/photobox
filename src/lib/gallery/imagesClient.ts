@@ -71,6 +71,8 @@ export type GalleryFilters = {
   sceneId: string | null;
   /** AND semantics (Phase 10-7B): an image must have ALL selected tags. */
   tagIds: string[];
+  /** AND semantics (Phase 10-9B): AI-candidate (PENDING) tag labels to filter by. */
+  suggestionLabels: string[];
   personId: string | null;
   favorite: boolean | null;
   sort: "newest" | "oldest";
@@ -89,6 +91,7 @@ export async function fetchImages(
   if (filters.q) sp.set("q", filters.q);
   if (filters.sceneId) sp.set("sceneId", filters.sceneId);
   if (filters.tagIds.length > 0) sp.set("tagIds", filters.tagIds.join(","));
+  if (filters.suggestionLabels.length > 0) sp.set("suggestionLabels", filters.suggestionLabels.join(","));
   if (filters.personId) sp.set("personId", filters.personId);
   if (filters.favorite !== null) sp.set("favorite", String(filters.favorite));
   if (filters.sort !== "newest") sp.set("sort", filters.sort);

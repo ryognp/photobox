@@ -11,8 +11,14 @@ export function buildImagesWhere(args: {
   sceneId: string | null;
   personId: string | null;
   favorite: boolean | null;
-  /** AND semantics: an image must have ALL of these tags (Phase 10-7B decision). */
+  /** AND semantics: an image must have ALL of these approved tags (Phase 10-7B). */
   tagIds: string[];
+  /**
+   * AND semantics (Phase 10-9B): an image must have ALL of these labels as
+   * PENDING TagSuggestions. AI-candidate filter, kept separate from tagIds
+   * (approved Tags). Defaults to [] when omitted (backward compatible).
+   */
+  suggestionLabels?: string[];
 }): Prisma.ImageWhereInput {
   const qFilter: Prisma.ImageWhereInput = args.q
     ? {
@@ -26,6 +32,17 @@ export function buildImagesWhere(args: {
       }
     : {};
 
+  // Phase 10-9B: tagIds (approved) and suggestionLabels (PENDING candidates)
+  // are BOTH AND. Merge into a SINGLE `AND` array so neither overwrites the
+  // other (a second `AND` key would clobber the first).
+  const suggestionLabels = args.suggestionLabels ?? [];
+  const andConditions: Prisma.ImageWhereInput[] = [
+    ...args.tagIds.map((tagId) => ({ imageTags: { some: { tagId } } })),
+    ...suggestionLabels.map((label) => ({
+      tagSuggestions: { some: { status: "PENDING" as const, label, workspaceId: args.workspaceId } },
+    })),
+  ];
+
   return {
     workspaceId: args.workspaceId,
     deletedAt: null,
@@ -33,9 +50,7 @@ export function buildImagesWhere(args: {
     ...qFilter,
     ...(args.sceneId ? { sceneId: args.sceneId } : {}),
     ...(args.favorite !== null ? { isFavorite: args.favorite } : {}),
-    ...(args.tagIds.length > 0
-      ? { AND: args.tagIds.map((tagId) => ({ imageTags: { some: { tagId } } })) }
-      : {}),
+    ...(andConditions.length > 0 ? { AND: andConditions } : {}),
     ...(args.personId ? { imagePersons: { some: { personId: args.personId } } } : {}),
   };
 }

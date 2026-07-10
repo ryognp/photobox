@@ -12,6 +12,7 @@ import {
 } from "@/lib/gallery/imagesClient"
 import { removeTagById } from "@/lib/gallery/tagState"
 import { normalizeTagIds } from "@/lib/gallery/tagFilters"
+import { normalizeSuggestionLabels } from "@/lib/gallery/suggestionFilters"
 import SearchBar from "./_components/SearchBar"
 import FilterSidebar from "./_components/FilterSidebar"
 import ImageGrid from "./_components/ImageGrid"
@@ -132,6 +133,7 @@ function filtersToSearchParams(filters: GalleryFilters): URLSearchParams {
   if (filters.personId) sp.set("personId", filters.personId)
   if (filters.sceneId) sp.set("sceneId", filters.sceneId)
   if (filters.tagIds.length > 0) sp.set("tagIds", filters.tagIds.join(","))
+  if (filters.suggestionLabels.length > 0) sp.set("suggestionLabels", filters.suggestionLabels.join(","))
   if (filters.favorite) sp.set("favorite", "true")
   if (filters.q) sp.set("q", filters.q)
   if (filters.sort !== "newest") sp.set("sort", filters.sort)
@@ -150,6 +152,8 @@ function GalleryInner() {
     sceneId: searchParams.get("sceneId"),
     // Phase 10-7B: legacy ?tagId=xxx and new ?tagIds=a,b both read here.
     tagIds: normalizeTagIds({ tagId: searchParams.get("tagId"), tagIdsParam: searchParams.get("tagIds") }),
+    // Phase 10-9B: AI-candidate tag filter labels.
+    suggestionLabels: normalizeSuggestionLabels(searchParams.get("suggestionLabels")),
     favorite: searchParams.get("favorite") === "true" ? true : null,
     q: searchParams.get("q") ?? "",
     sort: (searchParams.get("sort") as "newest" | "oldest") || "newest",
@@ -173,9 +177,10 @@ function GalleryInner() {
     qTimer.current = setTimeout(() => dispatch({ type: "set_debounced_q", q: filters.q }), 300)
   }, [filters.q])
 
-  // filters.tagIds is a new array each render (normalizeTagIds) — join to a
-  // stable primitive so the effect below doesn't re-fire every render.
+  // filters.tagIds / suggestionLabels are new arrays each render (normalize*) —
+  // join to stable primitives so the effect below doesn't re-fire every render.
   const tagIdsKey = filters.tagIds.join(",")
+  const suggestionLabelsKey = filters.suggestionLabels.join(",")
 
   // Fetch when URL-derived filters change (includes back/forward)
   useEffect(() => {
@@ -199,6 +204,7 @@ function GalleryInner() {
     state.debouncedQ,
     filters.sceneId,
     tagIdsKey,
+    suggestionLabelsKey,
     filters.personId,
     filters.favorite,
     filters.sort,
