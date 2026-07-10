@@ -15,6 +15,7 @@ import { getWorkspaceCacheStats } from "@/lib/cache/workspaceCache";
 import { getAuthUserCache, setAuthUserCache, type AuthUserCacheSource } from "@/lib/cache/authUserCache";
 import { getDatabaseUrl } from "@/lib/database-url";
 import { normalizeTagIds } from "@/lib/gallery/tagFilters";
+import { normalizeSuggestionLabels } from "@/lib/gallery/suggestionFilters";
 import { buildImagesWhere } from "@/lib/gallery/imagesWhere";
 
 const BUCKET = "photobox-private";
@@ -228,6 +229,8 @@ export async function GET(request: NextRequest) {
   // accepted and merged — old bookmarked ?tagId=xxx links keep working.
   const tagId = sp.get("tagId") ?? null;
   const tagIds = normalizeTagIds({ tagId, tagIdsParam: sp.get("tagIds") });
+  // Phase 10-9B: AI-candidate (PENDING) tag filter — separate from tagIds.
+  const suggestionLabels = normalizeSuggestionLabels(sp.get("suggestionLabels"));
   const personId = sp.get("personId") ?? null;
   const favorite = sp.get("favorite") === "true" ? true : null;
   const cursor = sp.get("cursor") ?? null;
@@ -237,7 +240,7 @@ export async function GET(request: NextRequest) {
   const debugDb = sp.get("debugDb") === "1";
   const debugAuth = sp.get("debugAuth") === "1";
 
-  const where = buildImagesWhere({ workspaceId: workspace.id, q, sceneId, personId, favorite, tagIds });
+  const where = buildImagesWhere({ workspaceId: workspace.id, q, sceneId, personId, favorite, tagIds, suggestionLabels });
 
   // ── debugDb: staged query breakdown (?debugDb=1 only) ──────────────────
   // Runs 4 sequential findMany with increasing select depth to isolate which
@@ -374,6 +377,7 @@ export async function GET(request: NextRequest) {
     q === "" &&
     sceneId === null &&
     tagIds.length === 0 &&
+    suggestionLabels.length === 0 &&
     personId === null &&
     favorite === null;
 

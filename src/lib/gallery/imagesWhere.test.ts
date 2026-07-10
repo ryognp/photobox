@@ -56,4 +56,52 @@ describe("buildImagesWhere", () => {
     const where = buildImagesWhere({ ...BASE, favorite: false });
     expect(where.isFavorite).toBe(false);
   });
+
+  // Phase 10-9B: suggestionLabels (PENDING AI-candidate) filter
+  it("no AND when both tagIds and suggestionLabels are empty (backward compat)", () => {
+    const where = buildImagesWhere({ ...BASE, suggestionLabels: [] });
+    expect(where.AND).toBeUndefined();
+  });
+
+  it("suggestionLabels omitted → treated as empty (backward compat)", () => {
+    const where = buildImagesWhere(BASE); // no suggestionLabels key
+    expect(where.AND).toBeUndefined();
+  });
+
+  it("single suggestionLabel → PENDING + workspaceId scoped some clause", () => {
+    const where = buildImagesWhere({ ...BASE, suggestionLabels: ["水着"] });
+    expect(where.AND).toEqual([
+      { tagSuggestions: { some: { status: "PENDING", label: "水着", workspaceId: "ws1" } } },
+    ]);
+  });
+
+  it("multiple suggestionLabels are ANDed", () => {
+    const where = buildImagesWhere({ ...BASE, suggestionLabels: ["水着", "海"] });
+    expect(where.AND).toEqual([
+      { tagSuggestions: { some: { status: "PENDING", label: "水着", workspaceId: "ws1" } } },
+      { tagSuggestions: { some: { status: "PENDING", label: "海", workspaceId: "ws1" } } },
+    ]);
+  });
+
+  it("tagIds + suggestionLabels merge into a SINGLE AND array (tagIds first)", () => {
+    const where = buildImagesWhere({ ...BASE, tagIds: ["t1"], suggestionLabels: ["水着"] });
+    expect(where.AND).toEqual([
+      { imageTags: { some: { tagId: "t1" } } },
+      { tagSuggestions: { some: { status: "PENDING", label: "水着", workspaceId: "ws1" } } },
+    ]);
+  });
+
+  it("q + tagIds + suggestionLabels all combine (OR present, single merged AND)", () => {
+    const where = buildImagesWhere({
+      ...BASE,
+      q: "cat",
+      tagIds: ["t1"],
+      suggestionLabels: ["海"],
+    }) as { OR?: unknown[]; AND?: unknown[] };
+    expect(where.OR).toBeDefined();
+    expect(where.AND).toEqual([
+      { imageTags: { some: { tagId: "t1" } } },
+      { tagSuggestions: { some: { status: "PENDING", label: "海", workspaceId: "ws1" } } },
+    ]);
+  });
 });
