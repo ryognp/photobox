@@ -10,7 +10,8 @@ export type RateLimitPreset =
   | "galleryRead"
   | "aiAnalyze"
   | "tagSuggestionAction"
-  | "translationBatch";
+  | "translationBatch"
+  | "translatePrompt";
 
 export type RateLimitSource = "shared" | "disabled" | "error";
 

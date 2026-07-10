@@ -513,6 +513,9 @@ WHERE id = '<import_batch_id>';
 > （疎通確認・env 設定順序・QA・budget/FAILED 確認・rawJson 検査 SQL・rollback）。
 > **本番運用監視（status/error 別件数・FAILED 率・エラー別一次対応表の SQL）** は同 runbook の
 > 「本番運用監視」節を参照（SQL 本体はそちらに集約・二重管理しない）。
+>
+> **prompt 単体翻訳 provider（英語 prompt → 日本語訳、Phase 10-9C）** の env・有効化手順・
+> cost guard・rollback は [TRANSLATION_RUNBOOK.md](TRANSLATION_RUNBOOK.md) を参照。
 
 ### 環境変数
 
