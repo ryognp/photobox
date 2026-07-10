@@ -1,8 +1,8 @@
 import "server-only";
 
 import { prisma } from "./prisma";
-import { resolveSignedUrls, type BatchRequest } from "./signedUrl";
-import { attachThumbnailSignedUrls } from "./uploadSessionThumbnails";
+import { resolveSignedUrls } from "./signedUrl";
+import { attachThumbnailSignedUrls, buildThumbnailSignedUrlRequests } from "./uploadSessionThumbnails";
 
 // items の include 定義（GET / POST 共通）
 export const ITEM_INCLUDE = {
@@ -113,6 +113,12 @@ export async function authorizeSession(
 // 再チェックするため、service role で無条件に signed URL を発行することはない。
 // raw storage path (tempThumbnailPath 等) は ITEM_SELECT に残るが、UI 側では
 // signedUrls のみを画像表示に使う。
+//
+// COMMITTED item は commit時に temp storage オブジェクトが cleanup で削除される
+// ため（tempThumbnailPath 等の DB 列は残るが実体がない）、committedImageId が
+// あれば正式な Image 側 (type:"image") から signed URL を解決する。未commit
+// item は従来どおり uploadItem 側 (type:"uploadItem") を使う
+// （buildThumbnailSignedUrlRequests が判定）。
 export async function fetchSessionWithItems(sessionId: string, userId?: string) {
   const session = await prisma.uploadSession.findUnique({
     where: { id: sessionId },
@@ -133,12 +139,7 @@ export async function fetchSessionWithItems(sessionId: string, userId?: string) 
 
   if (!userId) return { session, items };
 
-  const requests: BatchRequest[] = items.map((item, index) => ({
-    index,
-    type: "uploadItem",
-    id: item.id,
-    variant: "thumbnail",
-  }));
+  const requests = buildThumbnailSignedUrlRequests(items);
   const { results } = await resolveSignedUrls(requests, userId);
 
   return { session, items: attachThumbnailSignedUrls(items, results) };
