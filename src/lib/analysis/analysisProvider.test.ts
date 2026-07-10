@@ -13,7 +13,7 @@ describe("getAnalysisProviderFromEnv", () => {
     expect(r.kind).toBe("ok");
     if (r.kind === "ok") {
       expect(r.providerId).toBe("mock");
-      expect(r.modelId).toBe("mock:mock:ja-tags-v3");
+      expect(r.modelId).toBe("mock:mock:ja-tags-v4");
     }
   });
 
@@ -37,7 +37,7 @@ describe("getAnalysisProviderFromEnv", () => {
     expect(r.kind).toBe("ok");
     if (r.kind === "ok") {
       expect(r.providerId).toBe("openai");
-      expect(r.modelId).toBe("openai:gpt-4o-mini:ja-tags-v3");
+      expect(r.modelId).toBe("openai:gpt-4o-mini:ja-tags-v4");
     }
   });
 
@@ -49,7 +49,7 @@ describe("getAnalysisProviderFromEnv", () => {
     expect(r.kind).toBe("config_error");
     if (r.kind === "config_error") {
       expect(r.providerId).toBe("openai");
-      expect(r.modelId).toBe("openai:gpt-4o-mini:ja-tags-v3");
+      expect(r.modelId).toBe("openai:gpt-4o-mini:ja-tags-v4");
       expect(r.error).toMatch(/OPENAI_API_KEY/);
     }
   });
@@ -78,6 +78,6 @@ describe("getAnalysisProviderFromEnv", () => {
 
   it("config_error always carries a composite modelId for the FAILED cache key", () => {
     const r = getAnalysisProviderFromEnv({ AI_ANALYSIS_ENABLED: "true", AI_ANALYSIS_PROVIDER: "openai" });
-    if (r.kind === "config_error") expect(r.modelId).toContain(":ja-tags-v3");
+    if (r.kind === "config_error") expect(r.modelId).toContain(":ja-tags-v4");
   });
 });

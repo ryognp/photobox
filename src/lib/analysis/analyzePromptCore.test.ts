@@ -206,6 +206,53 @@ describe("analyzePromptCore — DONE", () => {
     }
   });
 
+  // Phase 10-10B: bare "golden hour" is ambiguous (morning or evening light)
+  // and must NOT survive as a time-of-day tag end-to-end.
+  it("Phase 10-10B: 'golden hour' alone does not become 夕方 end-to-end", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [{ label: "golden hour" }, { label: "海" }],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "en",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") expect(r.tags.map((t) => t.label)).toEqual(["海"]);
+  });
+
+  it("Phase 10-10B: 'sunrise' becomes 朝 end-to-end", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [{ label: "sunrise" }, { label: "海" }],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "en",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") expect(r.tags.map((t) => t.label)).toEqual(["朝", "海"]);
+  });
+
+  it("Phase 10-10B: 'sunset' still becomes 夕方 end-to-end (unambiguous)", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [{ label: "sunset" }, { label: "海" }],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "en",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") expect(r.tags.map((t) => t.label)).toEqual(["夕方", "海"]);
+  });
+
   // Phase 10-5E: end-to-end refinement through analyzePromptCore.
   it("drops 素材 / 参考画像 and out-of-vocab tags, keeps controlled-vocab", async () => {
     const r = await analyzePromptCore(

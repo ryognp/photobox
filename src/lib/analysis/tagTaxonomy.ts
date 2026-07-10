@@ -117,6 +117,16 @@ export const CATEGORY_VOCAB: Record<string, TagCategory> = {
  * yet) — the provider may emit the English word verbatim rather than
  * translating it itself. English keys are matched case-insensitively (see
  * normalizeTagLabel); write them in lowercase here.
+ *
+ * Phase 10-10B: "golden hour" was REMOVED — it is ambiguous (used for both
+ * sunrise and sunset light), and a bare "golden hour" -> 夕方 mapping caused
+ * morning photos to be mistagged as 夕方. Bare light-quality words
+ * (golden/warm/soft/natural light) are intentionally NOT mapped to any
+ * time-of-day label — they stay out-of-vocabulary for the `time` category and
+ * are dropped by refineTagCandidates (they may still match the unrelated
+ * `light` category, e.g. 自然光, but never `time`). Only combined phrases that
+ * unambiguously name a direction (morning/sunrise vs evening/sunset) are
+ * added below.
  */
 export const SYNONYM_MAP: Record<string, string> = {
   海辺: "海",
@@ -131,11 +141,11 @@ export const SYNONYM_MAP: Record<string, string> = {
   ワンピースドレス: "ドレス",
   ビキニ: "水着",
   スイムウェア: "水着",
-  // English time-of-day (Phase 10-10A)
+  // English time-of-day (Phase 10-10A; "golden hour" removed in Phase 10-10B
+  // — see comment above)
   sunset: "夕方",
   dusk: "夕方",
   twilight: "夕方",
-  "golden hour": "夕方",
   evening: "夕方",
   night: "夜",
   nighttime: "夜",
@@ -144,6 +154,12 @@ export const SYNONYM_MAP: Record<string, string> = {
   daytime: "昼",
   noon: "昼",
   afternoon: "昼",
+  // Phase 10-10B: unambiguous morning phrases only (no "evening golden hour"
+  // counterpart is added here — provider output for that combination is
+  // expected to already say "evening"/"sunset", which map to 夕方 above).
+  "early morning": "朝",
+  "morning light": "朝",
+  "sunrise light": "朝",
 };
 
 /** Exact-match banned labels (description/atmosphere words we never want). */

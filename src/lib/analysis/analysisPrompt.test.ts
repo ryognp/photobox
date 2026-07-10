@@ -31,7 +31,7 @@ describe("ANALYSIS_SYSTEM_PROMPT", () => {
   it("Phase 10-10A: includes English time-of-day terms mapped to their JA tag", () => {
     for (const term of [
       "morning", "sunrise", "daytime", "noon", "afternoon",
-      "evening", "sunset", "dusk", "twilight", "golden hour",
+      "evening", "sunset", "dusk", "twilight",
       "night", "nighttime",
     ]) {
       expect(ANALYSIS_SYSTEM_PROMPT).toContain(term);
@@ -43,8 +43,37 @@ describe("ANALYSIS_SYSTEM_PROMPT", () => {
     expect(ANALYSIS_SYSTEM_PROMPT).toContain("→ 夜");
   });
 
-  it("Phase 10-10A: instructs aggressive time-of-day tagging as top priority", () => {
+  it("Phase 10-10A: time-of-day is still framed as top priority", () => {
     expect(ANALYSIS_SYSTEM_PROMPT).toContain("時間帯（最優先）");
-    expect(ANALYSIS_SYSTEM_PROMPT).toMatch(/積極的に出す/);
+  });
+
+  it("Phase 10-10B: prioritizes NOT mistagging over aggressively tagging time-of-day", () => {
+    // Phase 10-10A's "積極的に出す" (aggressively output) caused morning
+    // photos to be mistagged 夕方 — replaced with a stricter "only when
+    // strongly implied, otherwise omit" instruction.
+    expect(ANALYSIS_SYSTEM_PROMPT).not.toMatch(/積極的に出す/);
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("不確かな場合は時間帯タグを出さない");
+  });
+
+  it("Phase 10-10B: 'golden hour -> 夕方' is no longer a direct mapping", () => {
+    const timeOfDayMappingLine = ANALYSIS_SYSTEM_PROMPT.split("\n").find((l) => l.includes("→ 夕方"));
+    expect(timeOfDayMappingLine).toBeDefined();
+    expect(timeOfDayMappingLine).not.toContain("golden hour");
+  });
+
+  it("Phase 10-10B: golden hour is ambiguous — direction word required to resolve it", () => {
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("golden hour");
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("単独では時間帯タグを出さない");
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("morning golden hour");
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("sunrise golden hour");
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("evening golden hour");
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("sunset golden hour");
+  });
+
+  it("Phase 10-10B: bare light-quality words do not imply a time-of-day", () => {
+    for (const term of ["warm light", "golden light", "soft light", "natural light"]) {
+      expect(ANALYSIS_SYSTEM_PROMPT).toContain(term);
+    }
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("時間帯を推定しない");
   });
 });
