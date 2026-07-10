@@ -9,6 +9,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
 import { getSignedUrlCache, setSignedUrlCache } from "@/lib/supabase/signedUrlCache";
 import { resolveWorkspaceImage } from "@/lib/images/resolveWorkspaceImage";
+import { isTranslationEnabled } from "@/lib/translation/translationProviderFactory";
 
 const BUCKET = "photobox-private";
 
@@ -75,6 +76,15 @@ export async function GET(
           currentBody: true,
           originalBody: true,
           createdAt: true,
+          // Phase 10-9C-3: translation cache fields (read-only display).
+          translatedBodyJa: true,
+          translatedFromBodyHash: true,
+          translationStatus: true,
+          translationProvider: true,
+          translationModel: true,
+          translatedAt: true,
+          translationStartedAt: true,
+          translationError: true,
           versions: {
             select: {
               id: true,
@@ -133,6 +143,8 @@ export async function GET(
     tagSuggestions: image.tagSuggestions,
     prompt: image.prompt,
     signedUrls: { thumbnailUrl, previewUrl, originalUrl },
+    // Phase 10-9C-3: whether the DetailPanel translation UI (10-9C-4) may run.
+    translationEnabled: isTranslationEnabled(process.env),
   });
 }
 

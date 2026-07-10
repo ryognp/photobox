@@ -4,11 +4,12 @@ DetailPanel の単体 prompt 翻訳（英語 prompt → 日本語訳）で使う
 provider の env・有効化手順・監視・rollback。AI タグ解析の
 [AI_ANALYSIS_RUNBOOK.md](AI_ANALYSIS_RUNBOOK.md) と対称の構成。
 
-**現状（Phase 10-9C-2 時点）:**
-- 実 OpenAI 翻訳 provider の**基盤のみ実装済み**（provider / factory / cost guard /
-  `translatePrompt` rate limit preset）。
-- **UI（「日本語訳を追加」ボタン）と単体翻訳 API（`POST /api/images/[id]/translate-prompt`）は
-  未実装**（Phase 10-9C-3 / 10-9C-4）。
+**現状（Phase 10-9C-3 時点）:**
+- 実 OpenAI 翻訳 provider の基盤（provider / factory / cost guard /
+  `translatePrompt` rate limit preset）と、**単体翻訳 API
+  `POST /api/images/[id]/translate-prompt`**、detail API の翻訳フィールド +
+  `translationEnabled` フラグを実装済み。
+- **DetailPanel の UI（「日本語訳を追加」ボタン）は未実装**（Phase 10-9C-4）。
 - 一括翻訳 `/api/prompts/translate-batch` は**引き続き mock 固定**（実 provider 化は別フェーズ）。
 - 本番デフォルトは `TRANSLATION_ENABLED` 未設定 = **mock**。実翻訳は行われない。
 
@@ -90,6 +91,32 @@ provider が mock の場合は必ず false → mock 訳が本番 DB に入る経
 - schema 変更なし = DB レベル rollback 不要。cost guard カウンタは Redis のみ（日次 TTL）。
 - 既に保存された実訳（`translated_body_ja`）は無効化後も残るが、元 prompt は不変で害はない。
   原文編集時は既存仕様どおり翻訳キャッシュが無効化される。
+
+---
+
+## 単体翻訳 API（`POST /api/images/[id]/translate-prompt`, Phase 10-9C-3）
+
+画像1件の `prompt.currentBody` を日本語訳し、`translated_body_ja` にキャッシュする。
+元の英語 prompt（`current_body` / `original_body`）は絶対に上書きしない。body: `{ force?: boolean }`。
+
+- 認証・存在・認可・レート超過のみ非 200（401 / 403 / 404 / 429）。それ以外の業務状態は
+  すべて **HTTP 200 + `{ status, translation }`** で返す。`status`:
+  - `disabled` — `isTranslationEnabled(env)` が false（mock 含む）。**DB / budget / provider に
+    一切触れない**（`[MOCK-JA]` を DB に入れない最重要ガード）。`translation: null`。
+  - `no_prompt` — prompt 未登録。`translation: null`。
+  - `SKIPPED_ALREADY_JA` — 既に日本語。`translated_body_ja=current_body` として保存。
+  - `DONE` — 翻訳成功（`cached:true` は既存有効訳の再利用で provider 未呼び出し）。
+  - `FAILED` — provider エラー / budget 拒否 / （想定外の）config_error。`translation_error` に
+    sanitize 済み文言、`translated_body_ja` は既存維持。
+  - `stale` — 処理中に `current_body` が変わった。古い訳は書かない。`translation: null`。
+- 順序: auth → resolveWorkspaceImage → deleted/non-ACTIVE 404 → **disabled early-return** →
+  no_prompt → rate limit(`translatePrompt`) → `decideTranslationTarget` →
+  （translate の時のみ）provider 解決 → config_error は FAILED 保存 →
+  `reserveTranslationBudget` → provider.translate → `current_body` 一致 guard 付き updateMany。
+- 入力は `TRANSLATION_MAX_INPUT_CHARS` で truncate（provider 入力のみ）。`translated_from_body_hash`
+  は truncate 前のフル `current_body` の hash を保存する。
+- provider の raw response / usage / token / headers / request id / API キーは
+  返さない・保存しない・ログしない（訳文テキストのみ保存）。
 
 ---
 

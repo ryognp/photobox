@@ -58,13 +58,63 @@ export type ImageDetail = {
     originalBody: string;
     createdAt: string;
     versions: PromptVersionSummary[];
+    // Phase 10-9C-3: translation cache fields (display only).
+    translatedBodyJa: string | null;
+    translatedFromBodyHash: string | null;
+    translationStatus: "NONE" | "PENDING" | "DONE" | "FAILED" | "SKIPPED_ALREADY_JA";
+    translationProvider: string | null;
+    translationModel: string | null;
+    translatedAt: string | null;
+    translationStartedAt: string | null;
+    translationError: string | null;
   } | null;
   signedUrls: {
     thumbnailUrl: string | null;
     previewUrl: string | null;
     originalUrl: string | null;
   };
+  /** Phase 10-9C-3: gate for the DetailPanel translation UI (10-9C-4). */
+  translationEnabled: boolean;
 };
+
+/** Translation fields returned by the single-image translate API. */
+export type PromptTranslation = {
+  translatedBodyJa: string | null;
+  translationStatus: "NONE" | "PENDING" | "DONE" | "FAILED" | "SKIPPED_ALREADY_JA";
+  translationProvider: string | null;
+  translationModel: string | null;
+  translatedAt: string | null;
+  translationError: string | null;
+} | null;
+
+export type TranslatePromptResult = {
+  status: "DONE" | "FAILED" | "SKIPPED_ALREADY_JA" | "disabled" | "no_prompt" | "stale";
+  translation: PromptTranslation;
+  cached?: boolean;
+  budget?: { remaining: number };
+};
+
+/**
+ * Phase 10-9C-3: translates a single image's prompt (real provider only, gated
+ * by translationEnabled). Defined for Phase 10-9C-4's DetailPanel UI — NOT yet
+ * wired into any component.
+ */
+export async function translatePrompt(
+  imageId: string,
+  opts?: { force?: boolean },
+): Promise<TranslatePromptResult> {
+  const res = await fetch(`/api/images/${imageId}/translate-prompt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts?.force ? { force: true } : {}),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to translate prompt (${res.status})`);
+  }
+  const json = (await res.json()) as { data: TranslatePromptResult };
+  return json.data;
+}
 
 export type GalleryFilters = {
   q: string;
