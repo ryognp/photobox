@@ -2,6 +2,7 @@
 // No Prisma runtime, no DB, no server-only — unit-testable. The route wires
 // these to resolveWorkspaceImage + provider + guarded updateMany.
 import type { Prisma } from "@/generated/prisma/client";
+import { looksLikeTranslationRefusal, TRANSLATION_REFUSED_ERROR } from "./refusalGuard";
 
 /**
  * Caps the text sent to the translation provider. IMPORTANT: this affects ONLY
@@ -18,6 +19,36 @@ export type TranslationUpdateOutcome =
   | { kind: "done"; translatedText: string; bodyHash: string; providerId: string; modelId: string }
   | { kind: "skipped_already_ja"; currentBody: string; bodyHash: string }
   | { kind: "failed"; error: string; providerId: string | null; modelId: string | null };
+
+/**
+ * Phase 10-9C-5: turns a successful provider.translate() result into an
+ * outcome, downgrading a refusal (apology returned as normal text) to a FAILED
+ * outcome so it is never saved as a DONE translation. On refusal, translatedBodyJa
+ * is left untouched (buildTranslationUpdateData(failed) omits it), preserving any
+ * prior valid translation. Pure — the refusal check is looksLikeTranslationRefusal.
+ */
+export function classifyTranslateOutcome(args: {
+  translatedText: string;
+  bodyHash: string;
+  providerId: string;
+  modelId: string;
+}): TranslationUpdateOutcome {
+  if (looksLikeTranslationRefusal(args.translatedText)) {
+    return {
+      kind: "failed",
+      error: TRANSLATION_REFUSED_ERROR,
+      providerId: args.providerId,
+      modelId: args.modelId,
+    };
+  }
+  return {
+    kind: "done",
+    translatedText: args.translatedText,
+    bodyHash: args.bodyHash,
+    providerId: args.providerId,
+    modelId: args.modelId,
+  };
+}
 
 /**
  * Builds the Prisma update data for a single prompt translation outcome.

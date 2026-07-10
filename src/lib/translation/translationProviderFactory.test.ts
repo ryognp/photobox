@@ -44,7 +44,7 @@ describe("getTranslationProviderFromEnv", () => {
     expect(r.kind).toBe("ok");
     if (r.kind === "ok") {
       expect(r.providerId).toBe("mock");
-      expect(r.modelId).toBe("mock:mock:tr-v1");
+      expect(r.modelId).toBe("mock:mock:tr-v2");
     }
   });
 
@@ -59,7 +59,7 @@ describe("getTranslationProviderFromEnv", () => {
     expect(r.kind).toBe("ok");
     if (r.kind === "ok") {
       expect(r.providerId).toBe("openai");
-      expect(r.modelId).toBe("openai:gpt-4o-mini:tr-v1");
+      expect(r.modelId).toBe("openai:gpt-4o-mini:tr-v2");
     }
   });
 
