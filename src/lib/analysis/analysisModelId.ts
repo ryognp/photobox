@@ -24,7 +24,15 @@
 // and bare light-quality words (warm/golden/soft/natural light) never yield a
 // time-of-day tag. Same reasoning as v3: this changes analysis output
 // meaning, so the version bump is required.
-export const ANALYSIS_PROMPT_VERSION = "ja-tags-v4";
+// ja-tags-v5 (Phase 10-10C): v4's blanket "output only when unambiguous /
+// omit when uncertain" instruction, sitting right next to the golden-hour
+// caveat, apparently suppressed recall for the WHOLE time-of-day category —
+// clear signals like morning/sunrise stopped producing a tag too. v5 restores
+// "always output a tag when a clear time word (morning/sunrise/evening/
+// sunset/etc.) is present" as the default, and narrows the "omit if uncertain"
+// caveat to ONLY the ambiguous terms (golden hour alone, bare light-quality
+// words). Changes analysis output meaning, so the version bump is required.
+export const ANALYSIS_PROMPT_VERSION = "ja-tags-v5";
 
 export function buildAnalysisModelId(args: {
   provider: "mock" | "openai" | "gemini";
