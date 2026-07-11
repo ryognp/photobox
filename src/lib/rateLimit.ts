@@ -29,6 +29,7 @@ const PRESETS: Record<RateLimitPreset, { limit: number; window: `${number} ${"s"
   tagSuggestionAction: { limit: 60, window: "1 m" }, // approve/reject suggestion
   translationBatch: { limit: 10, window: "1 m" }, // POST /api/prompts/translate-batch
   translatePrompt: { limit: 10, window: "1 m" }, // POST /api/images/[id]/translate-prompt (定義のみ・適用は10-9C-3)
+  promptVariation: { limit: 10, window: "1 m" }, // POST /api/images/[id]/prompt-variations (Phase 10-11B)
 };
 
 const limiters = new Map<RateLimitPreset, LimiterLike>();
