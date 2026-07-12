@@ -12,6 +12,7 @@ import { resolveWorkspaceImage } from "@/lib/images/resolveWorkspaceImage";
 import { isTranslationEnabled } from "@/lib/translation/translationProviderFactory";
 import { getEffectiveJapanesePromptBody } from "@/lib/translation/translationCore";
 import { isExcludedGenericLabel } from "@/lib/analysis/tagTaxonomy";
+import { isVariationEnabled } from "@/lib/promptVariation/variationProviderFactory";
 
 const BUCKET = "photobox-private";
 
@@ -153,6 +154,8 @@ export async function GET(
     signedUrls: { thumbnailUrl, previewUrl, originalUrl },
     // Phase 10-9C-3: whether the DetailPanel translation UI (10-9C-4) may run.
     translationEnabled: isTranslationEnabled(process.env),
+    // Phase 10-11B: whether the DetailPanel prompt-variation UI (10-11C) may run.
+    variationEnabled: isVariationEnabled(process.env),
   });
 }
 

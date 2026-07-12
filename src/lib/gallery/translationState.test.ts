@@ -50,6 +50,7 @@ function makeDetail(prompt: DetailPrompt | null): ImageDetail {
     prompt,
     signedUrls: { thumbnailUrl: null, previewUrl: null, originalUrl: null },
     translationEnabled: true,
+    variationEnabled: false,
   };
 }
 

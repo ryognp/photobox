@@ -6,6 +6,7 @@ import {
   approveSuggestion,
   deleteImage,
   fetchImageDetail,
+  generatePromptVariation,
   rejectSuggestion,
   removeImageTag,
   translatePrompt,
@@ -13,9 +14,12 @@ import {
   type PromptVersionSummary,
   type TagSuggestion,
   type TranslatePromptResult,
+  type VariationChange,
 } from "@/lib/gallery/imagesClient"
 import { applyPromptEditToDetailPrompt } from "@/lib/gallery/translationState"
 import { describeTranslationResult, type TranslationDisplayMessage } from "@/lib/translation/translationResultDisplay"
+import { VARIATION_CHANGE_OPTIONS, toggleVariationChange } from "@/lib/gallery/variationChangeOptions"
+import PromptVariationModal from "./PromptVariationModal"
 
 /** Emitted after an AI tag candidate is approved or rejected (server call already succeeded). */
 export type SuggestionResolvedPayload = {
@@ -364,6 +368,99 @@ function TranslationSection({
         >
           {message.text}
         </p>
+      )}
+    </div>
+  )
+}
+
+// ---- PromptVariationSection: 既存promptから新しいprompt案を生成 (Phase 10-11C) ----
+//
+// 生成結果はDB保存しない・Prompt.currentBodyを自動更新しない・PromptVersionを
+// 作らない。modal表示 + コピーのみ。variationEnabled=true かつ prompt あり の
+// 時だけ表示（disabled/mock時にAPIを呼ぶ導線を作らない、TranslationSectionと同方針）。
+
+type VariationPhase = "idle" | "generating"
+type VariationMessage = { text: string; tone: "info" | "error" }
+
+function describeVariationFailure(status: "disabled" | "no_prompt" | "FAILED", error?: string): VariationMessage {
+  if (status === "disabled") return { text: "この機能は現在利用できません", tone: "info" }
+  if (status === "no_prompt") return { text: "プロンプトがないため生成できません", tone: "info" }
+  return { text: `生成に失敗しました: ${error ?? "不明なエラー"}`, tone: "error" }
+}
+
+function PromptVariationSection({
+  imageId,
+  variationEnabled,
+}: {
+  imageId: string
+  variationEnabled: boolean
+}) {
+  const [selected, setSelected] = useState<VariationChange[]>([])
+  const [phase, setPhase] = useState<VariationPhase>("idle")
+  const [message, setMessage] = useState<VariationMessage | null>(null)
+  const [resultText, setResultText] = useState<string | null>(null)
+  // 画像切り替え時にリセット（他subcomponentと同じ prevId 比較パターン）
+  const [prevImageId, setPrevImageId] = useState(imageId)
+  if (imageId !== prevImageId) {
+    setPrevImageId(imageId)
+    setSelected([])
+    setPhase("idle")
+    setMessage(null)
+    setResultText(null)
+  }
+
+  if (!variationEnabled) return null
+
+  const run = async () => {
+    setPhase("generating")
+    setMessage(null)
+    try {
+      const result = await generatePromptVariation(imageId, selected)
+      if (result.status === "DONE" && result.variation) {
+        setResultText(result.variation.text)
+      } else {
+        setMessage(describeVariationFailure(result.status as "disabled" | "no_prompt" | "FAILED", result.error))
+      }
+    } catch (e: unknown) {
+      setMessage({ text: (e as Error).message ?? "生成に失敗しました", tone: "error" })
+    } finally {
+      setPhase("idle")
+    }
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">プロンプトバリエーション</p>
+      <div className="mt-1.5 flex flex-col gap-1">
+        {VARIATION_CHANGE_OPTIONS.map((opt) => (
+          <label key={opt.value} className="flex items-center gap-2 text-xs text-zinc-700">
+            <input
+              type="checkbox"
+              checked={selected.includes(opt.value)}
+              onChange={() => setSelected((prev) => toggleVariationChange(prev, opt.value))}
+              disabled={phase === "generating"}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+      <button
+        onClick={() => void run()}
+        disabled={selected.length === 0 || phase === "generating"}
+        className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+      >
+        {phase === "generating" ? "生成中..." : "新しいプロンプトを生成"}
+      </button>
+      <p className="mt-1 text-xs text-zinc-400">
+        生成結果は保存されません。コピーして必要に応じて編集してください。
+      </p>
+      {message && (
+        <p className={`mt-1 text-xs ${message.tone === "error" ? "text-red-500" : "text-zinc-500"}`}>
+          {message.text}
+        </p>
+      )}
+      {resultText !== null && (
+        <PromptVariationModal text={resultText} onClose={() => setResultText(null)} />
       )}
     </div>
   )
@@ -969,6 +1066,13 @@ export default function DetailPanel({
                 dispatch({ type: "update_prompt", prompt: updatedPrompt })
                 onPromptSaved?.(updatedPrompt)
               }}
+            />
+          )}
+
+          {state.detail.prompt && (
+            <PromptVariationSection
+              imageId={state.detail.id}
+              variationEnabled={state.detail.variationEnabled}
             />
           )}
 
