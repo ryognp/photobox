@@ -29,6 +29,7 @@ import {
   type PromptVariationHistoryItem,
 } from "@/lib/gallery/promptVariationHistory"
 import PromptVariationModal from "./PromptVariationModal"
+import { buildPromptCopyText, buildImageDetailCopyText } from "@/lib/gallery/copyPack"
 
 /** Phase 10-12A: safe localStorage accessor — browser-only, never throws (some
  *  sandboxed/private-mode contexts throw on the `window.localStorage` getter
@@ -553,6 +554,61 @@ function PromptVariationSection({
             })}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ---- CopyPackSection: ファイル名/シーン/タグ/AI候補タグ/日本語訳/promptを
+// まとめてコピー (Phase 10-12B) ----
+//
+// read-only: buildPromptCopyText / buildImageDetailCopyText は既に取得済みの
+// ImageDetail を整形するだけで、Prompt.currentBody / PromptVersion には一切
+// 書き込まない。promptがない画像でも「詳細をまとめてコピー」（ファイル名等）
+// は使えるようセクション自体は常に表示し、「Promptをコピー」のみ disabled にする。
+// CopyButton は disabled 非対応のため、既存の notes コピー(handleCopyLegacy)と
+// 同じ簡易な自前コピー処理をここでも使う。
+
+type CopyPackMessage = { text: string; tone: "ok" | "error" }
+
+function CopyPackSection({ detail }: { detail: ImageDetail }) {
+  const [message, setMessage] = useState<CopyPackMessage | null>(null)
+
+  const copy = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setMessage({ text: `${label}をコピーしました ✓`, tone: "ok" })
+    } catch {
+      setMessage({ text: "コピーに失敗しました", tone: "error" })
+    } finally {
+      setTimeout(() => setMessage(null), 2000)
+    }
+  }
+
+  const promptText = buildPromptCopyText(detail)
+
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">コピーパック</p>
+      <div className="mt-1.5 flex flex-wrap gap-2">
+        <button
+          onClick={() => promptText && void copy(promptText, "Prompt")}
+          disabled={!promptText}
+          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          Promptをコピー
+        </button>
+        <button
+          onClick={() => void copy(buildImageDetailCopyText(detail), "詳細")}
+          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+        >
+          詳細をまとめてコピー
+        </button>
+      </div>
+      {message && (
+        <p className={`mt-1 text-xs ${message.tone === "error" ? "text-red-500" : "text-green-600"}`}>
+          {message.text}
+        </p>
       )}
     </div>
   )
@@ -1149,6 +1205,8 @@ export default function DetailPanel({
               onTranslated={onTranslated}
             />
           )}
+
+          <CopyPackSection detail={state.detail} />
 
           {state.detail.prompt && (
             <PromptEditor
