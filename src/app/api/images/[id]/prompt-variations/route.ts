@@ -119,7 +119,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return ok({
       status: "DONE" as const,
       variation: { text: generated.text },
-      budget: { remaining: budget.remaining },
     });
   } catch (e) {
     return ok({ status: "FAILED" as const, variation: null, error: sanitizeVariationError(e) });
