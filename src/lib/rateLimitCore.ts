@@ -11,7 +11,8 @@ export type RateLimitPreset =
   | "aiAnalyze"
   | "tagSuggestionAction"
   | "translationBatch"
-  | "translatePrompt";
+  | "translatePrompt"
+  | "promptVariation";
 
 export type RateLimitSource = "shared" | "disabled" | "error";
 
