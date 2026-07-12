@@ -30,6 +30,15 @@ import {
 } from "@/lib/gallery/promptVariationHistory"
 import PromptVariationModal from "./PromptVariationModal"
 import { buildPromptCopyText, buildImageDetailCopyText } from "@/lib/gallery/copyPack"
+import {
+  readFavoritePrompts,
+  addFavoritePrompt,
+  removeFavoritePrompt,
+  clearFavoritePrompts,
+  makeFavoritePromptItem,
+  formatFavoritePromptKind,
+  type FavoritePromptItem,
+} from "@/lib/gallery/favoritePrompts"
 
 /** Phase 10-12A: safe localStorage accessor — browser-only, never throws (some
  *  sandboxed/private-mode contexts throw on the `window.localStorage` getter
@@ -421,15 +430,24 @@ function formatHistoryCreatedAt(iso: string): string {
 
 function PromptVariationSection({
   imageId,
+  sourceImageName,
   variationEnabled,
+  onFavoriteSave,
 }: {
   imageId: string
+  /** Phase 10-12C: forwarded to the modal so a saved favorite can record which
+   *  image it came from (display-only; never sent to the server). */
+  sourceImageName: string
   variationEnabled: boolean
+  onFavoriteSave: (item: FavoritePromptItem) => void
 }) {
   const [selected, setSelected] = useState<VariationChange[]>([])
   const [phase, setPhase] = useState<VariationPhase>("idle")
   const [message, setMessage] = useState<VariationMessage | null>(null)
-  const [resultText, setResultText] = useState<string | null>(null)
+  // Phase 10-12C: tracks both the text AND the changes used to produce it, so
+  // the modal can pass `changes` through to a favorite save regardless of
+  // whether it was just generated or reopened from history via "表示".
+  const [modalContent, setModalContent] = useState<{ text: string; changes: VariationChange[] } | null>(null)
   // lazy init: reads localStorage once on mount (not on every render).
   const [history, setHistory] = useState<PromptVariationHistoryItem[]>(() =>
     readPromptVariationHistory(imageId, getLocalStorage()),
@@ -443,7 +461,7 @@ function PromptVariationSection({
     setSelected([])
     setPhase("idle")
     setMessage(null)
-    setResultText(null)
+    setModalContent(null)
     setHistory(readPromptVariationHistory(imageId, getLocalStorage()))
   }
 
@@ -455,7 +473,7 @@ function PromptVariationSection({
     try {
       const result = await generatePromptVariation(imageId, selected)
       if (result.status === "DONE" && result.variation) {
-        setResultText(result.variation.text)
+        setModalContent({ text: result.variation.text, changes: selected })
         const item = makePromptVariationHistoryItem(imageId, result.variation.text, selected)
         setHistory(addPromptVariationHistoryItem(imageId, item, getLocalStorage()))
       } else {
@@ -508,8 +526,15 @@ function PromptVariationSection({
           {message.text}
         </p>
       )}
-      {resultText !== null && (
-        <PromptVariationModal text={resultText} onClose={() => setResultText(null)} />
+      {modalContent !== null && (
+        <PromptVariationModal
+          text={modalContent.text}
+          onClose={() => setModalContent(null)}
+          sourceImageId={imageId}
+          sourceImageName={sourceImageName}
+          changes={modalContent.changes}
+          onFavoriteSave={onFavoriteSave}
+        />
       )}
 
       {history.length > 0 && (
@@ -536,7 +561,7 @@ function PromptVariationSection({
                   <p className="mt-1 whitespace-pre-wrap break-words text-zinc-700">{preview}</p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => setResultText(item.text)}
+                      onClick={() => setModalContent({ text: item.text, changes: item.changes })}
                       className="text-zinc-500 hover:text-zinc-800"
                     >
                       表示
@@ -559,6 +584,70 @@ function PromptVariationSection({
   )
 }
 
+// ---- FavoritePromptsSection: お気に入りプロンプト一覧 (Phase 10-12C) ----
+//
+// localStorage限定・グローバル(画像を跨いで共有)なリスト。DB非保存・
+// Prompt.currentBody / PromptVersionには一切触れない。表示は直近5件のみ
+// （全50件をDetailPanelに出すと重いため。将来の専用Prompt Libraryページの
+// 余地を残す）。favorites自体はDetailPanel（親）が所有し、CopyPackSectionの
+// 保存ボタンとPromptVariationModalのお気に入り保存の両方から更新できる。
+
+const FAVORITE_PREVIEW_LEN = 140
+const FAVORITE_LIST_LIMIT = 5
+
+function formatFavoriteCreatedAt(iso: string): string {
+  return new Date(iso).toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+}
+
+function FavoritePromptsSection({
+  favorites,
+  onRemove,
+  onClearAll,
+}: {
+  favorites: FavoritePromptItem[]
+  onRemove: (itemId: string) => void
+  onClearAll: () => void
+}) {
+  if (favorites.length === 0) return null
+  const visible = favorites.slice(0, FAVORITE_LIST_LIMIT)
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">お気に入りプロンプト</p>
+        <button onClick={onClearAll} className="text-xs text-zinc-400 hover:text-red-600">
+          すべて削除
+        </button>
+      </div>
+      <p className="mt-0.5 text-xs text-zinc-400">
+        お気に入りはこのブラウザにのみ保存されます。DBには保存されません。
+      </p>
+      <div className="mt-1.5 flex flex-col gap-2">
+        {visible.map((item) => {
+          const isLong = item.text.length > FAVORITE_PREVIEW_LEN
+          const preview = isLong ? `${item.text.slice(0, FAVORITE_PREVIEW_LEN)}…` : item.text
+          return (
+            <div key={item.id} className="rounded-md border border-zinc-100 bg-zinc-50 p-2 text-xs">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-zinc-400">
+                <span>{formatFavoriteCreatedAt(item.createdAt)}</span>
+                <span>{formatFavoritePromptKind(item.kind)}</span>
+                <span className="truncate">{item.sourceImageName}</span>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap break-words text-zinc-700">{preview}</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <CopyButton text={item.text} label="コピー" />
+                <button onClick={() => onRemove(item.id)} className="text-zinc-400 hover:text-red-600">
+                  削除
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ---- CopyPackSection: ファイル名/シーン/タグ/AI候補タグ/日本語訳/promptを
 // まとめてコピー (Phase 10-12B) ----
 //
@@ -571,7 +660,15 @@ function PromptVariationSection({
 
 type CopyPackMessage = { text: string; tone: "ok" | "error" }
 
-function CopyPackSection({ detail }: { detail: ImageDetail }) {
+function CopyPackSection({
+  detail,
+  onFavoriteSave,
+}: {
+  detail: ImageDetail
+  /** Phase 10-12C: delegates the actual localStorage write to DetailPanel
+   *  (which also owns the "お気に入りプロンプト" list state/display). */
+  onFavoriteSave: (item: FavoritePromptItem) => void
+}) {
   const [message, setMessage] = useState<CopyPackMessage | null>(null)
 
   const copy = async (text: string, label: string) => {
@@ -586,6 +683,20 @@ function CopyPackSection({ detail }: { detail: ImageDetail }) {
   }
 
   const promptText = buildPromptCopyText(detail)
+
+  const saveFavorite = () => {
+    if (!promptText) return
+    onFavoriteSave(
+      makeFavoritePromptItem({
+        sourceImageId: detail.id,
+        sourceImageName: detail.originalName,
+        text: promptText,
+        kind: "current_prompt",
+      }),
+    )
+    setMessage({ text: "お気に入りに保存しました ✓", tone: "ok" })
+    setTimeout(() => setMessage(null), 2000)
+  }
 
   return (
     <div>
@@ -603,6 +714,13 @@ function CopyPackSection({ detail }: { detail: ImageDetail }) {
           className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
         >
           詳細をまとめてコピー
+        </button>
+        <button
+          onClick={saveFavorite}
+          disabled={!promptText}
+          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          現在のPromptをお気に入り保存
         </button>
       </div>
       {message && (
@@ -1026,6 +1144,20 @@ export default function DetailPanel({
   const [state, dispatch] = useReducer(reducer, { phase: "idle" })
   const [deletePhase, setDeletePhase] = useState<DeletePhase>("view")
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // Phase 10-12C: favorites are GLOBAL (one localStorage key, not per-image),
+  // so a lazy one-time read on mount is enough — no per-imageId re-read needed
+  // (unlike prompt-variation history, which is scoped per image).
+  const [favorites, setFavorites] = useState<FavoritePromptItem[]>(() => readFavoritePrompts(getLocalStorage()))
+  const handleFavoriteSave = (item: FavoritePromptItem) => {
+    setFavorites(addFavoritePrompt(item, getLocalStorage()))
+  }
+  const handleFavoriteRemove = (itemId: string) => {
+    setFavorites(removeFavoritePrompt(itemId, getLocalStorage()))
+  }
+  const handleFavoriteClearAll = () => {
+    clearFavoritePrompts(getLocalStorage())
+    setFavorites([])
+  }
   // 画像切り替え時に削除UIをリセット（render中に前回値と比較する React 推奨パターン）
   const [prevImageId, setPrevImageId] = useState(imageId)
   if (imageId !== prevImageId) {
@@ -1206,7 +1338,7 @@ export default function DetailPanel({
             />
           )}
 
-          <CopyPackSection detail={state.detail} />
+          <CopyPackSection detail={state.detail} onFavoriteSave={handleFavoriteSave} />
 
           {state.detail.prompt && (
             <PromptEditor
@@ -1222,9 +1354,17 @@ export default function DetailPanel({
           {state.detail.prompt && (
             <PromptVariationSection
               imageId={state.detail.id}
+              sourceImageName={state.detail.originalName}
               variationEnabled={state.detail.variationEnabled}
+              onFavoriteSave={handleFavoriteSave}
             />
           )}
+
+          <FavoritePromptsSection
+            favorites={favorites}
+            onRemove={handleFavoriteRemove}
+            onClearAll={handleFavoriteClearAll}
+          />
 
           {state.detail.notes && (
             <div>
