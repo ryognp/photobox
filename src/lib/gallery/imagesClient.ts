@@ -78,6 +78,8 @@ export type ImageDetail = {
   };
   /** Phase 10-9C-3: gate for the DetailPanel translation UI (10-9C-4). */
   translationEnabled: boolean;
+  /** Phase 10-11B: gate for the DetailPanel prompt-variation UI (10-11C). */
+  variationEnabled: boolean;
 };
 
 /** Translation fields returned by the single-image translate API. */
@@ -116,6 +118,38 @@ export async function translatePrompt(
     throw new Error(err.error?.message ?? `Failed to translate prompt (${res.status})`);
   }
   const json = (await res.json()) as { data: TranslatePromptResult };
+  return json.data;
+}
+
+/** Phase 10-11B: fixed set of change dimensions the prompt-variation generator accepts. */
+export type VariationChange = "pose" | "outfit" | "expression" | "place" | "mood_time";
+
+export type PromptVariationResult = {
+  status: "DONE" | "disabled" | "no_prompt" | "FAILED";
+  variation: { text: string } | null;
+  error?: string;
+};
+
+/**
+ * Phase 10-11B/10-11C: generates a NEW image-generation prompt from this
+ * image's existing prompt, changing only the selected dimensions. Nothing is
+ * persisted server-side — the result is for display/copy only (Phase 10-11C
+ * PromptVariationModal). Gated by variationEnabled.
+ */
+export async function generatePromptVariation(
+  imageId: string,
+  changes: VariationChange[],
+): Promise<PromptVariationResult> {
+  const res = await fetch(`/api/images/${imageId}/prompt-variations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ changes }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to generate prompt variation (${res.status})`);
+  }
+  const json = (await res.json()) as { data: PromptVariationResult };
   return json.data;
 }
 
