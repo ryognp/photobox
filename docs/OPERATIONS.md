@@ -516,6 +516,11 @@ WHERE id = '<import_batch_id>';
 >
 > **prompt 単体翻訳 provider（英語 prompt → 日本語訳、Phase 10-9C）** の env・有効化手順・
 > cost guard・rollback は [TRANSLATION_RUNBOOK.md](TRANSLATION_RUNBOOK.md) を参照。
+>
+> **Prompt バリエーション生成 provider（既存 prompt からポーズ/服装/表情/場所/雰囲気・時間帯
+> を変えた新 prompt 案を作る、Phase 10-11）** の env・有効化手順・cost guard・rollback は
+> [PROMPT_VARIATION_RUNBOOK.md](PROMPT_VARIATION_RUNBOOK.md) を参照。生成結果は DB に保存されず、
+> `Prompt.currentBody` も自動更新されない。
 
 ### 環境変数
 
