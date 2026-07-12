@@ -19,7 +19,28 @@ import {
 import { applyPromptEditToDetailPrompt } from "@/lib/gallery/translationState"
 import { describeTranslationResult, type TranslationDisplayMessage } from "@/lib/translation/translationResultDisplay"
 import { VARIATION_CHANGE_OPTIONS, toggleVariationChange } from "@/lib/gallery/variationChangeOptions"
+import {
+  readPromptVariationHistory,
+  addPromptVariationHistoryItem,
+  removePromptVariationHistoryItem,
+  clearPromptVariationHistory,
+  formatVariationChanges,
+  makePromptVariationHistoryItem,
+  type PromptVariationHistoryItem,
+} from "@/lib/gallery/promptVariationHistory"
 import PromptVariationModal from "./PromptVariationModal"
+
+/** Phase 10-12A: safe localStorage accessor — browser-only, never throws (some
+ *  sandboxed/private-mode contexts throw on the `window.localStorage` getter
+ *  itself, before any get/set call). Returns undefined when unavailable so the
+ *  pure history helpers' storage?-optional path (no-op) kicks in. */
+function getLocalStorage(): Storage | undefined {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /** Emitted after an AI tag candidate is approved or rejected (server call already succeeded). */
 export type SuggestionResolvedPayload = {
@@ -378,6 +399,9 @@ function TranslationSection({
 // 生成結果はDB保存しない・Prompt.currentBodyを自動更新しない・PromptVersionを
 // 作らない。modal表示 + コピーのみ。variationEnabled=true かつ prompt あり の
 // 時だけ表示（disabled/mock時にAPIを呼ぶ導線を作らない、TranslationSectionと同方針）。
+//
+// Phase 10-12A: 生成成功時のみ、ブラウザの localStorage に画像ごと直近5件だけ
+// 「最近生成した案」として一時保存する（DB非接触・サーバーには一切送られない）。
 
 type VariationPhase = "idle" | "generating"
 type VariationMessage = { text: string; tone: "info" | "error" }
@@ -386,6 +410,12 @@ function describeVariationFailure(status: "disabled" | "no_prompt" | "FAILED", e
   if (status === "disabled") return { text: "この機能は現在利用できません", tone: "info" }
   if (status === "no_prompt") return { text: "プロンプトがないため生成できません", tone: "info" }
   return { text: `生成に失敗しました: ${error ?? "不明なエラー"}`, tone: "error" }
+}
+
+const HISTORY_PREVIEW_LEN = 140
+
+function formatHistoryCreatedAt(iso: string): string {
+  return new Date(iso).toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
 }
 
 function PromptVariationSection({
@@ -399,7 +429,13 @@ function PromptVariationSection({
   const [phase, setPhase] = useState<VariationPhase>("idle")
   const [message, setMessage] = useState<VariationMessage | null>(null)
   const [resultText, setResultText] = useState<string | null>(null)
-  // 画像切り替え時にリセット（他subcomponentと同じ prevId 比較パターン）
+  // lazy init: reads localStorage once on mount (not on every render).
+  const [history, setHistory] = useState<PromptVariationHistoryItem[]>(() =>
+    readPromptVariationHistory(imageId, getLocalStorage()),
+  )
+  // 画像切り替え時にリセット（他subcomponentと同じ prevId 比較パターン）。
+  // history もここで該当imageIdの内容に読み直す（useEffectではなくrender中の
+  // setState — 既存パターンと同型で、effect内setStateのlintを避ける）。
   const [prevImageId, setPrevImageId] = useState(imageId)
   if (imageId !== prevImageId) {
     setPrevImageId(imageId)
@@ -407,6 +443,7 @@ function PromptVariationSection({
     setPhase("idle")
     setMessage(null)
     setResultText(null)
+    setHistory(readPromptVariationHistory(imageId, getLocalStorage()))
   }
 
   if (!variationEnabled) return null
@@ -418,6 +455,8 @@ function PromptVariationSection({
       const result = await generatePromptVariation(imageId, selected)
       if (result.status === "DONE" && result.variation) {
         setResultText(result.variation.text)
+        const item = makePromptVariationHistoryItem(imageId, result.variation.text, selected)
+        setHistory(addPromptVariationHistoryItem(imageId, item, getLocalStorage()))
       } else {
         setMessage(describeVariationFailure(result.status as "disabled" | "no_prompt" | "FAILED", result.error))
       }
@@ -426,6 +465,15 @@ function PromptVariationSection({
     } finally {
       setPhase("idle")
     }
+  }
+
+  const handleRemoveHistoryItem = (itemId: string) => {
+    setHistory(removePromptVariationHistoryItem(imageId, itemId, getLocalStorage()))
+  }
+
+  const handleClearHistory = () => {
+    clearPromptVariationHistory(imageId, getLocalStorage())
+    setHistory([])
   }
 
   return (
@@ -452,7 +500,7 @@ function PromptVariationSection({
         {phase === "generating" ? "生成中..." : "新しいプロンプトを生成"}
       </button>
       <p className="mt-1 text-xs text-zinc-400">
-        生成結果は保存されません。コピーして必要に応じて編集してください。
+        生成結果はこのブラウザに一時保存されます。既存promptには反映されません。必要に応じてコピーして編集してください。
       </p>
       {message && (
         <p className={`mt-1 text-xs ${message.tone === "error" ? "text-red-500" : "text-zinc-500"}`}>
@@ -461,6 +509,50 @@ function PromptVariationSection({
       )}
       {resultText !== null && (
         <PromptVariationModal text={resultText} onClose={() => setResultText(null)} />
+      )}
+
+      {history.length > 0 && (
+        <div className="mt-3 border-t border-zinc-100 pt-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">最近生成した案</p>
+            <button
+              onClick={handleClearHistory}
+              className="text-xs text-zinc-400 hover:text-red-600"
+            >
+              すべて削除
+            </button>
+          </div>
+          <div className="mt-1.5 flex flex-col gap-2">
+            {history.map((item) => {
+              const isLong = item.text.length > HISTORY_PREVIEW_LEN
+              const preview = isLong ? `${item.text.slice(0, HISTORY_PREVIEW_LEN)}…` : item.text
+              return (
+                <div key={item.id} className="rounded-md border border-zinc-100 bg-zinc-50 p-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-zinc-400">
+                    <span>{formatHistoryCreatedAt(item.createdAt)}</span>
+                    {item.changes.length > 0 && <span>{formatVariationChanges(item.changes)}</span>}
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-zinc-700">{preview}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setResultText(item.text)}
+                      className="text-zinc-500 hover:text-zinc-800"
+                    >
+                      表示
+                    </button>
+                    <CopyButton text={item.text} label="コピー" />
+                    <button
+                      onClick={() => handleRemoveHistoryItem(item.id)}
+                      className="text-zinc-400 hover:text-red-600"
+                    >
+                      削除
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
     </div>
   )
