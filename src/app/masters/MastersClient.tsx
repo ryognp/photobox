@@ -4,6 +4,7 @@ import { Suspense, useEffect, useReducer, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { filterTagsForMasters } from "@/lib/masters/tagFilters";
+import { formatTagForceDeleteConfirmMessage } from "@/lib/masters/tagDeleteMessage";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -555,6 +556,23 @@ function TagCard({
     onDeleted(tag.id);
   };
 
+  // Phase 10-20B: 使用中(imageCount>0)のタグを、画像との紐づけを解除した上で
+  // 削除する。ImageTag/UploadItemTagのcascadeはサーバー側(schema)に任せ、
+  // ここではforce:trueを渡すだけ — Image本体やStorageには一切触れない。
+  // レビュー修正: confirmNameをタグ名と完全一致で送る(サーバー側で検証される)。
+  const doForceDelete = async (confirmName: string) => {
+    const res = await fetch(`/api/tags/${tag.id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: true, confirmName }),
+    });
+    if (!res.ok) {
+      const j = (await res.json()) as { error?: { message?: string } };
+      throw new Error(j.error?.message ?? `HTTP ${res.status}`);
+    }
+    onDeleted(tag.id);
+  };
+
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -568,6 +586,13 @@ function TagCard({
         </Link>
         <DeleteButton imageCount={tag.imageCount} itemLabel="タグ" onDelete={doDelete} />
       </div>
+      {tag.imageCount > 0 && (
+        <TagForceDeleteControl
+          tagName={tag.name}
+          imageCount={tag.imageCount}
+          onForceDelete={doForceDelete}
+        />
+      )}
       <MergePanel
         sourceId={tag.id}
         sourceName={tag.name}
@@ -575,6 +600,115 @@ function TagCard({
         mergeEndpoint={`/api/tags/${tag.id}/merge`}
         onMerged={() => onDeleted(tag.id)}
       />
+    </div>
+  );
+}
+
+// ---- TagForceDeleteControl (Phase 10-20B) -----------------------------------
+//
+// 使用中(imageCount>0)のタグを、画像との紐づけ(ImageTag/UploadItemTag)を
+// 解除した上で削除するための、明示確認必須のコントロール。Person/Sceneの
+// 共通DeleteButtonとは別に、Tag専用として実装する(要求範囲がTagのみのため)。
+
+type ForceDeletePhase = "idle" | "confirm" | "deleting" | "error";
+
+function TagForceDeleteControl({
+  tagName,
+  imageCount,
+  onForceDelete,
+}: {
+  tagName: string;
+  imageCount: number;
+  /** レビュー修正: サーバー側confirmName検証と対にするため、UI側でも
+   *  タグ名の完全一致入力を必須にする。呼び出し元は入力値をそのまま
+   *  confirmNameとしてAPIへ渡す。 */
+  onForceDelete: (confirmName: string) => Promise<void>;
+}) {
+  const [phase, setPhase] = useState<ForceDeletePhase>("idle");
+  const [agreed, setAgreed] = useState(false);
+  const [confirmNameInput, setConfirmNameInput] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const resetConfirmState = () => {
+    setPhase("idle");
+    setAgreed(false);
+    setConfirmNameInput("");
+  };
+
+  if (phase === "idle") {
+    return (
+      <button
+        onClick={() => setPhase("confirm")}
+        className="self-start text-xs text-red-500 hover:text-red-700"
+      >
+        画像との紐づけを解除して削除する
+      </button>
+    );
+  }
+
+  if (phase === "confirm") {
+    const nameMatches = confirmNameInput === tagName;
+    return (
+      <div className="flex flex-col gap-1.5 rounded border border-red-200 bg-red-50 p-2">
+        <p className="text-xs text-red-700">
+          {formatTagForceDeleteConfirmMessage(tagName, imageCount)}
+        </p>
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-red-700">
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+          />
+          内容を理解した上で削除します
+        </label>
+        <input
+          type="text"
+          value={confirmNameInput}
+          onChange={(e) => setConfirmNameInput(e.target.value)}
+          placeholder="タグ名を入力して確認"
+          className="rounded border border-red-300 px-2 py-1 text-xs focus:border-red-500 focus:outline-none"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              setPhase("deleting");
+              setErrorMsg(null);
+              try {
+                await onForceDelete(confirmNameInput);
+              } catch (e: unknown) {
+                setErrorMsg((e as Error).message ?? "削除に失敗しました");
+                setPhase("error");
+              }
+            }}
+            disabled={!agreed || !nameMatches}
+            className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            紐づけを解除して削除する
+          </button>
+          <button
+            onClick={resetConfirmState}
+            className="text-xs text-zinc-400 hover:text-zinc-700"
+          >
+            キャンセル
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "deleting") {
+    return <p className="text-xs text-zinc-400">削除中...</p>;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <p className="text-xs text-red-500">{errorMsg ?? "削除に失敗しました"}</p>
+      <button
+        onClick={resetConfirmState}
+        className="text-xs text-zinc-400 hover:text-zinc-700"
+      >
+        閉じる
+      </button>
     </div>
   );
 }
