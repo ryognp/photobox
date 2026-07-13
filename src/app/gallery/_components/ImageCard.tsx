@@ -7,6 +7,10 @@ interface ImageCardProps {
   image: GalleryImage
   selected: boolean
   onClick: () => void
+  /** Phase 10-18C: bulk multi-select (independent of `selected`, which is the
+   *  single DetailPanel selection). */
+  bulkSelected: boolean
+  onBulkToggle: (imageId: string) => void
 }
 
 function ImagePlaceholder() {
@@ -24,18 +28,55 @@ function ImagePlaceholder() {
   )
 }
 
-export default function ImageCard({ image, selected, onClick }: ImageCardProps) {
+export default function ImageCard({ image, selected, onClick, bulkSelected, onBulkToggle }: ImageCardProps) {
   const [imgError, markError] = useReducer(() => true, false)
 
+  // Phase 10-18C: 外側は button ではなく role="button" の div。checkbox 用の
+  // button を内側に持つため（button の入れ子は不正HTML）。クリック/Enter/Space
+  // で従来通り DetailPanel を開く。bulkSelected(一括選択) と selected(DetailPanel
+  // 単一選択) は独立し、枠の見た目も別 — bulk は amber リング、selected は blue。
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className={`group relative overflow-hidden rounded-lg border bg-zinc-100 text-left transition-shadow ${
-        selected
-          ? "border-blue-500 ring-2 ring-blue-500"
-          : "border-zinc-200 hover:border-zinc-300 hover:shadow-md"
+      onKeyDown={(e) => {
+        // イベント発生元が親div自身でない場合(例: 内側のcheckbox buttonに
+        // フォーカスしてEnter/Space)は何もしない。keydownはonClickのような
+        // stopPropagationを内側で行っておらずbubbleするため、ここで発生元を
+        // 見て親div由来のキー操作だけをDetailPanel開閉に使う。
+        if (e.target !== e.currentTarget) return
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+      className={`group relative cursor-pointer overflow-hidden rounded-lg border bg-zinc-100 text-left transition-shadow ${
+        bulkSelected
+          ? "border-amber-500 ring-2 ring-amber-500"
+          : selected
+            ? "border-blue-500 ring-2 ring-blue-500"
+            : "border-zinc-200 hover:border-zinc-300 hover:shadow-md"
       }`}
     >
+      {/* Bulk-select checkbox (左上). stopPropagation で DetailPanel を開かない。 */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onBulkToggle(image.id)
+        }}
+        aria-label={bulkSelected ? "選択を解除" : "選択"}
+        aria-pressed={bulkSelected}
+        className={`absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
+          bulkSelected
+            ? "border-amber-500 bg-amber-500 text-white"
+            : "border-zinc-300 bg-white/80 text-transparent hover:border-amber-400 hover:text-amber-400"
+        }`}
+      >
+        ✓
+      </button>
+
       {/* Thumbnail (Phase 10-9A: object-position 上寄せで顔/上半身が切れにくく) */}
       <div className="aspect-square w-full overflow-hidden bg-zinc-200">
         {image.thumbnailUrl && !imgError ? (
@@ -74,6 +115,6 @@ export default function ImageCard({ image, selected, onClick }: ImageCardProps) 
           </div>
         </div>
       )}
-    </button>
+    </div>
   )
 }

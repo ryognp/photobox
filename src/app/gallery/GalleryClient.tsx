@@ -15,6 +15,8 @@ import {
 } from "@/lib/gallery/imagesClient"
 import { removeTagById } from "@/lib/gallery/tagState"
 import { addUniqueById } from "@/lib/gallery/personState"
+import { toggleBulkSelectedId, clearBulkSelectedIds } from "@/lib/gallery/bulkSelectionState"
+import BulkSelectionToolbar from "./_components/BulkSelectionToolbar"
 import { applyTranslationUpdate, applyPromptEditToDetailPrompt } from "@/lib/gallery/translationState"
 import { normalizeTagIds } from "@/lib/gallery/tagFilters"
 import { normalizeSuggestionLabels } from "@/lib/gallery/suggestionFilters"
@@ -40,6 +42,8 @@ type GalleryState = {
   detail: ImageDetail | null
   detailLoading: boolean
   detailError: string | null
+  // Phase 10-18C: 複数選択(一括操作用)。selectedId(DetailPanel単一選択)とは独立。
+  bulkSelectedIds: string[]
 }
 
 type GalleryAction =
@@ -68,11 +72,16 @@ type GalleryAction =
   | { type: "person_removed"; personId: string }
   | { type: "translation_updated"; result: TranslatePromptResult }
   | { type: "prompt_updated"; prompt: ImageDetail["prompt"] }
+  | { type: "bulk_toggle_image"; imageId: string }
+  | { type: "bulk_select_visible" }
+  | { type: "bulk_clear_selection" }
 
 function reducer(s: GalleryState, a: GalleryAction): GalleryState {
   switch (a.type) {
     case "fetch_start":
-      return { ...s, loading: true, error: null, images: [], nextCursor: null, selectedId: null, detail: null, detailLoading: false, detailError: null }
+      // Phase 10-18C: filter/sort/search変更(=fetch_start)時は一括選択を解除する
+      // (見えない画像が選択に残るUXを避ける、設計レポートの推奨方針)。
+      return { ...s, loading: true, error: null, images: [], nextCursor: null, selectedId: null, detail: null, detailLoading: false, detailError: null, bulkSelectedIds: clearBulkSelectedIds() }
     case "fetch_ok":
       return { ...s, loading: false, images: a.images, nextCursor: a.nextCursor }
     case "fetch_error":
@@ -101,6 +110,8 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
         detail: s.detail?.id === a.id ? null : s.detail,
         detailLoading: false,
         detailError: null,
+        // 削除された画像が一括選択に残らないようにする
+        bulkSelectedIds: s.bulkSelectedIds.filter((id) => id !== a.id),
       }
     case "suggestion_resolved": {
       if (!s.detail) return s
@@ -141,6 +152,13 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
       if (!s.detail || !s.detail.prompt || !a.prompt) return s
       return { ...s, detail: { ...s.detail, prompt: applyPromptEditToDetailPrompt(s.detail.prompt, a.prompt) } }
     }
+    case "bulk_toggle_image":
+      return { ...s, bulkSelectedIds: toggleBulkSelectedId(s.bulkSelectedIds, a.imageId) }
+    case "bulk_select_visible":
+      // 現在表示中(=もっと見るで読み込み済み)の全画像を選択。
+      return { ...s, bulkSelectedIds: s.images.map((img) => img.id) }
+    case "bulk_clear_selection":
+      return { ...s, bulkSelectedIds: clearBulkSelectedIds() }
   }
 }
 
@@ -156,6 +174,7 @@ const INITIAL: GalleryState = {
   detail: null,
   detailLoading: false,
   detailError: null,
+  bulkSelectedIds: [],
 }
 
 // ---- URL helpers ----
@@ -334,6 +353,15 @@ function GalleryInner() {
         </div>
       </header>
 
+      {/* Phase 10-18C: 一括選択toolbar（選択0件時は自身で非表示）。bulk action
+          (タグ/人物一括追加)ボタンはPhase 10-18Dで追加する。 */}
+      <BulkSelectionToolbar
+        selectedCount={state.bulkSelectedIds.length}
+        visibleCount={state.images.length}
+        onSelectVisible={() => dispatch({ type: "bulk_select_visible" })}
+        onClear={() => dispatch({ type: "bulk_clear_selection" })}
+      />
+
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         <FilterSidebar
@@ -348,6 +376,8 @@ function GalleryInner() {
             setFilterDrawerOpen(false)
             dispatch({ type: "select", id })
           }}
+          bulkSelectedIds={state.bulkSelectedIds}
+          onBulkToggle={(imageId) => dispatch({ type: "bulk_toggle_image", imageId })}
           loading={state.loading}
           loadingMore={state.loadingMore}
           hasMore={state.nextCursor !== null}
