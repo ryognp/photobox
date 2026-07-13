@@ -4,6 +4,7 @@ import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ok, Errors } from "@/lib/apiResponse";
 import { isExcludedGenericLabel } from "@/lib/analysis/tagTaxonomy";
+import { getCurrentAnalysisModelIdSuffix } from "@/lib/analysis/currentAnalysisSuggestionFilter";
 
 /**
  * GET /api/tag-suggestions  (Phase 10-9B)
@@ -21,6 +22,12 @@ import { isExcludedGenericLabel } from "@/lib/analysis/tagTaxonomy";
  *   hidden here even if older PENDING rows still exist. Read-only display
  *   filter only — the TagSuggestion rows themselves are left untouched (no
  *   UPDATE/DELETE), and approve/reject remain available via the per-image API.
+ * - Phase 10-13B: only PENDING suggestions from the CURRENT
+ *   ANALYSIS_PROMPT_VERSION are counted (via Prisma `where` on the related
+ *   ImageAnalysis.modelId suffix — see currentAnalysisSuggestionFilter.ts).
+ *   Older prompt-version PENDING rows are left in the DB untouched but no
+ *   longer inflate this sidebar aggregation. Independent layer from the
+ *   人物/ポートレート label filter above.
  */
 export async function GET() {
   const user = await getCurrentUser();
@@ -36,6 +43,7 @@ export async function GET() {
       workspaceId: workspace.id,
       status: "PENDING",
       image: { workspaceId: workspace.id, deletedAt: null, status: "ACTIVE" },
+      analysis: { modelId: { endsWith: getCurrentAnalysisModelIdSuffix() } },
     },
     distinct: ["label", "imageId"],
     select: { label: true, imageId: true },
