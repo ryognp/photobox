@@ -100,13 +100,36 @@ export async function DELETE(
     return auth.reason === "NOT_FOUND" ? Errors.notFound("Session not found") : Errors.forbidden();
   }
 
+  // Phase 10-19A review fix: COMMITTED session / COMMITTED itemを含むsessionは
+  // キャンセル(ABANDONED化)不可。ACTIVE/PREVIEWINGの未commit sessionのみ許可。
+  if (auth.session.status === "COMMITTED") {
+    return Errors.validation("This session is already committed and cannot be cancelled.");
+  }
+
+  const committedItemCount = await prisma.uploadItem.count({
+    where: { sessionId: id, commitStatus: "COMMITTED" },
+  });
+  if (committedItemCount > 0) {
+    return Errors.validation("This session has committed items and cannot be cancelled.");
+  }
+
   // MVP: 物理削除しない。status = ABANDONED に更新する。
   // Storage 削除・upload_items 削除は将来の cleanup job で行う。
-  const session = await prisma.uploadSession.update({
-    where: { id },
+  // 安全弁: COMMITTED sessionは絶対にABANDONED化しない(上のチェックをすり抜けても
+  // updateManyのwhereで弾かれ、更新0件になる)。
+  const updated = await prisma.uploadSession.updateMany({
+    where: { id, status: { in: ["ACTIVE", "PREVIEWING", "ABANDONED"] } },
     data: { status: "ABANDONED" },
+  });
+  if (updated.count === 0) {
+    return Errors.validation("This session is already committed and cannot be cancelled.");
+  }
+
+  const session = await prisma.uploadSession.findUnique({
+    where: { id },
     select: SESSION_SELECT,
   });
+  if (!session) return Errors.internal();
 
   return ok({ session, items: [] });
 }

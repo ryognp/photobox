@@ -1,13 +1,18 @@
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
+import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 import {
   authorizeUploadItem,
   assertSessionEditable,
   assertItemNotCommitted,
   fetchItemWithRelations,
 } from "@/lib/uploadItem";
+import { collectUploadItemStoragePaths } from "@/lib/quick-add/uploadItemDelete";
+
+const BUCKET = "photobox-private";
 
 // ---- GET ------------------------------------------------------------------
 
@@ -184,4 +189,111 @@ export async function PATCH(
   const item = await fetchItemWithRelations(id);
   if (!item) return Errors.internal();
   return ok({ item });
+}
+
+// ---- DELETE -----------------------------------------------------------
+//
+// Phase 10-19A: deletes a single UploadItem from the Quick Add preview.
+// Storage-first: temp Storage objects are removed BEFORE the DB row, so a
+// Storage failure never leaves an orphaned DB row pointing at deleted paths
+// (unlike the async cleanup cron, which tolerates eventual consistency —
+// this is a synchronous user action and must not silently drop data).
+//
+// Review fix: deletable commitStatus is PENDING/FAILED ONLY — IN_PROGRESS is
+// excluded because the commit API may be actively reading/writing this
+// item's temp Storage paths while committing; deleting them mid-commit would
+// corrupt that in-flight operation. committedImageId !== null is also
+// rejected (belt-and-suspenders alongside the commitStatus check — a
+// COMMITTED/skip-completed item always has this set). All of this is
+// re-checked against a FRESH read right before the Storage call, not just
+// authorizeUploadItem's snapshot, to close the race window between auth and
+// deletion. Committed Image rows, Tag/Person/Scene masters, and
+// ImageTag/ImagePerson are never touched here — only the UploadItem row and
+// its own temp Storage objects.
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const user = await getCurrentUser();
+  if (!user) return Errors.unauthorized();
+
+  const { id } = await params;
+  const auth = await authorizeUploadItem(id, user.id);
+  if (!auth.ok) {
+    return auth.reason === "NOT_FOUND" ? Errors.notFound("Item not found") : Errors.forbidden();
+  }
+
+  const sessionErr = assertSessionEditable(auth.item.session.status);
+  if (sessionErr) return Errors.validation(sessionErr);
+  const commitErr = assertItemNotCommitted(auth.item.commitStatus);
+  if (commitErr) return Errors.validation(commitErr);
+
+  const rl = await checkUserRateLimit({
+    preset: "uploadItemDelete",
+    userId: user.id,
+    workspaceId: auth.item.workspaceId,
+  });
+  if (!rl.allowed) return Errors.rateLimited(rateLimitHeaders(rl));
+
+  // 認可チェック後、Storage削除の直前にDB状態を再取得して最終判定する
+  // (auth.itemの古いsnapshotだけに依存しない — commit処理と競合するレースを狭める)。
+  const current = await prisma.uploadItem.findUnique({
+    where: { id },
+    select: {
+      sessionId: true,
+      commitStatus: true,
+      committedImageId: true,
+      tempStoragePath: true,
+      tempThumbnailPath: true,
+      tempPreviewPath: true,
+      session: { select: { status: true } },
+    },
+  });
+  if (!current) return Errors.notFound("Item not found");
+
+  if (current.session.status !== "ACTIVE" && current.session.status !== "PREVIEWING") {
+    return Errors.validation(
+      `Session status is '${current.session.status}'. Only ACTIVE or PREVIEWING sessions can be edited.`,
+    );
+  }
+  if (current.commitStatus !== "PENDING" && current.commitStatus !== "FAILED") {
+    return Errors.validation(
+      `Item commitStatus is '${current.commitStatus}'. Only PENDING or FAILED items can be deleted.`,
+    );
+  }
+  if (current.committedImageId !== null) {
+    return Errors.validation("This item has already been committed and cannot be deleted.");
+  }
+
+  const paths = collectUploadItemStoragePaths(current);
+  if (paths.length > 0) {
+    const { error } = await supabaseAdmin.storage.from(BUCKET).remove(paths);
+    if (error) {
+      // Storage削除失敗時はDB itemを削除しない(orphan DBを避ける)。
+      return Errors.internal();
+    }
+  }
+
+  // 安全弁: commitStatus/committedImageIdが上のチェックと同時に変化していても、
+  // ここで条件を満たさなければ削除0件になる(deleteMany は例外を投げない)。
+  const deleted = await prisma.uploadItem.deleteMany({
+    where: { id, commitStatus: { in: ["PENDING", "FAILED"] }, committedImageId: null },
+  });
+  if (deleted.count === 0) {
+    return Errors.conflict("This item is being committed or was already committed/deleted.");
+  }
+
+  const sessionId = current.sessionId;
+  const remainingCount = await prisma.uploadItem.count({ where: { sessionId } });
+
+  let sessionEmpty = false;
+  if (remainingCount === 0) {
+    await prisma.uploadSession.updateMany({
+      where: { id: sessionId, status: { in: ["ACTIVE", "PREVIEWING"] } },
+      data: { status: "ABANDONED" },
+    });
+    sessionEmpty = true;
+  }
+
+  return ok({ deletedItemId: id, sessionId, sessionEmpty });
 }

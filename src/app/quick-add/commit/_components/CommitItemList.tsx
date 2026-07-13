@@ -7,6 +7,9 @@ type Props = {
   activeTab: "all" | "filled" | "missing" | "duplicate" | "skipped" | "error";
   onSkip?: (itemId: string) => Promise<void>;
   onUnskip?: (itemId: string) => Promise<void>;
+  /** Phase 10-19A: 個別削除 */
+  onDelete?: (itemId: string) => Promise<void>;
+  deleteDisabled?: boolean;
 };
 
 function getBlockedReasons(item: Record<string, unknown>): string[] {
@@ -60,6 +63,8 @@ function filterItems(
 export default function CommitItemList({
   items,
   activeTab,
+  onDelete,
+  deleteDisabled,
 }: Props) {
   const filtered = filterItems(items, activeTab);
 
@@ -82,6 +87,8 @@ export default function CommitItemList({
               key={item.id as string}
               item={item}
               reasons={blockedReasons}
+              onDelete={onDelete}
+              deleteDisabled={deleteDisabled}
             />
           );
         })
