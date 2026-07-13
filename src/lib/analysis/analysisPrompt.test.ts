@@ -99,4 +99,50 @@ describe("ANALYSIS_SYSTEM_PROMPT", () => {
   it("Phase 10-10C: clear time words still win over bare light-quality words when both are present", () => {
     expect(ANALYSIS_SYSTEM_PROMPT).toContain("明確な時間語を優先して対応する時間帯タグを出す");
   });
+
+  // Phase 10-13C: 7 generic/abstract/low-value labels removed from the
+  // vocabulary based on real-world usage feedback — must not be listed as
+  // candidate tags, and must be explicitly named as "do not output".
+  it("Phase 10-13C: does not list the removed labels in the category enumeration lines", () => {
+    const outfitLine = ANALYSIS_SYSTEM_PROMPT.split("\n").find((l) => l.includes("2. 衣装"));
+    const placeLine = ANALYSIS_SYSTEM_PROMPT.split("\n").find((l) => l.includes("3. 場所"));
+    const lightLine = ANALYSIS_SYSTEM_PROMPT.split("\n").find((l) => l.includes("5. 光"));
+    const moodLine = ANALYSIS_SYSTEM_PROMPT.split("\n").find((l) => l.includes("7. 雰囲気"));
+    expect(outfitLine).toBeDefined();
+    expect(placeLine).toBeDefined();
+    expect(lightLine).toBeDefined();
+    expect(moodLine).toBeDefined();
+    expect(outfitLine).not.toContain("私服");
+    expect(placeLine).not.toContain("室内");
+    expect(placeLine).not.toContain("屋外");
+    expect(lightLine).not.toContain("自然光");
+    expect(moodLine).not.toContain("ナチュラル");
+    expect(moodLine).not.toContain("シンプル");
+    expect(moodLine).not.toContain("リラックス");
+  });
+
+  it("Phase 10-13C: explicitly instructs not to output the 7 removed labels", () => {
+    for (const label of ["自然光", "ナチュラル", "シンプル", "室内", "屋外", "私服", "リラックス"]) {
+      expect(ANALYSIS_SYSTEM_PROMPT).toContain(label);
+    }
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("次のタグは出さない");
+  });
+
+  it("Phase 10-13C: instructs preferring specific place labels over 室内/屋外", () => {
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("「室内」ではなく");
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("「屋外」ではなく");
+    for (const label of ["部屋", "ホテル", "スタジオ", "カフェ"]) {
+      expect(ANALYSIS_SYSTEM_PROMPT).toContain(label);
+    }
+    for (const label of ["海", "プール", "ビーチ", "街中", "自然", "テラス"]) {
+      expect(ANALYSIS_SYSTEM_PROMPT).toContain(label);
+    }
+  });
+
+  it("Phase 10-13C: instructs preferring specific outfit labels over 私服", () => {
+    expect(ANALYSIS_SYSTEM_PROMPT).toContain("「私服」のような大雑把な語は使わない");
+    for (const label of ["ドレス", "スーツ", "制服", "和装", "部屋着", "コート", "水着", "ランジェリー"]) {
+      expect(ANALYSIS_SYSTEM_PROMPT).toContain(label);
+    }
+  });
 });

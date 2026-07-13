@@ -305,9 +305,9 @@ describe("analyzePromptCore — DONE", () => {
       DEPS({
         tags: [
           { label: "高級感" }, // mood
-          { label: "ナチュラル" }, // mood (should be dropped by mood cap)
+          { label: "クール" }, // mood (should be dropped by mood cap)
           { label: "風景" }, // subject
-          { label: "自然光" }, // light
+          { label: "逆光" }, // light
           { label: "全身" }, // composition
           { label: "海" }, // place
           { label: "水着" }, // outfit
@@ -330,15 +330,42 @@ describe("analyzePromptCore — DONE", () => {
         "水着",
         "海",
         "全身",
-        "自然光",
+        "逆光",
         "風景",
         "料理",
         "商品",
       ]);
       // only 1 mood tag survived, and it was pushed out by the 8-cap here
-      const moods = r.tags.filter((t) => t.label === "高級感" || t.label === "ナチュラル");
+      const moods = r.tags.filter((t) => t.label === "高級感" || t.label === "クール");
       expect(moods.length).toBeLessThanOrEqual(1);
     }
+  });
+
+  // Phase 10-13C: end-to-end confirmation that removed generic/abstract/
+  // low-value labels never survive analyzePromptCore, even if the (mock)
+  // provider still returns them.
+  it("Phase 10-13C: drops removed low-value labels end-to-end (自然光/ナチュラル/シンプル/室内/屋外/私服/リラックス)", async () => {
+    const r = await analyzePromptCore(
+      { currentBody: "x", notes: null },
+      DEPS({
+        tags: [
+          { label: "自然光" },
+          { label: "ナチュラル" },
+          { label: "シンプル" },
+          { label: "室内" },
+          { label: "屋外" },
+          { label: "私服" },
+          { label: "リラックス" },
+          { label: "海" },
+        ],
+        keywords_ja: [],
+        keywords_en: [],
+        usage_category: "other",
+        language_detected: "ja",
+      }),
+    );
+    expect(r.status).toBe("DONE");
+    if (r.status === "DONE") expect(r.tags.map((t) => t.label)).toEqual(["海"]);
   });
 });
 

@@ -11,7 +11,7 @@ import { getSignedUrlCache, setSignedUrlCache } from "@/lib/supabase/signedUrlCa
 import { resolveWorkspaceImage } from "@/lib/images/resolveWorkspaceImage";
 import { isTranslationEnabled } from "@/lib/translation/translationProviderFactory";
 import { getEffectiveJapanesePromptBody } from "@/lib/translation/translationCore";
-import { isExcludedGenericLabel } from "@/lib/analysis/tagTaxonomy";
+import { isExcludedGenericLabel, isExcludedLowValueLabel } from "@/lib/analysis/tagTaxonomy";
 import { getCurrentAnalysisModelIdSuffix } from "@/lib/analysis/currentAnalysisSuggestionFilter";
 import { isVariationEnabled } from "@/lib/promptVariation/variationProviderFactory";
 
@@ -157,9 +157,15 @@ export async function GET(
     persons: image.imagePersons.map((p) => p.person),
     // Phase 10-10A: hide 人物/ポートレート from PENDING candidates (read-only
     // display filter; the TagSuggestion rows themselves are not modified).
-    // Composed with the Phase 10-13B current-prompt-version filter already
-    // applied in the query above — two independent read-only display layers.
-    tagSuggestions: image.tagSuggestions.filter((s) => !isExcludedGenericLabel(s.label)),
+    // Phase 10-13C: also hide EXCLUDED_LOW_VALUE_LABELS (自然光/ナチュラル/
+    // シンプル/室内/屋外/私服/リラックス) as defense-in-depth for any stray
+    // row — new PENDING rows already can't carry these (v6 vocab + 10-13B
+    // current-version filter). Composed with the Phase 10-13B
+    // current-prompt-version filter already applied in the query above —
+    // three independent read-only display layers.
+    tagSuggestions: image.tagSuggestions.filter(
+      (s) => !isExcludedGenericLabel(s.label) && !isExcludedLowValueLabel(s.label),
+    ),
     // Phase 10-9C-4: effectiveTranslatedBodyJa is computed here (server-side,
     // hash-checked) so the client never imports translationCore / node:crypto.
     prompt: image.prompt

@@ -32,7 +32,19 @@
 // sunset/etc.) is present" as the default, and narrows the "omit if uncertain"
 // caveat to ONLY the ambiguous terms (golden hour alone, bare light-quality
 // words). Changes analysis output meaning, so the version bump is required.
-export const ANALYSIS_PROMPT_VERSION = "ja-tags-v5";
+// ja-tags-v6 (Phase 10-13C): removed 7 generic/abstract/low-value labels from
+// CATEGORY_VOCAB based on real-world usage feedback — 私服 (outfit),
+// 室内/屋外 (place), 自然光 (light), ナチュラル/シンプル/リラックス (mood).
+// system prompt updated to instruct preferring specific labels (部屋/ホテル/
+// スタジオ/カフェ over 室内; 海/プール/ビーチ/街中/自然/テラス over 屋外) and
+// to explicitly list the removed labels as "do not output". Same reasoning as
+// v3/v4/v5: this changes analysis output meaning, so the version bump is
+// required — old ja-tags-v5 PENDING TagSuggestions are left in the DB
+// untouched (per Phase 10-13B, the current-version display filter already
+// hides any PENDING suggestion whose modelId doesn't end with the current
+// promptVersion, so v5 candidates simply stop appearing without any DB
+// UPDATE/DELETE).
+export const ANALYSIS_PROMPT_VERSION = "ja-tags-v6";
 
 export function buildAnalysisModelId(args: {
   provider: "mock" | "openai" | "gemini";

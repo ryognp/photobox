@@ -9,19 +9,20 @@ import { ANALYSIS_PROMPT_VERSION } from "@/lib/analysis/analysisModelId";
 describe("getCurrentAnalysisModelIdSuffix", () => {
   it("is ':' + the current ANALYSIS_PROMPT_VERSION", () => {
     expect(getCurrentAnalysisModelIdSuffix()).toBe(`:${ANALYSIS_PROMPT_VERSION}`);
-    expect(getCurrentAnalysisModelIdSuffix()).toBe(":ja-tags-v5");
+    expect(getCurrentAnalysisModelIdSuffix()).toBe(":ja-tags-v6");
   });
 });
 
 describe("isCurrentAnalysisModelId", () => {
   it("true for current-version composite modelIds regardless of provider/model", () => {
-    expect(isCurrentAnalysisModelId("openai:gpt-4o-mini:ja-tags-v5")).toBe(true);
-    expect(isCurrentAnalysisModelId("mock:mock:ja-tags-v5")).toBe(true);
+    expect(isCurrentAnalysisModelId("openai:gpt-4o-mini:ja-tags-v6")).toBe(true);
+    expect(isCurrentAnalysisModelId("mock:mock:ja-tags-v6")).toBe(true);
     // different model, same (current) prompt version → still current
-    expect(isCurrentAnalysisModelId("openai:gpt-4o:ja-tags-v5")).toBe(true);
+    expect(isCurrentAnalysisModelId("openai:gpt-4o:ja-tags-v6")).toBe(true);
   });
 
-  it("false for older prompt versions", () => {
+  it("false for older prompt versions (Phase 10-13C bumped current to v6, so v5 is now old too)", () => {
+    expect(isCurrentAnalysisModelId("openai:gpt-4o-mini:ja-tags-v5")).toBe(false);
     expect(isCurrentAnalysisModelId("openai:gpt-4o-mini:ja-tags-v4")).toBe(false);
     expect(isCurrentAnalysisModelId("openai:gpt-4o-mini:ja-tags-v3")).toBe(false);
     expect(isCurrentAnalysisModelId("openai:gpt-4o-mini:ja-tags-v2")).toBe(false);
@@ -33,9 +34,9 @@ describe("isCurrentAnalysisModelId", () => {
   });
 
   it("false when the suffix merely appears mid-string, not at the end", () => {
-    // e.g. a hypothetical "ja-tags-v5x" or version embedded earlier — must NOT match
-    expect(isCurrentAnalysisModelId("openai:gpt-4o-mini:ja-tags-v5x")).toBe(false);
-    expect(isCurrentAnalysisModelId("openai:ja-tags-v5:gpt-4o-mini")).toBe(false);
+    // e.g. a hypothetical "ja-tags-v6x" or version embedded earlier — must NOT match
+    expect(isCurrentAnalysisModelId("openai:gpt-4o-mini:ja-tags-v6x")).toBe(false);
+    expect(isCurrentAnalysisModelId("openai:ja-tags-v6:gpt-4o-mini")).toBe(false);
   });
 
   it("false for empty string / unrelated text", () => {
@@ -47,10 +48,10 @@ describe("isCurrentAnalysisModelId", () => {
 describe("filterCurrentVersionPendingSuggestions", () => {
   it("keeps only current-version suggestions, drops old ones", () => {
     const suggestions = [
-      { id: "s1", label: "海", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v5" } },
+      { id: "s1", label: "海", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v6" } },
       { id: "s2", label: "夕方", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v2" } },
-      { id: "s3", label: "水着", analysis: { modelId: "mock:mock:ja-tags-v5" } },
-      { id: "s4", label: "室内", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v4" } },
+      { id: "s3", label: "水着", analysis: { modelId: "mock:mock:ja-tags-v6" } },
+      { id: "s4", label: "室内", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v5" } },
     ];
     const result = filterCurrentVersionPendingSuggestions(suggestions);
     expect(result.map((s) => s.id)).toEqual(["s1", "s3"]);
@@ -58,7 +59,7 @@ describe("filterCurrentVersionPendingSuggestions", () => {
 
   it("drops a suggestion whose analysis is null or missing", () => {
     const suggestions = [
-      { id: "s1", label: "海", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v5" } },
+      { id: "s1", label: "海", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v6" } },
       { id: "s2", label: "夕方", analysis: null },
       { id: "s3", label: "水着" }, // analysis field entirely absent
     ];
@@ -68,7 +69,7 @@ describe("filterCurrentVersionPendingSuggestions", () => {
 
   it("does not mutate the input array or its items", () => {
     const suggestions = [
-      { id: "s1", label: "海", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v5" } },
+      { id: "s1", label: "海", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v6" } },
       { id: "s2", label: "夕方", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v2" } },
     ];
     const copy = JSON.parse(JSON.stringify(suggestions));
@@ -85,7 +86,7 @@ describe("filterCurrentVersionPendingSuggestions", () => {
     // is NOT filtered by this helper — it only judges by modelId. The two
     // filters are independent and meant to be composed by the caller.
     const suggestions = [
-      { id: "s1", label: "人物", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v5" } },
+      { id: "s1", label: "人物", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v6" } },
       { id: "s2", label: "ポートレート", analysis: { modelId: "openai:gpt-4o-mini:ja-tags-v2" } },
     ];
     const result = filterCurrentVersionPendingSuggestions(suggestions);

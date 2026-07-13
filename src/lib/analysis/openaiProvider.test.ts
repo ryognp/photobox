@@ -8,13 +8,13 @@ function clientThrowing(err: unknown): AnalysisResponsesClient {
   return { responses: { create: vi.fn(async () => { throw err; }) } };
 }
 
-const CFG = { apiKey: "sk-x", model: "gpt-4o-mini", modelId: "openai:gpt-4o-mini:ja-tags-v5", timeoutMs: 20000 };
+const CFG = { apiKey: "sk-x", model: "gpt-4o-mini", modelId: "openai:gpt-4o-mini:ja-tags-v6", timeoutMs: 20000 };
 
 describe("createOpenAIProvider", () => {
   it("returns the parsed JSON body only (modelId is the composite id)", async () => {
     const body = { tags: [{ label: "猫", confidence: 0.9 }], keywords_ja: ["猫"], keywords_en: [], usage_category: "other", language_detected: "ja" };
     const provider = createOpenAIProvider({ ...CFG, client: clientReturning(JSON.stringify(body)) });
-    expect(provider.modelId).toBe("openai:gpt-4o-mini:ja-tags-v5");
+    expect(provider.modelId).toBe("openai:gpt-4o-mini:ja-tags-v6");
     const result = await provider.analyze("a cat");
     expect(result).toEqual(body);
   });
