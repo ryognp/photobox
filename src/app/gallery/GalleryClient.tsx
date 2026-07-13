@@ -10,6 +10,7 @@ import {
   type ImageDetail,
   type PersonSummary,
   type TagSuggestion,
+  type TagSummary,
   type TranslatePromptResult,
 } from "@/lib/gallery/imagesClient"
 import { removeTagById } from "@/lib/gallery/tagState"
@@ -62,6 +63,7 @@ type GalleryAction =
     }
   | { type: "analysis_result"; suggestions: TagSuggestion[] }
   | { type: "tag_removed"; tagId: string }
+  | { type: "tag_added"; tag: TagSummary }
   | { type: "person_assigned"; person: PersonSummary }
   | { type: "person_removed"; personId: string }
   | { type: "translation_updated"; result: TranslatePromptResult }
@@ -116,6 +118,10 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
     case "tag_removed": {
       if (!s.detail) return s
       return { ...s, detail: { ...s.detail, tags: removeTagById(s.detail.tags, a.tagId) } }
+    }
+    case "tag_added": {
+      if (!s.detail) return s
+      return { ...s, detail: { ...s.detail, tags: addUniqueById(s.detail.tags, a.tag) } }
     }
     case "person_assigned": {
       if (!s.detail) return s
@@ -358,6 +364,7 @@ function GalleryInner() {
             onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
             onAnalyzed={(suggestions) => dispatch({ type: "analysis_result", suggestions })}
             onTagRemoved={(tagId) => dispatch({ type: "tag_removed", tagId })}
+            onTagAdded={(tag) => dispatch({ type: "tag_added", tag })}
             onPersonAssigned={(person) => dispatch({ type: "person_assigned", person })}
             onPersonRemoved={(personId) => dispatch({ type: "person_removed", personId })}
             onTranslated={(result) => dispatch({ type: "translation_updated", result })}
@@ -377,6 +384,7 @@ function GalleryInner() {
         onSuggestionResolved={(payload) => dispatch({ type: "suggestion_resolved", ...payload })}
         onAnalyzed={(suggestions) => dispatch({ type: "analysis_result", suggestions })}
         onTagRemoved={(tagId) => dispatch({ type: "tag_removed", tagId })}
+        onTagAdded={(tag) => dispatch({ type: "tag_added", tag })}
         onPersonAssigned={(person) => dispatch({ type: "person_assigned", person })}
         onPersonRemoved={(personId) => dispatch({ type: "person_removed", personId })}
         onTranslated={(result) => dispatch({ type: "translation_updated", result })}
