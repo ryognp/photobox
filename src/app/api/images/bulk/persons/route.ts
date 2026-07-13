@@ -30,7 +30,8 @@ import { normalizeBulkPersonName } from "@/lib/gallery/bulkPersonInput";
  * that already have the person linked (createMany skipDuplicates).
  *
  * Order: auth → workspace → rate limit → body validation (imageIds, name) →
- * image existence/eligibility check → person upsert → bulk imagePerson insert.
+ * image existence/eligibility check → $transaction(person upsert → count
+ * existing links → bulk imagePerson insert).
  */
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
@@ -77,30 +78,38 @@ export async function POST(request: NextRequest) {
     return Errors.validation("Some imageIds are deleted or not ACTIVE");
   }
 
-  const person = await prisma.person.upsert({
-    where: { workspaceId_name: { workspaceId: workspace.id, name: nameResult.name } },
-    create: { workspaceId: workspace.id, name: nameResult.name },
-    update: {},
-    select: { id: true, name: true },
-  });
+  const targetCount = eligibleImageIds.length;
 
-  const alreadyLinkedCount = await prisma.imagePerson.count({
-    where: { personId: person.id, imageId: { in: eligibleImageIds } },
-  });
+  const { person, alreadyLinkedCount, createdLinkCount } = await prisma.$transaction(async (tx) => {
+    const person = await tx.person.upsert({
+      where: { workspaceId_name: { workspaceId: workspace.id, name: nameResult.name } },
+      create: { workspaceId: workspace.id, name: nameResult.name },
+      update: {},
+      select: { id: true, name: true },
+    });
 
-  const created = await prisma.imagePerson.createMany({
-    data: eligibleImageIds.map((imageId) => ({
-      imageId,
-      personId: person.id,
-      workspaceId: workspace.id,
-    })),
-    skipDuplicates: true,
+    const alreadyLinkedCount = await tx.imagePerson.count({
+      where: { personId: person.id, imageId: { in: eligibleImageIds } },
+    });
+
+    const created = await tx.imagePerson.createMany({
+      data: eligibleImageIds.map((imageId) => ({
+        imageId,
+        personId: person.id,
+        workspaceId: workspace.id,
+      })),
+      skipDuplicates: true,
+    });
+
+    return { person, alreadyLinkedCount, createdLinkCount: created.count };
   });
 
   return ok({
     person,
     requestedCount,
-    linkedCount: alreadyLinkedCount + created.count,
+    targetCount,
+    linkedCount: alreadyLinkedCount + createdLinkCount,
     alreadyLinkedCount,
+    createdLinkCount,
   });
 }

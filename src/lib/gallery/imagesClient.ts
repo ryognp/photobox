@@ -362,8 +362,10 @@ export async function addManualImageTag(imageId: string, name: string): Promise<
 /** Result shared by both bulk assignment endpoints (Phase 10-18B). */
 export type BulkAssignResult = {
   requestedCount: number;
+  targetCount: number;
   linkedCount: number;
   alreadyLinkedCount: number;
+  createdLinkCount: number;
 };
 
 export type BulkAddTagResult = BulkAssignResult & { tag: TagSummary };

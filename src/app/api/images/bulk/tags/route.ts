@@ -34,7 +34,8 @@ import { normalizeManualTagName } from "@/lib/gallery/manualTagInput";
  * reflect alreadyLinkedCount vs newly linked).
  *
  * Order: auth → workspace → rate limit → body validation (imageIds, name) →
- * image existence/eligibility check → tag upsert → bulk imageTag insert.
+ * image existence/eligibility check → $transaction(tag upsert → count
+ * existing links → bulk imageTag insert).
  */
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
@@ -81,30 +82,38 @@ export async function POST(request: NextRequest) {
     return Errors.validation("Some imageIds are deleted or not ACTIVE");
   }
 
-  const tag = await prisma.tag.upsert({
-    where: { workspaceId_name: { workspaceId: workspace.id, name: nameResult.name } },
-    create: { workspaceId: workspace.id, name: nameResult.name },
-    update: {},
-    select: { id: true, name: true },
-  });
+  const targetCount = eligibleImageIds.length;
 
-  const alreadyLinkedCount = await prisma.imageTag.count({
-    where: { tagId: tag.id, imageId: { in: eligibleImageIds } },
-  });
+  const { tag, alreadyLinkedCount, createdLinkCount } = await prisma.$transaction(async (tx) => {
+    const tag = await tx.tag.upsert({
+      where: { workspaceId_name: { workspaceId: workspace.id, name: nameResult.name } },
+      create: { workspaceId: workspace.id, name: nameResult.name },
+      update: {},
+      select: { id: true, name: true },
+    });
 
-  const created = await prisma.imageTag.createMany({
-    data: eligibleImageIds.map((imageId) => ({
-      imageId,
-      tagId: tag.id,
-      workspaceId: workspace.id,
-    })),
-    skipDuplicates: true,
+    const alreadyLinkedCount = await tx.imageTag.count({
+      where: { tagId: tag.id, imageId: { in: eligibleImageIds } },
+    });
+
+    const created = await tx.imageTag.createMany({
+      data: eligibleImageIds.map((imageId) => ({
+        imageId,
+        tagId: tag.id,
+        workspaceId: workspace.id,
+      })),
+      skipDuplicates: true,
+    });
+
+    return { tag, alreadyLinkedCount, createdLinkCount: created.count };
   });
 
   return ok({
     tag,
     requestedCount,
-    linkedCount: alreadyLinkedCount + created.count,
+    targetCount,
+    linkedCount: alreadyLinkedCount + createdLinkCount,
     alreadyLinkedCount,
+    createdLinkCount,
   });
 }
