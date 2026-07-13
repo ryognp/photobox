@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation"
 import {
   fetchImages,
   fetchImageDetail,
+  bulkAddImageTag,
+  bulkAssignImagePerson,
   type GalleryFilters,
   type GalleryImage,
   type ImageDetail,
@@ -16,6 +18,7 @@ import {
 import { removeTagById } from "@/lib/gallery/tagState"
 import { addUniqueById } from "@/lib/gallery/personState"
 import { toggleBulkSelectedId, clearBulkSelectedIds } from "@/lib/gallery/bulkSelectionState"
+import { formatBulkTagSuccessMessage, formatBulkPersonSuccessMessage } from "@/lib/gallery/bulkActionMessage"
 import BulkSelectionToolbar from "./_components/BulkSelectionToolbar"
 import { applyTranslationUpdate, applyPromptEditToDetailPrompt } from "@/lib/gallery/translationState"
 import { normalizeTagIds } from "@/lib/gallery/tagFilters"
@@ -75,6 +78,8 @@ type GalleryAction =
   | { type: "bulk_toggle_image"; imageId: string }
   | { type: "bulk_select_visible" }
   | { type: "bulk_clear_selection" }
+  | { type: "bulk_tag_added"; tag: TagSummary; imageIds: string[] }
+  | { type: "bulk_person_assigned"; person: PersonSummary; imageIds: string[] }
 
 function reducer(s: GalleryState, a: GalleryAction): GalleryState {
   switch (a.type) {
@@ -159,6 +164,17 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
       return { ...s, bulkSelectedIds: s.images.map((img) => img.id) }
     case "bulk_clear_selection":
       return { ...s, bulkSelectedIds: clearBulkSelectedIds() }
+    case "bulk_tag_added": {
+      // 現在開いているdetailがbulk対象に含まれる場合のみ更新。state.imagesは
+      // 更新しない(既存の単体tag_addedと同じ制限、カード上のタグ表示は次回
+      // fetch/reloadまで反映されない)。bulkSelectedIdsは成功後も維持する。
+      if (!s.detail || !a.imageIds.includes(s.detail.id)) return s
+      return { ...s, detail: { ...s.detail, tags: addUniqueById(s.detail.tags, a.tag) } }
+    }
+    case "bulk_person_assigned": {
+      if (!s.detail || !a.imageIds.includes(s.detail.id)) return s
+      return { ...s, detail: { ...s.detail, persons: addUniqueById(s.detail.persons, a.person) } }
+    }
   }
 }
 
@@ -306,6 +322,23 @@ function GalleryInner() {
     }
   }
 
+  // Phase 10-18D: bulk tag/person action — 既存bulk API(Phase 10-18B)を呼び、
+  // 開いているdetailがbulk対象に含まれる場合のみreducerでtags/personsを更新
+  // する。bulkSelectedIdsは呼び出し元(BulkSelectionToolbar)が成功後も維持する。
+  const handleBulkAddTag = async (name: string): Promise<string> => {
+    const imageIds = state.bulkSelectedIds
+    const result = await bulkAddImageTag(imageIds, name)
+    dispatch({ type: "bulk_tag_added", tag: result.tag, imageIds })
+    return formatBulkTagSuccessMessage(result.tag.name, result)
+  }
+
+  const handleBulkAssignPerson = async (name: string): Promise<string> => {
+    const imageIds = state.bulkSelectedIds
+    const result = await bulkAssignImagePerson(imageIds, name)
+    dispatch({ type: "bulk_person_assigned", person: result.person, imageIds })
+    return formatBulkPersonSuccessMessage(result.person.name, result)
+  }
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-50">
       {/* Header (Phase 10-8D: nav buttons hidden below md so the mobile
@@ -353,13 +386,15 @@ function GalleryInner() {
         </div>
       </header>
 
-      {/* Phase 10-18C: 一括選択toolbar（選択0件時は自身で非表示）。bulk action
-          (タグ/人物一括追加)ボタンはPhase 10-18Dで追加する。 */}
+      {/* Phase 10-18C/D: 一括選択toolbar（選択0件時は自身で非表示）+
+          タグ/人物一括追加action panel。 */}
       <BulkSelectionToolbar
         selectedCount={state.bulkSelectedIds.length}
         visibleCount={state.images.length}
         onSelectVisible={() => dispatch({ type: "bulk_select_visible" })}
         onClear={() => dispatch({ type: "bulk_clear_selection" })}
+        onBulkAddTag={handleBulkAddTag}
+        onBulkAssignPerson={handleBulkAssignPerson}
       />
 
       {/* Body */}
