@@ -13,7 +13,8 @@ export type RateLimitPreset =
   | "translationBatch"
   | "translatePrompt"
   | "promptVariation"
-  | "personAssignAction";
+  | "personAssignAction"
+  | "manualTagAdd";
 
 export type RateLimitSource = "shared" | "disabled" | "error";
 

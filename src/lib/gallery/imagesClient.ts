@@ -336,6 +336,29 @@ export async function removeImagePerson(imageId: string, personId: string): Prom
   return json.data;
 }
 
+/** Existing Tag summary as returned by /api/tags and image tag links. */
+export type TagSummary = { id: string; name: string };
+
+/**
+ * Adds a manually-typed tag to an image (Phase 10-16B). Finds/creates the
+ * Tag by name (workspace-scoped) and attaches ImageTag — no taxonomy/synonym
+ * normalization is applied, the name is used verbatim (trimmed). Idempotent
+ * server-side (safe to call again for an already-attached tag name).
+ */
+export async function addManualImageTag(imageId: string, name: string): Promise<TagSummary> {
+  const res = await fetch(`/api/images/${imageId}/tags`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to add tag (${res.status})`);
+  }
+  const json = (await res.json()) as { data: { tag: TagSummary } };
+  return json.data.tag;
+}
+
 export type AnalyzeImageResult = {
   cached: boolean;
   analysis: {
