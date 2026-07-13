@@ -198,10 +198,18 @@ export async function PATCH(
 // Storage failure never leaves an orphaned DB row pointing at deleted paths
 // (unlike the async cleanup cron, which tolerates eventual consistency —
 // this is a synchronous user action and must not silently drop data).
-// COMMITTED items are never deletable (assertItemNotCommitted + a `commitStatus:
-// { not: "COMMITTED" }` safety net on the actual deleteMany). Committed Image
-// rows, Tag/Person/Scene masters, and ImageTag/ImagePerson are never touched
-// here — only the UploadItem row and its own temp Storage objects.
+//
+// Review fix: deletable commitStatus is PENDING/FAILED ONLY — IN_PROGRESS is
+// excluded because the commit API may be actively reading/writing this
+// item's temp Storage paths while committing; deleting them mid-commit would
+// corrupt that in-flight operation. committedImageId !== null is also
+// rejected (belt-and-suspenders alongside the commitStatus check — a
+// COMMITTED/skip-completed item always has this set). All of this is
+// re-checked against a FRESH read right before the Storage call, not just
+// authorizeUploadItem's snapshot, to close the race window between auth and
+// deletion. Committed Image rows, Tag/Person/Scene masters, and
+// ImageTag/ImagePerson are never touched here — only the UploadItem row and
+// its own temp Storage objects.
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -227,13 +235,37 @@ export async function DELETE(
   });
   if (!rl.allowed) return Errors.rateLimited(rateLimitHeaders(rl));
 
-  const storagePaths = await prisma.uploadItem.findUnique({
+  // 認可チェック後、Storage削除の直前にDB状態を再取得して最終判定する
+  // (auth.itemの古いsnapshotだけに依存しない — commit処理と競合するレースを狭める)。
+  const current = await prisma.uploadItem.findUnique({
     where: { id },
-    select: { tempStoragePath: true, tempThumbnailPath: true, tempPreviewPath: true },
+    select: {
+      sessionId: true,
+      commitStatus: true,
+      committedImageId: true,
+      tempStoragePath: true,
+      tempThumbnailPath: true,
+      tempPreviewPath: true,
+      session: { select: { status: true } },
+    },
   });
-  if (!storagePaths) return Errors.notFound("Item not found");
+  if (!current) return Errors.notFound("Item not found");
 
-  const paths = collectUploadItemStoragePaths(storagePaths);
+  if (current.session.status !== "ACTIVE" && current.session.status !== "PREVIEWING") {
+    return Errors.validation(
+      `Session status is '${current.session.status}'. Only ACTIVE or PREVIEWING sessions can be edited.`,
+    );
+  }
+  if (current.commitStatus !== "PENDING" && current.commitStatus !== "FAILED") {
+    return Errors.validation(
+      `Item commitStatus is '${current.commitStatus}'. Only PENDING or FAILED items can be deleted.`,
+    );
+  }
+  if (current.committedImageId !== null) {
+    return Errors.validation("This item has already been committed and cannot be deleted.");
+  }
+
+  const paths = collectUploadItemStoragePaths(current);
   if (paths.length > 0) {
     const { error } = await supabaseAdmin.storage.from(BUCKET).remove(paths);
     if (error) {
@@ -242,21 +274,22 @@ export async function DELETE(
     }
   }
 
-  // 安全弁: COMMITTED になっていた場合は削除0件(deleteMany は例外を投げない)。
+  // 安全弁: commitStatus/committedImageIdが上のチェックと同時に変化していても、
+  // ここで条件を満たさなければ削除0件になる(deleteMany は例外を投げない)。
   const deleted = await prisma.uploadItem.deleteMany({
-    where: { id, commitStatus: { not: "COMMITTED" } },
+    where: { id, commitStatus: { in: ["PENDING", "FAILED"] }, committedImageId: null },
   });
   if (deleted.count === 0) {
-    return Errors.conflict("This item was already committed or already deleted.");
+    return Errors.conflict("This item is being committed or was already committed/deleted.");
   }
 
-  const sessionId = auth.item.session.id;
+  const sessionId = current.sessionId;
   const remainingCount = await prisma.uploadItem.count({ where: { sessionId } });
 
   let sessionEmpty = false;
   if (remainingCount === 0) {
-    await prisma.uploadSession.update({
-      where: { id: sessionId },
+    await prisma.uploadSession.updateMany({
+      where: { id: sessionId, status: { in: ["ACTIVE", "PREVIEWING"] } },
       data: { status: "ABANDONED" },
     });
     sessionEmpty = true;
