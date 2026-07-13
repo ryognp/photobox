@@ -2,6 +2,7 @@
 
 import { useEffect, useReducer, useState } from "react";
 import Link from "next/link";
+import { filterTagsForMasters } from "@/lib/masters/tagFilters";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -562,6 +563,8 @@ function useList<T extends { id: string }>(url: string) {
 export default function MastersClient() {
   const [tab, setTab] = useState<Tab>("persons");
   const [q, setQ] = useState("");
+  // Phase 10-17B: Tagsタブ限定の表示フィルタ（クライアント側のみ、非破壊的）。
+  const [tagsUnusedOnly, setTagsUnusedOnly] = useState(false);
 
   const personUrl = `/api/persons${q ? `?q=${encodeURIComponent(q)}` : ""}`;
   const sceneUrl = `/api/scenes${q ? `?q=${encodeURIComponent(q)}` : ""}`;
@@ -646,19 +649,40 @@ export default function MastersClient() {
           </ListPanel>
         )}
         {tab === "tags" && (
-          <ListPanel state={tags.state}>
-            {(items: Tag[]) =>
-              items.map((t) => (
-                <TagCard
-                  key={t.id}
-                  tag={t}
-                  allTags={tags.state.phase === "ok" ? tags.state.items : []}
-                  onUpdated={(updated) => tags.update(updated)}
-                  onDeleted={(id) => tags.remove(id)}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-1.5 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={tagsUnusedOnly}
+                  onChange={(e) => setTagsUnusedOnly(e.target.checked)}
                 />
-              ))
-            }
-          </ListPanel>
+                使用数0件のみ
+              </label>
+              {tags.state.phase === "ok" && (
+                <span className="text-xs text-zinc-400">
+                  表示中: {filterTagsForMasters(tags.state.items, { unusedOnly: tagsUnusedOnly }).length}件 / 全体: {tags.state.items.length}件
+                </span>
+              )}
+            </div>
+            <ListPanel state={tags.state}>
+              {(items: Tag[]) => {
+                const filtered = filterTagsForMasters(items, { unusedOnly: tagsUnusedOnly });
+                if (filtered.length === 0 && tagsUnusedOnly) {
+                  return <div className="col-span-full text-sm text-zinc-400">使用数0件のタグはありません</div>;
+                }
+                return filtered.map((t) => (
+                  <TagCard
+                    key={t.id}
+                    tag={t}
+                    allTags={tags.state.phase === "ok" ? tags.state.items : []}
+                    onUpdated={(updated) => tags.update(updated)}
+                    onDeleted={(id) => tags.remove(id)}
+                  />
+                ));
+              }}
+            </ListPanel>
+          </div>
         )}
       </div>
     </div>
