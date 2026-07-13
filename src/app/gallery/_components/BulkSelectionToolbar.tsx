@@ -134,14 +134,19 @@ function PersonSelectPanel({
     }
   }, [])
 
+  // レビュー修正: 検索queryで絞り込んだ後の候補(filteredPersons)を唯一の
+  // 真実として扱う。selectedIdが絞り込みで候補から外れた場合、selectedPerson
+  // はnullになり、送信ボタンがdisabledになる(stateに古いselectedIdが残って
+  // いても、見えている候補にない人物は送信できない)。
+  const filteredPersons = fetchState.phase === "ok" ? filterPersonsForBulkSelect(fetchState.persons, query) : []
+  const selectedPerson = filteredPersons.find((p) => p.id === selectedId) ?? null
+
   const submit = async () => {
-    if (fetchState.phase !== "ok") return
-    const person = fetchState.persons.find((p) => p.id === selectedId)
-    if (!person) return
+    if (!selectedPerson) return
     setPhase("submitting")
     setMessage(null)
     try {
-      const successMessage = await onSubmit(person.name)
+      const successMessage = await onSubmit(selectedPerson.name)
       setMessage(successMessage)
       setPhase("idle")
     } catch (e: unknown) {
@@ -198,7 +203,7 @@ function PersonSelectPanel({
               className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
             >
               <option value="">人物を選択</option>
-              {filterPersonsForBulkSelect(fetchState.persons, query).map((p) => (
+              {filteredPersons.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
@@ -206,12 +211,15 @@ function PersonSelectPanel({
             </select>
             <button
               onClick={() => void submit()}
-              disabled={isSubmitting || selectedId === ""}
+              disabled={isSubmitting || !selectedPerson}
               className="rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
             >
               {isSubmitting ? "追加中…" : "追加"}
             </button>
           </div>
+          {filteredPersons.length === 0 && (
+            <p className="text-xs text-zinc-400">該当する人物がありません</p>
+          )}
         </>
       )}
 
