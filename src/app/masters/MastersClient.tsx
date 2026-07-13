@@ -611,14 +611,16 @@ function useList<T extends { id: string }>(url: string) {
       }
       if (a.type === "add" && s.phase === "ok") {
         // POST /api/tags は名前が既存と衝突した場合、新規作成せず既存行を
-        // 200で返す仕様。既にidが一覧にあれば置換(重複させない)、なければ
+        // 200で返す仕様。ただしそのレスポンスにはimageCountが含まれないため、
+        // 既にidが一覧にある場合は絶対に置換しない(useListはgenericで
+        // imageCount前提にできないため、「既存idなら何もしない」を安全側の
+        // 方針とする — 置換すると呼び出し元が渡した不完全なitemで
+        // imageCount等の既存フィールドを壊してしまう)。新規idの場合のみ
         // 先頭に追加する(名前順への再ソートはせず、次回GETまでの見た目のみ)。
         const exists = s.items.some((it) => it.id === a.item.id);
         return {
           phase: "ok",
-          items: exists
-            ? s.items.map((it) => (it.id === a.item.id ? a.item : it))
-            : [a.item, ...s.items],
+          items: exists ? s.items : [a.item, ...s.items],
         };
       }
       return s;
