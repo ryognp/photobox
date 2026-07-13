@@ -4,8 +4,9 @@
 // unit-testable and applied provider-independently inside analyzePromptCore.
 //
 // Pipeline (see refineTagCandidates): trim → synonym-normalize → drop banned →
-// drop excluded-generic (Phase 10-10A) → drop out-of-vocabulary → dedupe →
-// category-priority sort → mood cap (1) → total cap (8).
+// drop excluded-generic (Phase 10-10A) → drop excluded-low-value (Phase 10-13C)
+// → drop out-of-vocabulary → dedupe → category-priority sort → mood cap (1) →
+// total cap (8).
 //
 // The person-attribute denylist (analysisSchema.ts) is a SEPARATE safety
 // filter applied BEFORE this in analyzePromptCore; this file is about tag
@@ -48,22 +49,20 @@ export const CATEGORY_VOCAB: Record<string, TagCategory> = {
   昼: "time",
   夕方: "time",
   夜: "time",
-  // 衣装
+  // 衣装（Phase 10-13C: 「私服」は大雑把すぎるため除外。具体的な衣装語のみ残す）
   水着: "outfit",
   ランジェリー: "outfit",
   ドレス: "outfit",
-  私服: "outfit",
   スーツ: "outfit",
   制服: "outfit",
   和装: "outfit",
   部屋着: "outfit",
   コート: "outfit",
-  // 場所
+  // 場所（Phase 10-13C: 「室内」「屋外」は広すぎるため除外。「部屋」等の
+  // 具体的な場所語で代替する）
   海: "place",
   プール: "place",
   ビーチ: "place",
-  室内: "place",
-  屋外: "place",
   ベッド: "place",
   浴室: "place",
   テラス: "place",
@@ -82,8 +81,8 @@ export const CATEGORY_VOCAB: Record<string, TagCategory> = {
   手元: "composition",
   クローズアップ: "composition",
   バストアップ: "composition",
-  // 光・環境
-  自然光: "light",
+  // 光・環境（Phase 10-13C: 「自然光」はprompt本文から判断しづらく汎用的
+  // すぎるため除外。逆光/室内光/暖色光/日差し/夕景は今回は維持）
   逆光: "light",
   室内光: "light",
   暖色光: "light",
@@ -98,12 +97,10 @@ export const CATEGORY_VOCAB: Record<string, TagCategory> = {
   動物: "subject",
   犬: "subject",
   猫: "subject",
-  // 雰囲気
-  ナチュラル: "mood",
-  シンプル: "mood",
+  // 雰囲気（Phase 10-13C: 「ナチュラル」「シンプル」「リラックス」は主観的・
+  // 抽象的すぎるため除外。高級感/クールは今回は維持）
   高級感: "mood",
   クール: "mood",
-  リラックス: "mood",
 };
 
 /**
@@ -122,11 +119,18 @@ export const CATEGORY_VOCAB: Record<string, TagCategory> = {
  * sunrise and sunset light), and a bare "golden hour" -> 夕方 mapping caused
  * morning photos to be mistagged as 夕方. Bare light-quality words
  * (golden/warm/soft/natural light) are intentionally NOT mapped to any
- * time-of-day label — they stay out-of-vocabulary for the `time` category and
- * are dropped by refineTagCandidates (they may still match the unrelated
- * `light` category, e.g. 自然光, but never `time`). Only combined phrases that
- * unambiguously name a direction (morning/sunrise vs evening/sunset) are
- * added below.
+ * time-of-day label — they stay out-of-vocabulary for the `time` category
+ * (and, since Phase 10-13C removed 自然光 from CATEGORY_VOCAB, "natural light"
+ * is now out-of-vocabulary entirely — it maps to nothing). Only combined
+ * phrases that unambiguously name a direction (morning/sunrise vs
+ * evening/sunset) are added below.
+ *
+ * Phase 10-13C: no synonym in this table normalizes to any of the removed
+ * labels (私服/室内/屋外/自然光/ナチュラル/シンプル/リラックス) — there never
+ * was an English-casual/indoor/outdoor/natural-light/mood synonym mapped to
+ * them, so nothing needed to be deleted here. Do NOT add new synonyms that
+ * collapse onto these removed labels; an unmapped surface form should fall
+ * through to out-of-vocabulary (dropped), not be redirected to a removed tag.
  */
 export const SYNONYM_MAP: Record<string, string> = {
   海辺: "海",
@@ -192,6 +196,28 @@ const BANNED_SUFFIX = [/の描写$/, /の背景$/, /のシーン$/, /の質感$/
  */
 export const EXCLUDED_GENERIC_LABELS = new Set<string>(["人物", "ポートレート"]);
 
+/**
+ * Phase 10-13C: labels removed from CATEGORY_VOCAB for being too generic /
+ * abstract / low-value for Gallery filtering, based on real-world usage
+ * feedback (distinct reason from EXCLUDED_GENERIC_LABELS, which targets labels
+ * that match ~all images specifically — these instead were judged too vague,
+ * subjective, or hard to judge from prompt text alone). Kept as an explicit,
+ * separately-named set (not merged into EXCLUDED_GENERIC_LABELS) so the two
+ * removal reasons stay traceable independently. Removing them from
+ * CATEGORY_VOCAB already drops them via the out-of-vocabulary check in
+ * refineTagCandidates; this set is defense-in-depth for a future accidental
+ * vocab re-addition, exactly like EXCLUDED_GENERIC_LABELS.
+ */
+export const EXCLUDED_LOW_VALUE_LABELS = new Set<string>([
+  "自然光",
+  "ナチュラル",
+  "シンプル",
+  "室内",
+  "屋外",
+  "私服",
+  "リラックス",
+]);
+
 const MAX_TAGS = 8;
 const MAX_MOOD_TAGS = 1;
 
@@ -210,6 +236,13 @@ export function normalizeTagLabel(label: string): string {
 /** True if the label is excluded for being too generic (matches ~all images). */
 export function isExcludedGenericLabel(label: string): boolean {
   return EXCLUDED_GENERIC_LABELS.has(label.trim());
+}
+
+/** True if the label is excluded for being too vague/abstract/low-value for
+ *  Gallery filtering (Phase 10-13C). Separate reason/layer from
+ *  isExcludedGenericLabel — see EXCLUDED_LOW_VALUE_LABELS doc comment. */
+export function isExcludedLowValueLabel(label: string): boolean {
+  return EXCLUDED_LOW_VALUE_LABELS.has(label.trim());
 }
 
 /** True if the label is a banned description/atmosphere phrase. */
@@ -240,6 +273,7 @@ export function refineTagCandidates(tags: RawTagCandidate[]): RawTagCandidate[] 
     const label = normalizeTagLabel(t.label);
     if (isBannedTagLabel(label)) continue;
     if (isExcludedGenericLabel(label)) continue; // Phase 10-10A: too generic for Gallery filtering
+    if (isExcludedLowValueLabel(label)) continue; // Phase 10-13C: too vague/abstract/low-value
     const category = getTagCategory(label);
     if (!category) continue; // controlled vocabulary: drop out-of-vocab
     const key = label.toLowerCase();

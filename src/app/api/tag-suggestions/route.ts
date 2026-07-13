@@ -3,7 +3,7 @@ import "server-only";
 import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ok, Errors } from "@/lib/apiResponse";
-import { isExcludedGenericLabel } from "@/lib/analysis/tagTaxonomy";
+import { isExcludedGenericLabel, isExcludedLowValueLabel } from "@/lib/analysis/tagTaxonomy";
 import { getCurrentAnalysisModelIdSuffix } from "@/lib/analysis/currentAnalysisSuggestionFilter";
 
 /**
@@ -28,6 +28,12 @@ import { getCurrentAnalysisModelIdSuffix } from "@/lib/analysis/currentAnalysisS
  *   Older prompt-version PENDING rows are left in the DB untouched but no
  *   longer inflate this sidebar aggregation. Independent layer from the
  *   人物/ポートレート label filter above.
+ * - Phase 10-13C: labels in EXCLUDED_LOW_VALUE_LABELS (自然光/ナチュラル/
+ *   シンプル/室内/屋外/私服/リラックス) are also hidden here as
+ *   defense-in-depth — the v6 vocab/prompt change plus the 10-13B
+ *   current-version filter already keep new PENDING rows from ever carrying
+ *   these labels, but this catches any stray/legacy row without touching the
+ *   DB. Independent layer, same read-only pattern as EXCLUDED_GENERIC_LABELS.
  */
 export async function GET() {
   const user = await getCurrentUser();
@@ -52,6 +58,7 @@ export async function GET() {
   const counts = new Map<string, number>();
   for (const r of rows) {
     if (isExcludedGenericLabel(r.label)) continue;
+    if (isExcludedLowValueLabel(r.label)) continue;
     counts.set(r.label, (counts.get(r.label) ?? 0) + 1);
   }
 

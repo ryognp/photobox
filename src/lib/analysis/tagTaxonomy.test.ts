@@ -3,6 +3,7 @@ import {
   normalizeTagLabel,
   isBannedTagLabel,
   isExcludedGenericLabel,
+  isExcludedLowValueLabel,
   getTagCategory,
   refineTagCandidates,
 } from "@/lib/analysis/tagTaxonomy";
@@ -63,6 +64,15 @@ describe("normalizeTagLabel", () => {
       expect(normalizeTagLabel(t)).toBe(t); // identity — no synonym entry
     }
   });
+
+  it("Phase 10-13C: no synonym normalizes to any removed label (私服/室内/屋外/自然光/ナチュラル/シンプル/リラックス)", () => {
+    // English surface forms that MIGHT plausibly have been mapped to a removed
+    // label are NOT in SYNONYM_MAP — they pass through as identity (which
+    // means refineTagCandidates then drops them as out-of-vocabulary).
+    for (const t of ["casual", "indoor", "indoors", "outdoor", "outdoors", "natural", "simple", "relaxed"]) {
+      expect(normalizeTagLabel(t)).toBe(t);
+    }
+  });
 });
 
 describe("isBannedTagLabel", () => {
@@ -86,7 +96,7 @@ describe("isBannedTagLabel", () => {
     expect(isBannedTagLabel("   ")).toBe(true);
   });
   it("does not flag controlled-vocabulary words", () => {
-    for (const t of ["海", "夕方", "水着", "自然光", "高級感", "夕景"]) {
+    for (const t of ["海", "夕方", "水着", "逆光", "高級感", "夕景"]) {
       expect(isBannedTagLabel(t)).toBe(false);
     }
   });
@@ -101,9 +111,34 @@ describe("isExcludedGenericLabel (Phase 10-10A)", () => {
     expect(isExcludedGenericLabel("  人物 ")).toBe(true);
   });
   it("does not flag other controlled-vocabulary words", () => {
-    for (const t of ["海", "夕方", "水着", "自然光", "高級感", "風景", "建物", "犬", "猫"]) {
+    for (const t of ["海", "夕方", "水着", "逆光", "高級感", "風景", "建物", "犬", "猫"]) {
       expect(isExcludedGenericLabel(t)).toBe(false);
     }
+  });
+  it("does not flag Phase 10-13C low-value labels (separate layer)", () => {
+    for (const t of ["自然光", "ナチュラル", "シンプル", "室内", "屋外", "私服", "リラックス"]) {
+      expect(isExcludedGenericLabel(t)).toBe(false);
+    }
+  });
+});
+
+describe("isExcludedLowValueLabel (Phase 10-13C)", () => {
+  it("flags all 7 removed generic/abstract/low-value labels", () => {
+    for (const t of ["自然光", "ナチュラル", "シンプル", "室内", "屋外", "私服", "リラックス"]) {
+      expect(isExcludedLowValueLabel(t)).toBe(true);
+    }
+  });
+  it("trims before matching", () => {
+    expect(isExcludedLowValueLabel("  自然光 ")).toBe(true);
+  });
+  it("does not flag remaining controlled-vocabulary words", () => {
+    for (const t of ["部屋", "ホテル", "スタジオ", "カフェ", "海", "プール", "ビーチ", "ドレス", "スーツ", "制服", "和装", "部屋着", "コート", "逆光", "高級感", "クール"]) {
+      expect(isExcludedLowValueLabel(t)).toBe(false);
+    }
+  });
+  it("is a separate layer from isExcludedGenericLabel (人物/ポートレート)", () => {
+    expect(isExcludedLowValueLabel("人物")).toBe(false);
+    expect(isExcludedLowValueLabel("ポートレート")).toBe(false);
   });
 });
 
@@ -113,7 +148,7 @@ describe("getTagCategory", () => {
     expect(getTagCategory("水着")).toBe("outfit");
     expect(getTagCategory("海")).toBe("place");
     expect(getTagCategory("全身")).toBe("composition");
-    expect(getTagCategory("自然光")).toBe("light");
+    expect(getTagCategory("逆光")).toBe("light");
     expect(getTagCategory("風景")).toBe("subject");
     expect(getTagCategory("高級感")).toBe("mood");
   });
@@ -121,6 +156,16 @@ describe("getTagCategory", () => {
   it("Phase 10-10A: 人物 and ポートレート are no longer in the controlled vocabulary", () => {
     expect(getTagCategory("人物")).toBeUndefined();
     expect(getTagCategory("ポートレート")).toBeUndefined();
+  });
+
+  it("Phase 10-13C: removed low-value labels are no longer in the controlled vocabulary", () => {
+    for (const t of ["自然光", "ナチュラル", "シンプル", "室内", "屋外", "私服", "リラックス"]) {
+      expect(getTagCategory(t)).toBeUndefined();
+    }
+  });
+
+  it("Phase 10-13C: 部屋 (specific place) remains categorized, unlike removed 室内/屋外", () => {
+    expect(getTagCategory("部屋")).toBe("place");
   });
 
   it("returns undefined for out-of-vocabulary words", () => {
@@ -187,19 +232,89 @@ describe("refineTagCandidates", () => {
     expect(refineTagCandidates([{ label: "afternoon" }]).map((t) => t.label)).toEqual(["昼"]);
   });
 
-  it("limits mood tags to at most 1", () => {
+  // Phase 10-13C: removed generic/abstract/low-value labels are dropped even
+  // when the provider still returns them (real-world provider drift, cached
+  // prompts, etc.) — refineTagCandidates is the mechanical backstop.
+  it("Phase 10-13C: drops 自然光", () => {
+    expect(refineTagCandidates([{ label: "自然光" }])).toEqual([]);
+  });
+  it("Phase 10-13C: drops ナチュラル", () => {
+    expect(refineTagCandidates([{ label: "ナチュラル" }])).toEqual([]);
+  });
+  it("Phase 10-13C: drops シンプル", () => {
+    expect(refineTagCandidates([{ label: "シンプル" }])).toEqual([]);
+  });
+  it("Phase 10-13C: drops 室内", () => {
+    expect(refineTagCandidates([{ label: "室内" }])).toEqual([]);
+  });
+  it("Phase 10-13C: drops 屋外", () => {
+    expect(refineTagCandidates([{ label: "屋外" }])).toEqual([]);
+  });
+  it("Phase 10-13C: drops 私服", () => {
+    expect(refineTagCandidates([{ label: "私服" }])).toEqual([]);
+  });
+  it("Phase 10-13C: drops リラックス", () => {
+    expect(refineTagCandidates([{ label: "リラックス" }])).toEqual([]);
+  });
+
+  it("Phase 10-13C: removed labels dropped alongside other kept tags", () => {
     const out = refineTagCandidates([
-      { label: "ナチュラル" },
-      { label: "シンプル" },
+      { label: "自然光" },
+      { label: "海" },
+      { label: "私服" },
+      { label: "ドレス" },
+      { label: "室内" },
+      { label: "部屋" },
+    ]);
+    expect(out.map((t) => t.label)).toEqual(["ドレス", "海", "部屋"]);
+  });
+
+  it("Phase 10-13C: no synonym path resurrects a removed label", () => {
+    // English surface forms pass through normalizeTagLabel as identity (no
+    // synonym entry), so they are then dropped as out-of-vocabulary — never
+    // resolved to a removed JA label.
+    for (const t of ["casual", "indoor", "indoors", "outdoor", "outdoors", "natural", "simple", "relaxed"]) {
+      expect(refineTagCandidates([{ label: t }])).toEqual([]);
+    }
+  });
+
+  it("Phase 10-13C: specific place/outfit/mood labels still survive refinement", () => {
+    const out = refineTagCandidates([
+      { label: "部屋" },
+      { label: "ホテル" },
+      { label: "スタジオ" },
+      { label: "カフェ" },
+      { label: "海" },
+      { label: "プール" },
+      { label: "ビーチ" },
+      { label: "ドレス" },
+      { label: "スーツ" },
+      { label: "制服" },
+      { label: "和装" },
+      { label: "部屋着" },
+      { label: "コート" },
+    ]);
+    // total cap is 8 — assert the first 8 in priority-sorted order all survive
+    // (outfit before place per CATEGORY_PRIORITY), none silently dropped as
+    // "removed".
+    expect(out).toHaveLength(8);
+    for (const label of ["ドレス", "スーツ", "制服", "和装", "部屋着", "コート", "部屋", "ホテル"]) {
+      expect(out.map((t) => t.label)).toContain(label);
+    }
+  });
+
+  it("limits mood tags to at most 1 (using the remaining mood vocabulary)", () => {
+    const out = refineTagCandidates([
       { label: "高級感" },
+      { label: "クール" },
     ]);
     expect(out.filter((t) => getTagCategory(t.label) === "mood")).toHaveLength(1);
-    expect(out[0].label).toBe("ナチュラル"); // first mood kept
+    expect(out[0].label).toBe("高級感"); // first mood kept
   });
 
   it("caps total to 8 tags", () => {
     const many = [
-      "朝", "水着", "海", "全身", "自然光", "風景", "料理", "商品", "建物", "小物",
+      "朝", "水着", "海", "全身", "逆光", "風景", "料理", "商品", "建物", "小物",
     ].map((label) => ({ label }));
     const out = refineTagCandidates(many);
     expect(out).toHaveLength(8);
@@ -209,7 +324,7 @@ describe("refineTagCandidates", () => {
     const out = refineTagCandidates([
       { label: "高級感" }, // mood
       { label: "風景" }, // subject
-      { label: "自然光" }, // light
+      { label: "逆光" }, // light
       { label: "全身" }, // composition
       { label: "海" }, // place
       { label: "水着" }, // outfit
@@ -220,7 +335,7 @@ describe("refineTagCandidates", () => {
       "水着",
       "海",
       "全身",
-      "自然光",
+      "逆光",
       "風景",
       "高級感",
     ]);
