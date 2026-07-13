@@ -285,6 +285,22 @@ export async function removeImageTag(imageId: string, tagId: string): Promise<Re
 export type PersonSummary = { id: string; name: string };
 
 /**
+ * Fetches the full existing-Person list for the current workspace (Phase
+ * 10-15C candidate list). Read-only — never creates a Person. Kept minimal:
+ * ignores /api/persons' optional `q` search param and imageCount field, since
+ * the DetailPanel "人物を追加" picker only needs { id, name }.
+ */
+export async function fetchPersons(): Promise<PersonSummary[]> {
+  const res = await fetch("/api/persons");
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to load persons (${res.status})`);
+  }
+  const json = (await res.json()) as { data: PersonSummary[] };
+  return json.data;
+}
+
+/**
  * Links an existing Person to an image (Phase 10-15B). personId must
  * reference a Person already in the same workspace — this never creates a
  * new Person. Idempotent server-side (safe to call again for an already

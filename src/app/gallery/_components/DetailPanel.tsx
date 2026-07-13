@@ -4,13 +4,17 @@ import { useEffect, useReducer, useState } from "react"
 import {
   analyzeImage,
   approveSuggestion,
+  assignImagePerson,
   deleteImage,
   fetchImageDetail,
+  fetchPersons,
   generatePromptVariation,
   rejectSuggestion,
+  removeImagePerson,
   removeImageTag,
   translatePrompt,
   type ImageDetail,
+  type PersonSummary,
   type PromptVersionSummary,
   type TagSuggestion,
   type TranslatePromptResult,
@@ -66,6 +70,9 @@ interface DetailPanelProps {
   onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
   onAnalyzed?: (suggestions: TagSuggestion[]) => void
   onTagRemoved?: (tagId: string) => void
+  /** Phase 10-15C: a person was linked/unlinked (fold into shared detail). */
+  onPersonAssigned?: (person: PersonSummary) => void
+  onPersonRemoved?: (personId: string) => void
   /** Phase 10-9C-4: single-image translation applied (fold into shared detail). */
   onTranslated?: (result: TranslatePromptResult) => void
   /** Phase 10-9C-4: prompt edited — propagate to shared state so a stale
@@ -1025,6 +1032,218 @@ function TagChip({
   )
 }
 
+// ---- PersonChip / PersonSection: 画像への人物紐づけ・解除 (Phase 10-15C) ----
+//
+// PersonChip は TagChip の view/confirm/removing/error 遷移をそのまま流用する
+// (「外す」導線・非同期処理・ローカルエラー表示の型)。Person本体の作成/編集/
+// 削除はここでは行わない — 既存 GET /api/persons の一覧から選ぶだけ。
+
+type PersonChipPhase = "view" | "confirm" | "removing" | "error"
+
+function PersonChip({
+  imageId,
+  person,
+  onRemoved,
+}: {
+  imageId: string
+  person: PersonSummary
+  onRemoved: (personId: string) => void
+}) {
+  const [phase, setPhase] = useState<PersonChipPhase>("view")
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  const remove = async () => {
+    setPhase("removing")
+    setErrorMsg(null)
+    try {
+      await removeImagePerson(imageId, person.id)
+      // DELETEはidempotent(removed:falseでも200) — UI上は外れた扱いでよいので
+      // 結果を見ずに親へ通知する。親stateから消える（GalleryClient reducer経由）。
+      onRemoved(person.id)
+    } catch (e: unknown) {
+      setErrorMsg((e as Error).message ?? "人物を外せませんでした")
+      setPhase("error")
+    }
+  }
+
+  if (phase === "confirm") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 py-1 pl-2.5 pr-1 text-xs text-blue-700">
+        <span>{person.name}</span>
+        <button
+          onClick={() => void remove()}
+          className="rounded px-1.5 py-1 text-red-600 hover:bg-red-50 hover:text-red-800"
+          aria-label="外す"
+        >
+          外す
+        </button>
+        <button
+          onClick={() => setPhase("view")}
+          className="rounded px-1.5 py-1 text-blue-400 hover:bg-blue-100 hover:text-blue-700"
+          aria-label="キャンセル"
+        >
+          キャンセル
+        </button>
+      </span>
+    )
+  }
+
+  if (phase === "removing") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-300">
+        {person.name} …
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex flex-col">
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-50 py-1 pl-2.5 pr-1 text-xs text-blue-700">
+        <span>{person.name}</span>
+        <button
+          onClick={() => setPhase("confirm")}
+          className="rounded px-1.5 py-1 text-blue-400 hover:bg-blue-200 hover:text-red-600"
+          aria-label={`人物「${person.name}」を外す`}
+        >
+          ×
+        </button>
+      </span>
+      {phase === "error" && errorMsg && <span className="mt-0.5 text-xs text-red-500">{errorMsg}</span>}
+    </span>
+  )
+}
+
+type PersonAddPhase = "closed" | "loading" | "open" | "error"
+
+function PersonSection({
+  imageId,
+  persons,
+  onAssigned,
+  onRemoved,
+}: {
+  imageId: string
+  persons: PersonSummary[]
+  onAssigned: (person: PersonSummary) => void
+  onRemoved: (personId: string) => void
+}) {
+  const [addPhase, setAddPhase] = useState<PersonAddPhase>("closed")
+  const [candidates, setCandidates] = useState<PersonSummary[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [assignError, setAssignError] = useState<string | null>(null)
+  const [assigningId, setAssigningId] = useState<string | null>(null)
+
+  // 画像切り替え時にリセット（render中に前回値と比較する既存パターン）
+  const [prevImageId, setPrevImageId] = useState(imageId)
+  if (imageId !== prevImageId) {
+    setPrevImageId(imageId)
+    setAddPhase("closed")
+    setCandidates([])
+    setLoadError(null)
+    setAssignError(null)
+    setAssigningId(null)
+  }
+
+  const openAdd = async () => {
+    setAddPhase("loading")
+    setLoadError(null)
+    try {
+      const list = await fetchPersons()
+      setCandidates(list)
+      setAddPhase("open")
+    } catch (e: unknown) {
+      setLoadError((e as Error).message ?? "人物一覧を取得できませんでした")
+      setAddPhase("error")
+    }
+  }
+
+  const assign = async (personId: string) => {
+    setAssigningId(personId)
+    setAssignError(null)
+    try {
+      const person = await assignImagePerson(imageId, personId)
+      onAssigned(person)
+    } catch (e: unknown) {
+      setAssignError((e as Error).message ?? "人物を追加できませんでした")
+    } finally {
+      setAssigningId(null)
+    }
+  }
+
+  const assignedIds = new Set(persons.map((p) => p.id))
+  const availableCandidates = candidates.filter((c) => !assignedIds.has(c.id))
+
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">人物</p>
+
+      {persons.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {persons.map((p) => (
+            <PersonChip key={p.id} imageId={imageId} person={p} onRemoved={onRemoved} />
+          ))}
+        </div>
+      )}
+
+      {addPhase === "closed" && (
+        <button
+          onClick={() => void openAdd()}
+          className="mt-1.5 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+        >
+          人物を追加
+        </button>
+      )}
+
+      {addPhase === "loading" && (
+        <p className="mt-1.5 text-xs text-zinc-400">読み込み中...</p>
+      )}
+
+      {addPhase === "error" && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <p className="text-xs text-red-500">{loadError}</p>
+          <button
+            onClick={() => void openAdd()}
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+          >
+            再試行
+          </button>
+        </div>
+      )}
+
+      {addPhase === "open" && (
+        <div className="mt-1.5 flex flex-col gap-1.5 rounded-md border border-zinc-200 p-2">
+          {candidates.length === 0 && (
+            <p className="text-xs text-zinc-400">登録済みの人物がありません</p>
+          )}
+          {candidates.length > 0 && availableCandidates.length === 0 && (
+            <p className="text-xs text-zinc-400">追加できる人物がありません</p>
+          )}
+          {availableCandidates.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {availableCandidates.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => void assign(c.id)}
+                  disabled={assigningId === c.id}
+                  className="rounded-full border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  {assigningId === c.id ? `${c.name} …` : `+ ${c.name}`}
+                </button>
+              ))}
+            </div>
+          )}
+          {assignError && <p className="text-xs text-red-500">{assignError}</p>}
+          <button
+            onClick={() => setAddPhase("closed")}
+            className="self-start text-xs text-zinc-400 hover:text-zinc-700"
+          >
+            閉じる
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- AnalyzeSection: AI解析トリガー（mock provider, Phase 10-4） ----
 
 type AnalyzePhase = "idle" | "analyzing"
@@ -1128,6 +1347,8 @@ export default function DetailPanel({
   onSuggestionResolved,
   onAnalyzed,
   onTagRemoved,
+  onPersonAssigned,
+  onPersonRemoved,
   onTranslated,
   onPromptSaved,
   hideHeader = false,
@@ -1305,18 +1526,12 @@ export default function DetailPanel({
             </div>
           )}
 
-          {state.detail.persons.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">人物</p>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {state.detail.persons.map((p) => (
-                  <span key={p.id} className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                    {p.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <PersonSection
+            imageId={state.detail.id}
+            persons={state.detail.persons}
+            onAssigned={(person) => onPersonAssigned?.(person)}
+            onRemoved={(personId) => onPersonRemoved?.(personId)}
+          />
 
           {state.detail.prompt && (
             <TranslationSection
