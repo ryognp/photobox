@@ -44,6 +44,27 @@ export async function updateItemMetadata(
   return json.data.item;
 }
 
+export type DeleteUploadItemResult = {
+  deletedItemId: string;
+  sessionId: string;
+  sessionEmpty: boolean;
+};
+
+/**
+ * Deletes a single UploadItem from a not-yet-committed session (Phase
+ * 10-19A). Storage-first on the server — never leaves an orphaned DB row.
+ * COMMITTED items are rejected by the server (never deletable here).
+ */
+export async function deleteUploadItem(itemId: string): Promise<DeleteUploadItemResult> {
+  const r = await fetch(`/api/uploads/items/${itemId}`, { method: "DELETE" });
+  if (!r.ok) {
+    const json = await r.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(json.error?.message ?? "削除に失敗しました");
+  }
+  const json = await r.json() as { data: DeleteUploadItemResult };
+  return json.data;
+}
+
 export async function applyPromptToItems(
   sessionId: string,
   itemIds: string[],

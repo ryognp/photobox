@@ -1,13 +1,18 @@
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
+import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 import {
   authorizeUploadItem,
   assertSessionEditable,
   assertItemNotCommitted,
   fetchItemWithRelations,
 } from "@/lib/uploadItem";
+import { collectUploadItemStoragePaths } from "@/lib/quick-add/uploadItemDelete";
+
+const BUCKET = "photobox-private";
 
 // ---- GET ------------------------------------------------------------------
 
@@ -184,4 +189,78 @@ export async function PATCH(
   const item = await fetchItemWithRelations(id);
   if (!item) return Errors.internal();
   return ok({ item });
+}
+
+// ---- DELETE -----------------------------------------------------------
+//
+// Phase 10-19A: deletes a single UploadItem from the Quick Add preview.
+// Storage-first: temp Storage objects are removed BEFORE the DB row, so a
+// Storage failure never leaves an orphaned DB row pointing at deleted paths
+// (unlike the async cleanup cron, which tolerates eventual consistency —
+// this is a synchronous user action and must not silently drop data).
+// COMMITTED items are never deletable (assertItemNotCommitted + a `commitStatus:
+// { not: "COMMITTED" }` safety net on the actual deleteMany). Committed Image
+// rows, Tag/Person/Scene masters, and ImageTag/ImagePerson are never touched
+// here — only the UploadItem row and its own temp Storage objects.
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const user = await getCurrentUser();
+  if (!user) return Errors.unauthorized();
+
+  const { id } = await params;
+  const auth = await authorizeUploadItem(id, user.id);
+  if (!auth.ok) {
+    return auth.reason === "NOT_FOUND" ? Errors.notFound("Item not found") : Errors.forbidden();
+  }
+
+  const sessionErr = assertSessionEditable(auth.item.session.status);
+  if (sessionErr) return Errors.validation(sessionErr);
+  const commitErr = assertItemNotCommitted(auth.item.commitStatus);
+  if (commitErr) return Errors.validation(commitErr);
+
+  const rl = await checkUserRateLimit({
+    preset: "uploadItemDelete",
+    userId: user.id,
+    workspaceId: auth.item.workspaceId,
+  });
+  if (!rl.allowed) return Errors.rateLimited(rateLimitHeaders(rl));
+
+  const storagePaths = await prisma.uploadItem.findUnique({
+    where: { id },
+    select: { tempStoragePath: true, tempThumbnailPath: true, tempPreviewPath: true },
+  });
+  if (!storagePaths) return Errors.notFound("Item not found");
+
+  const paths = collectUploadItemStoragePaths(storagePaths);
+  if (paths.length > 0) {
+    const { error } = await supabaseAdmin.storage.from(BUCKET).remove(paths);
+    if (error) {
+      // Storage削除失敗時はDB itemを削除しない(orphan DBを避ける)。
+      return Errors.internal();
+    }
+  }
+
+  // 安全弁: COMMITTED になっていた場合は削除0件(deleteMany は例外を投げない)。
+  const deleted = await prisma.uploadItem.deleteMany({
+    where: { id, commitStatus: { not: "COMMITTED" } },
+  });
+  if (deleted.count === 0) {
+    return Errors.conflict("This item was already committed or already deleted.");
+  }
+
+  const sessionId = auth.item.session.id;
+  const remainingCount = await prisma.uploadItem.count({ where: { sessionId } });
+
+  let sessionEmpty = false;
+  if (remainingCount === 0) {
+    await prisma.uploadSession.update({
+      where: { id: sessionId },
+      data: { status: "ABANDONED" },
+    });
+    sessionEmpty = true;
+  }
+
+  return ok({ deletedItemId: id, sessionId, sessionEmpty });
 }

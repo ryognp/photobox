@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { checkCommitReadiness } from "@/lib/quick-add/commitReadiness"
+import { deleteUploadItem } from "@/lib/quick-add/itemClient"
+import { clearStoredSession } from "@/lib/upload/sessionStore"
 import { CommitSummary } from "./_components/CommitSummary"
 import { CommitBlockedReasons } from "./_components/CommitBlockedReasons"
 import { CommitFilterTabs, FilterTab } from "./_components/CommitFilterTabs"
@@ -43,6 +45,9 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
   const [commitResult, setCommitResult] = useState<CommitResultData | null>(null)
   const [commitError, setCommitError] = useState<string | null>(null)
   const [sessionCommitted, setSessionCommitted] = useState(false)
+  // Phase 10-19A: セッション全体キャンセル(view→confirm→cancelling→error)
+  const [cancelPhase, setCancelPhase] = useState<"view" | "confirm" | "cancelling" | "error">("view")
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -172,6 +177,35 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
     router.push("/quick-add")
   }
 
+  // Phase 10-19A: 個別画像削除。成功時はitemsから除外するのみ(readiness/
+  // tabCountsはitemsから毎レンダー再計算されるため自然に更新される)。
+  // sessionEmpty(=セッションが0件になりABANDONED化された)ならactive-session
+  // localStorageもクリアする(復元不能になったため)。
+  const handleDeleteItem = async (itemId: string) => {
+    const result = await deleteUploadItem(itemId)
+    setItems((prev) => prev.filter((i) => i.id !== itemId))
+    if (result.sessionEmpty) {
+      clearStoredSession()
+    }
+  }
+
+  const handleCancelSession = async () => {
+    setCancelPhase("cancelling")
+    setCancelError(null)
+    try {
+      const res = await fetch(`/api/uploads/session/${sessionId}`, { method: "DELETE" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: { message?: string } }
+        throw new Error(data.error?.message ?? "キャンセルに失敗しました")
+      }
+      clearStoredSession()
+      router.push("/quick-add")
+    } catch (e: unknown) {
+      setCancelError((e as Error).message ?? "キャンセルに失敗しました")
+      setCancelPhase("error")
+    }
+  }
+
   const readiness = checkCommitReadiness(items)
 
   const tabCounts: Record<FilterTab, number> = {
@@ -203,7 +237,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-50">
       {/* Header */}
-      <header className="flex items-center gap-4 border-b border-zinc-200 bg-white px-6 py-3">
+      <header className="flex flex-wrap items-center gap-4 border-b border-zinc-200 bg-white px-6 py-3">
         <button
           onClick={handleGoBack}
           className="text-sm text-zinc-600 hover:text-zinc-900"
@@ -212,7 +246,50 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
         </button>
         <h1 className="text-base font-semibold text-zinc-900">CommitPreview</h1>
         <span className="text-sm text-zinc-500">{sessionId.slice(0, 8)}...</span>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex flex-wrap items-center gap-3">
+          {/* Phase 10-19A: セッション全体キャンセル */}
+          {cancelPhase === "view" && (
+            <button
+              onClick={() => setCancelPhase("confirm")}
+              disabled={committing || sessionCommitted}
+              className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              セッションをキャンセル
+            </button>
+          )}
+          {cancelPhase === "confirm" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-red-600">
+                このプレビューをキャンセルします。アップロード済みの一時画像は後続のcleanup対象になります。よろしいですか？
+              </span>
+              <button
+                onClick={() => void handleCancelSession()}
+                className="rounded-md bg-red-600 px-2.5 py-1 text-xs text-white hover:bg-red-700"
+              >
+                キャンセルする
+              </button>
+              <button
+                onClick={() => setCancelPhase("view")}
+                className="text-xs text-zinc-400 hover:text-zinc-700"
+              >
+                戻る
+              </button>
+            </div>
+          )}
+          {cancelPhase === "cancelling" && (
+            <span className="text-xs text-zinc-400">キャンセル中...</span>
+          )}
+          {cancelPhase === "error" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-red-500">{cancelError}</span>
+              <button
+                onClick={() => setCancelPhase("view")}
+                className="text-xs text-zinc-400 hover:text-zinc-700"
+              >
+                閉じる
+              </button>
+            </div>
+          )}
           <button
             onClick={() => void handleCheckDuplicates()}
             disabled={checkingDuplicates || committing}
@@ -258,6 +335,8 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
                   activeTab={activeTab}
                   onSkip={handleSkip}
                   onUnskip={handleUnskip}
+                  onDelete={handleDeleteItem}
+                  deleteDisabled={committing || sessionCommitted}
                 />
               </div>
             </>

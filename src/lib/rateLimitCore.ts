@@ -16,7 +16,8 @@ export type RateLimitPreset =
   | "personAssignAction"
   | "manualTagAdd"
   | "bulkTagAdd"
-  | "bulkPersonAssign";
+  | "bulkPersonAssign"
+  | "uploadItemDelete";
 
 export type RateLimitSource = "shared" | "disabled" | "error";
 

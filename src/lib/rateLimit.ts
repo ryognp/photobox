@@ -34,6 +34,7 @@ const PRESETS: Record<RateLimitPreset, { limit: number; window: `${number} ${"s"
   manualTagAdd: { limit: 30, window: "1 m" }, // POST /api/images/[id]/tags (Phase 10-16B)
   bulkTagAdd: { limit: 10, window: "1 m" }, // POST /api/images/bulk/tags (Phase 10-18B)
   bulkPersonAssign: { limit: 10, window: "1 m" }, // POST /api/images/bulk/persons (Phase 10-18B)
+  uploadItemDelete: { limit: 30, window: "1 m" }, // DELETE /api/uploads/items/[id] (Phase 10-19A)
 };
 
 const limiters = new Map<RateLimitPreset, LimiterLike>();

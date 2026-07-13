@@ -5,7 +5,13 @@ import { useState } from "react";
 type Props = {
   item: Record<string, unknown>;
   reasons?: string[];
+  /** Phase 10-19A: undefined hides the delete button entirely (e.g. read-only contexts). */
+  onDelete?: (itemId: string) => Promise<void>;
+  /** commit中 / session確定後は削除不可 */
+  deleteDisabled?: boolean;
 };
+
+type DeletePhase = "view" | "confirm" | "deleting" | "error";
 
 type ItemSignedUrls = { thumbnail?: { signedUrl: string | null } } | null;
 
@@ -96,7 +102,27 @@ function MetaRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function CommitItemCard({ item, reasons }: Props) {
+export default function CommitItemCard({ item, reasons, onDelete, deleteDisabled }: Props) {
+  const [deletePhase, setDeletePhase] = useState<DeletePhase>("view");
+  const [deleteErrorMsg, setDeleteErrorMsg] = useState<string | null>(null);
+
+  const itemId = item.id as string;
+  const isCommitted = item.commitStatus === "COMMITTED";
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    setDeletePhase("deleting");
+    setDeleteErrorMsg(null);
+    try {
+      await onDelete(itemId);
+      // 成功時はこのカード自体が親のitems stateから消える想定なので、
+      // ここでのphase復帰は不要(unmountされる)。
+    } catch (e: unknown) {
+      setDeleteErrorMsg((e as Error).message ?? "削除に失敗しました");
+      setDeletePhase("error");
+    }
+  };
+
   const originalName = (item.originalName as string) ?? "Untitled";
   const rating = item.rating as number | null | undefined;
   const isFavorite = item.isFavorite as boolean | undefined;
@@ -192,6 +218,54 @@ export default function CommitItemCard({ item, reasons }: Props) {
               </li>
             ))}
           </ul>
+        )}
+
+        {/* Phase 10-19A: 個別削除。COMMITTED itemには表示しない。 */}
+        {onDelete && !isCommitted && (
+          <div className="mt-0.5">
+            {deletePhase === "view" && (
+              <button
+                onClick={() => setDeletePhase("confirm")}
+                disabled={deleteDisabled}
+                className="text-xs text-red-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                削除
+              </button>
+            )}
+            {deletePhase === "confirm" && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-red-600 dark:text-red-400">
+                  この画像をプレビューから削除します。よろしいですか？
+                </span>
+                <button
+                  onClick={() => void handleDelete()}
+                  className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700"
+                >
+                  削除する
+                </button>
+                <button
+                  onClick={() => setDeletePhase("view")}
+                  className="text-xs text-zinc-400 hover:text-zinc-700"
+                >
+                  キャンセル
+                </button>
+              </div>
+            )}
+            {deletePhase === "deleting" && (
+              <span className="text-xs text-zinc-400">削除中...</span>
+            )}
+            {deletePhase === "error" && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-red-500">{deleteErrorMsg}</span>
+                <button
+                  onClick={() => setDeletePhase("view")}
+                  className="text-xs text-zinc-400 hover:text-zinc-700"
+                >
+                  閉じる
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
