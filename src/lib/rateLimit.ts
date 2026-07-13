@@ -31,6 +31,7 @@ const PRESETS: Record<RateLimitPreset, { limit: number; window: `${number} ${"s"
   translatePrompt: { limit: 10, window: "1 m" }, // POST /api/images/[id]/translate-prompt (定義のみ・適用は10-9C-3)
   promptVariation: { limit: 10, window: "1 m" }, // POST /api/images/[id]/prompt-variations (Phase 10-11B)
   personAssignAction: { limit: 30, window: "1 m" }, // POST/DELETE /api/images/[id]/persons[/[personId]] (Phase 10-15B)
+  manualTagAdd: { limit: 30, window: "1 m" }, // POST /api/images/[id]/tags (Phase 10-16B)
 };
 
 const limiters = new Map<RateLimitPreset, LimiterLike>();
