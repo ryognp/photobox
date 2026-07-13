@@ -8,6 +8,8 @@ interface ImageGridProps {
   images: GalleryImage[]
   selectedId: string | null
   onSelect: (id: string) => void
+  bulkSelectedIds: string[]
+  onBulkToggle: (imageId: string) => void
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
@@ -20,6 +22,8 @@ export default function ImageGrid({
   images,
   selectedId,
   onSelect,
+  bulkSelectedIds,
+  onBulkToggle,
   loading,
   loadingMore,
   hasMore,
@@ -27,6 +31,7 @@ export default function ImageGrid({
   onRetry,
   error,
 }: ImageGridProps) {
+  const bulkSelectedSet = new Set(bulkSelectedIds)
   const router = useRouter()
 
   if (loading) {
@@ -82,6 +87,8 @@ export default function ImageGrid({
             image={img}
             selected={selectedId === img.id}
             onClick={() => onSelect(img.id)}
+            bulkSelected={bulkSelectedSet.has(img.id)}
+            onBulkToggle={onBulkToggle}
           />
         ))}
       </div>
