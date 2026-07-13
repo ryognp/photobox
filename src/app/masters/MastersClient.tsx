@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useReducer, useState } from "react";
+import { Suspense, useEffect, useReducer, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { filterTagsForMasters } from "@/lib/masters/tagFilters";
 
 // ---- Types ------------------------------------------------------------------
@@ -105,9 +106,12 @@ function EditableRow({
 
 function DeleteButton({
   imageCount,
+  itemLabel = "マスタ",
   onDelete,
 }: {
   imageCount: number;
+  /** Phase 10-20A: 文言を分かりやすくするための呼称("タグ"/"人物"/"シーン")。 */
+  itemLabel?: string;
   onDelete: () => Promise<void>;
 }) {
   const [phase, setPhase] = useState<"idle" | "confirm" | "deleting" | "error">("idle");
@@ -116,7 +120,7 @@ function DeleteButton({
   if (imageCount > 0) {
     return (
       <p className="text-xs text-zinc-400">
-        {imageCount} 枚の画像があるため削除不可（統合を使用してください）
+        この{itemLabel}は{imageCount}枚の画像で使用中のため削除できません。統合を使ってください。
       </p>
     );
   }
@@ -135,7 +139,9 @@ function DeleteButton({
   if (phase === "confirm") {
     return (
       <div className="flex flex-col gap-1">
-        <p className="text-xs text-red-600">このマスタを削除します。元に戻せません。</p>
+        <p className="text-xs text-red-600">
+          この{itemLabel}を削除します。画像には紐づいていない{itemLabel}のみ削除できます。元に戻せません。
+        </p>
         <div className="flex gap-2">
           <button
             onClick={async () => {
@@ -370,7 +376,7 @@ function PersonCard({
         <Link href={`/gallery?personId=${person.id}`} className="text-xs text-blue-600 hover:underline">
           Gallery で絞り込む →
         </Link>
-        <DeleteButton imageCount={person.imageCount} onDelete={doDelete} />
+        <DeleteButton imageCount={person.imageCount} itemLabel="人物" onDelete={doDelete} />
       </div>
       <MergePanel
         sourceId={person.id}
@@ -431,7 +437,7 @@ function SceneCard({
         <Link href={`/gallery?sceneId=${scene.id}`} className="text-xs text-blue-600 hover:underline">
           Gallery で絞り込む →
         </Link>
-        <DeleteButton imageCount={scene.imageCount} onDelete={doDelete} />
+        <DeleteButton imageCount={scene.imageCount} itemLabel="シーン" onDelete={doDelete} />
       </div>
       <MergePanel
         sourceId={scene.id}
@@ -440,6 +446,75 @@ function SceneCard({
         mergeEndpoint={`/api/scenes/${scene.id}/merge`}
         onMerged={() => onDeleted(scene.id)}
       />
+    </div>
+  );
+}
+
+// ---- AddTagForm (Phase 10-20A) ----------------------------------------------
+//
+// タグ本体(Tag master)を新規作成するフォーム。既存 POST /api/tags をそのまま
+// 利用する — 新規APIは追加しない。POST /api/tags は名前がworkspace内で既存と
+// 衝突する場合、新規作成せず既存Tagを200で返す仕様(重複作成しない)。
+
+type AddTagPhase = "idle" | "adding" | "error";
+
+function AddTagForm({ onAdded }: { onAdded: (tag: Tag) => void }) {
+  const [draft, setDraft] = useState("");
+  const [phase, setPhase] = useState<AddTagPhase>("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (draft.trim() === "") return;
+    setPhase("adding");
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: draft }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+        throw new Error(j.error?.message ?? "タグの追加に失敗しました");
+      }
+      const j = (await res.json()) as { data: Omit<Tag, "imageCount"> };
+      onAdded({ ...j.data, imageCount: 0 });
+      setDraft("");
+      setPhase("idle");
+    } catch (e: unknown) {
+      setErrorMsg((e as Error).message ?? "タグの追加に失敗しました");
+      setPhase("error");
+    }
+  };
+
+  const isAdding = phase === "adding";
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-zinc-200 bg-white p-3">
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+          disabled={isAdding}
+          placeholder="タグ名を入力"
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm focus:border-blue-400 focus:outline-none disabled:opacity-50"
+        />
+        <button
+          onClick={() => void submit()}
+          disabled={isAdding || draft.trim() === ""}
+          className="rounded-md bg-zinc-800 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-50"
+        >
+          {isAdding ? "追加中..." : "タグを追加"}
+        </button>
+      </div>
+      {phase === "error" && errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
     </div>
   );
 }
@@ -491,7 +566,7 @@ function TagCard({
         <Link href={`/gallery?tagId=${tag.id}`} className="text-xs text-blue-600 hover:underline">
           Gallery で絞り込む →
         </Link>
-        <DeleteButton imageCount={tag.imageCount} onDelete={doDelete} />
+        <DeleteButton imageCount={tag.imageCount} itemLabel="タグ" onDelete={doDelete} />
       </div>
       <MergePanel
         sourceId={tag.id}
@@ -517,7 +592,8 @@ function useList<T extends { id: string }>(url: string) {
     | { type: "ok"; items: T[] }
     | { type: "error"; message: string }
     | { type: "update"; item: T }
-    | { type: "remove"; id: string };
+    | { type: "remove"; id: string }
+    | { type: "add"; item: T };
 
   const [state, dispatch] = useReducer(
     (s: ListState<T>, a: Action): ListState<T> => {
@@ -532,6 +608,20 @@ function useList<T extends { id: string }>(url: string) {
       }
       if (a.type === "remove" && s.phase === "ok") {
         return { phase: "ok", items: s.items.filter((it) => it.id !== a.id) };
+      }
+      if (a.type === "add" && s.phase === "ok") {
+        // POST /api/tags は名前が既存と衝突した場合、新規作成せず既存行を
+        // 200で返す仕様。ただしそのレスポンスにはimageCountが含まれないため、
+        // 既にidが一覧にある場合は絶対に置換しない(useListはgenericで
+        // imageCount前提にできないため、「既存idなら何もしない」を安全側の
+        // 方針とする — 置換すると呼び出し元が渡した不完全なitemで
+        // imageCount等の既存フィールドを壊してしまう)。新規idの場合のみ
+        // 先頭に追加する(名前順への再ソートはせず、次回GETまでの見た目のみ)。
+        const exists = s.items.some((it) => it.id === a.item.id);
+        return {
+          phase: "ok",
+          items: exists ? s.items : [a.item, ...s.items],
+        };
       }
       return s;
     },
@@ -554,14 +644,25 @@ function useList<T extends { id: string }>(url: string) {
 
   const update = (item: T) => dispatch({ type: "update", item });
   const remove = (id: string) => dispatch({ type: "remove", id });
+  const add = (item: T) => dispatch({ type: "add", item });
 
-  return { state, update, remove };
+  return { state, update, remove, add };
 }
 
 // ---- Main -------------------------------------------------------------------
 
-export default function MastersClient() {
-  const [tab, setTab] = useState<Tab>("persons");
+const VALID_TABS: Tab[] = ["persons", "scenes", "tags"];
+
+function isValidTab(value: string | null): value is Tab {
+  return value !== null && (VALID_TABS as string[]).includes(value);
+}
+
+function MastersInner() {
+  const searchParams = useSearchParams();
+  // Phase 10-20A: ?tab=tags のようなdeep linkでタブを指定できるようにする
+  // (Gallery側の「タグを管理」導線用)。不正/未指定なら従来通り"persons"。
+  const initialTab = isValidTab(searchParams.get("tab")) ? (searchParams.get("tab") as Tab) : "persons";
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [q, setQ] = useState("");
   // Phase 10-17B: Tagsタブ限定の表示フィルタ（クライアント側のみ、非破壊的）。
   const [tagsUnusedOnly, setTagsUnusedOnly] = useState(false);
@@ -650,6 +751,7 @@ export default function MastersClient() {
         )}
         {tab === "tags" && (
           <div className="flex flex-col gap-3">
+            <AddTagForm onAdded={(tag) => tags.add(tag)} />
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex cursor-pointer items-center gap-1.5 text-sm text-zinc-700">
                 <input
@@ -686,6 +788,16 @@ export default function MastersClient() {
         )}
       </div>
     </div>
+  );
+}
+
+// ---- Public export with Suspense boundary (useSearchParams requires it) ----
+
+export default function MastersClient() {
+  return (
+    <Suspense fallback={null}>
+      <MastersInner />
+    </Suspense>
   );
 }
 
