@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import type { GalleryFilters } from "@/lib/gallery/imagesClient"
 import { toggleTagId } from "@/lib/gallery/tagFilters"
 
@@ -269,6 +270,15 @@ export default function FilterContent({ filters, onChange, tags, persons, sugges
           onToggle={(id) => onChange({ tagIds: toggleTagId(filters.tagIds, id) })}
         />
       )}
+
+      {/* Phase 10-20A: タグ本体の追加/削除/rename/mergeは/mastersで行う。
+          Gallery側から見つけやすいよう管理画面への導線を用意する。 */}
+      <Link
+        href="/masters?tab=tags"
+        className="text-xs text-blue-600 hover:underline"
+      >
+        タグを管理 →
+      </Link>
 
       {suggestionTags.length > 0 && (
         <SuggestionTagFilterSection
