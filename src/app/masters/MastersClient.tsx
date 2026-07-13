@@ -4,6 +4,7 @@ import { Suspense, useEffect, useReducer, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { filterTagsForMasters } from "@/lib/masters/tagFilters";
+import { formatTagForceDeleteConfirmMessage } from "@/lib/masters/tagDeleteMessage";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -555,6 +556,22 @@ function TagCard({
     onDeleted(tag.id);
   };
 
+  // Phase 10-20B: 使用中(imageCount>0)のタグを、画像との紐づけを解除した上で
+  // 削除する。ImageTag/UploadItemTagのcascadeはサーバー側(schema)に任せ、
+  // ここではforce:trueを渡すだけ — Image本体やStorageには一切触れない。
+  const doForceDelete = async () => {
+    const res = await fetch(`/api/tags/${tag.id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: true }),
+    });
+    if (!res.ok) {
+      const j = (await res.json()) as { error?: { message?: string } };
+      throw new Error(j.error?.message ?? `HTTP ${res.status}`);
+    }
+    onDeleted(tag.id);
+  };
+
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
@@ -568,6 +585,13 @@ function TagCard({
         </Link>
         <DeleteButton imageCount={tag.imageCount} itemLabel="タグ" onDelete={doDelete} />
       </div>
+      {tag.imageCount > 0 && (
+        <TagForceDeleteControl
+          tagName={tag.name}
+          imageCount={tag.imageCount}
+          onForceDelete={doForceDelete}
+        />
+      )}
       <MergePanel
         sourceId={tag.id}
         sourceName={tag.name}
@@ -575,6 +599,103 @@ function TagCard({
         mergeEndpoint={`/api/tags/${tag.id}/merge`}
         onMerged={() => onDeleted(tag.id)}
       />
+    </div>
+  );
+}
+
+// ---- TagForceDeleteControl (Phase 10-20B) -----------------------------------
+//
+// 使用中(imageCount>0)のタグを、画像との紐づけ(ImageTag/UploadItemTag)を
+// 解除した上で削除するための、明示確認必須のコントロール。Person/Sceneの
+// 共通DeleteButtonとは別に、Tag専用として実装する(要求範囲がTagのみのため)。
+
+type ForceDeletePhase = "idle" | "confirm" | "deleting" | "error";
+
+function TagForceDeleteControl({
+  tagName,
+  imageCount,
+  onForceDelete,
+}: {
+  tagName: string;
+  imageCount: number;
+  onForceDelete: () => Promise<void>;
+}) {
+  const [phase, setPhase] = useState<ForceDeletePhase>("idle");
+  const [agreed, setAgreed] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  if (phase === "idle") {
+    return (
+      <button
+        onClick={() => setPhase("confirm")}
+        className="self-start text-xs text-red-500 hover:text-red-700"
+      >
+        画像との紐づけを解除して削除する
+      </button>
+    );
+  }
+
+  if (phase === "confirm") {
+    return (
+      <div className="flex flex-col gap-1.5 rounded border border-red-200 bg-red-50 p-2">
+        <p className="text-xs text-red-700">
+          {formatTagForceDeleteConfirmMessage(tagName, imageCount)}
+        </p>
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-red-700">
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+          />
+          内容を理解した上で削除します
+        </label>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              setPhase("deleting");
+              setErrorMsg(null);
+              try {
+                await onForceDelete();
+              } catch (e: unknown) {
+                setErrorMsg((e as Error).message ?? "削除に失敗しました");
+                setPhase("error");
+              }
+            }}
+            disabled={!agreed}
+            className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            紐づけを解除して削除する
+          </button>
+          <button
+            onClick={() => {
+              setPhase("idle");
+              setAgreed(false);
+            }}
+            className="text-xs text-zinc-400 hover:text-zinc-700"
+          >
+            キャンセル
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "deleting") {
+    return <p className="text-xs text-zinc-400">削除中...</p>;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <p className="text-xs text-red-500">{errorMsg ?? "削除に失敗しました"}</p>
+      <button
+        onClick={() => {
+          setPhase("idle");
+          setAgreed(false);
+        }}
+        className="text-xs text-zinc-400 hover:text-zinc-700"
+      >
+        閉じる
+      </button>
     </div>
   );
 }
