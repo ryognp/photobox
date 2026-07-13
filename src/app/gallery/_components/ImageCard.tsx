@@ -41,6 +41,11 @@ export default function ImageCard({ image, selected, onClick, bulkSelected, onBu
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => {
+        // イベント発生元が親div自身でない場合(例: 内側のcheckbox buttonに
+        // フォーカスしてEnter/Space)は何もしない。keydownはonClickのような
+        // stopPropagationを内側で行っておらずbubbleするため、ここで発生元を
+        // 見て親div由来のキー操作だけをDetailPanel開閉に使う。
+        if (e.target !== e.currentTarget) return
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault()
           onClick()
