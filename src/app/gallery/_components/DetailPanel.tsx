@@ -648,8 +648,9 @@ function FavoritePromptsSection({
   )
 }
 
-// ---- CopyPackSection: ファイル名/シーン/タグ/AI候補タグ/日本語訳/promptを
-// まとめてコピー (Phase 10-12B) ----
+// ---- CopyPackSection: ファイル名/タグ/AI候補タグ/日本語訳/promptを
+// まとめてコピー (Phase 10-12B、Phase 10-14Aでシーンを出力から除外・
+// DetailPanel下部（メタ情報付近）へ移動) ----
 //
 // read-only: buildPromptCopyText / buildImageDetailCopyText は既に取得済みの
 // ImageDetail を整形するだけで、Prompt.currentBody / PromptVersion には一切
@@ -792,11 +793,6 @@ function PromptVersionCard({ version }: { version: PromptVersionSummary }) {
         </div>
         <CopyButton text={version.body} label="コピー" />
       </div>
-
-      {/* Scene */}
-      {version.scene && (
-        <p className="mt-1 text-zinc-500">シーン: {version.scene.name}</p>
-      )}
 
       {/* changeNote */}
       {version.changeNote && (
@@ -1275,13 +1271,6 @@ export default function DetailPanel({
             </div>
           </div>
 
-          {state.detail.scene && (
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">シーン</p>
-              <p className="mt-0.5 text-sm text-zinc-700">{state.detail.scene.name}</p>
-            </div>
-          )}
-
           {state.detail.tags.length > 0 && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">タグ</p>
@@ -1338,8 +1327,6 @@ export default function DetailPanel({
             />
           )}
 
-          <CopyPackSection detail={state.detail} onFavoriteSave={handleFavoriteSave} />
-
           {state.detail.prompt && (
             <PromptEditor
               imageId={state.detail.id}
@@ -1385,6 +1372,10 @@ export default function DetailPanel({
           {state.detail.prompt && (
             <PromptVersionsSection versions={state.detail.prompt.versions} />
           )}
+
+          {/* Phase 10-14A: 使用頻度が低いため主要導線(AI解析/Prompt編集/
+              PromptVariation/お気に入り)より下、メタ情報付近へ移動 */}
+          <CopyPackSection detail={state.detail} onFavoriteSave={handleFavoriteSave} />
 
           {(state.detail.sourceSheetName || state.detail.importBatchId || state.detail.fileHashSnippet) && (
             <div>

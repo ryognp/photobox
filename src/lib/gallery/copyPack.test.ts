@@ -100,7 +100,7 @@ describe("buildPromptCopyText", () => {
 })
 
 describe("buildImageDetailCopyText", () => {
-  it("full case: fileName + scene + tags + suggestions + JA + prompt, in order", () => {
+  it("full case: fileName + tags + suggestions + JA + prompt, in order", () => {
     const detail = makeDetail({
       originalName: "beach.jpg",
       scene: { id: "s1", name: "海" },
@@ -111,7 +111,6 @@ describe("buildImageDetailCopyText", () => {
     expect(buildImageDetailCopyText(detail)).toBe(
       [
         "【ファイル名】\nbeach.jpg",
-        "【シーン】\n海",
         "【タグ】\n水着, 夕方",
         "【AI候補タグ】\nプール",
         "【日本語訳】\n海辺に立つ女性",
@@ -120,14 +119,15 @@ describe("buildImageDetailCopyText", () => {
     )
   })
 
-  it("minimal case: only fileName (scene/tags/suggestions/JA/prompt all absent)", () => {
+  it("minimal case: only fileName (tags/suggestions/JA/prompt all absent)", () => {
     const detail = makeDetail({ originalName: "solo.jpg" })
     expect(buildImageDetailCopyText(detail)).toBe("【ファイル名】\nsolo.jpg")
   })
 
-  it("omits 【シーン】 when scene is null", () => {
-    const detail = makeDetail({ scene: null, prompt: makePrompt() })
+  it("Phase 10-14A: never renders 【シーン】, even when scene is present", () => {
+    const detail = makeDetail({ scene: { id: "s1", name: "海" }, prompt: makePrompt() })
     expect(buildImageDetailCopyText(detail)).not.toContain("【シーン】")
+    expect(buildImageDetailCopyText(detail)).not.toContain("シーン")
   })
 
   it("omits 【タグ】 when tags is empty", () => {
