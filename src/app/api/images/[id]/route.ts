@@ -12,6 +12,7 @@ import { resolveWorkspaceImage } from "@/lib/images/resolveWorkspaceImage";
 import { isTranslationEnabled } from "@/lib/translation/translationProviderFactory";
 import { getEffectiveJapanesePromptBody } from "@/lib/translation/translationCore";
 import { isExcludedGenericLabel } from "@/lib/analysis/tagTaxonomy";
+import { getCurrentAnalysisModelIdSuffix } from "@/lib/analysis/currentAnalysisSuggestionFilter";
 import { isVariationEnabled } from "@/lib/promptVariation/variationProviderFactory";
 
 const BUCKET = "photobox-private";
@@ -68,8 +69,19 @@ export async function GET(
       scene: { select: { id: true, name: true } },
       imageTags: { select: { tag: { select: { id: true, name: true } } } },
       imagePersons: { select: { person: { select: { id: true, name: true } } } },
+      // Phase 10-13B: only PENDING suggestions from the CURRENT
+      // ANALYSIS_PROMPT_VERSION are shown. Bumping the prompt version creates
+      // a new ImageAnalysis row per image (unique key includes modelId); the
+      // old ImageAnalysis row and its PENDING TagSuggestions are left in the
+      // DB untouched (never deleted/updated) — this is a read-only display
+      // filter via Prisma `where`, not a data change. APPROVED suggestions
+      // (already promoted to ImageTag) are unaffected — this only narrows the
+      // `status: "PENDING"` query. See currentAnalysisSuggestionFilter.ts.
       tagSuggestions: {
-        where: { status: "PENDING" },
+        where: {
+          status: "PENDING",
+          analysis: { modelId: { endsWith: getCurrentAnalysisModelIdSuffix() } },
+        },
         select: { id: true, label: true, confidence: true, status: true },
         orderBy: { createdAt: "asc" },
       },
@@ -145,6 +157,8 @@ export async function GET(
     persons: image.imagePersons.map((p) => p.person),
     // Phase 10-10A: hide 人物/ポートレート from PENDING candidates (read-only
     // display filter; the TagSuggestion rows themselves are not modified).
+    // Composed with the Phase 10-13B current-prompt-version filter already
+    // applied in the query above — two independent read-only display layers.
     tagSuggestions: image.tagSuggestions.filter((s) => !isExcludedGenericLabel(s.label)),
     // Phase 10-9C-4: effectiveTranslatedBodyJa is computed here (server-side,
     // hash-checked) so the client never imports translationCore / node:crypto.
