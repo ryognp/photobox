@@ -1,6 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { fetchPersons, type PersonSummary } from "@/lib/gallery/imagesClient"
+import { filterPersonsForBulkSelect } from "@/lib/gallery/personSelectFilter"
 
 // Phase 10-18C: selection count, "select all visible", "clear selection".
 // Phase 10-18D: "タグを一括追加" / "人物を一括追加" inline action panels wired
@@ -9,6 +12,10 @@ import { useState } from "react"
 // actual API calls and detail-state sync live in GalleryClient (passed down
 // as onBulkAddTag/onBulkAssignPerson so GalleryClient's reducer stays the
 // single source of truth for detail.tags/persons).
+// Phase 10-21A: "人物を一括追加" は自由入力ではなく、既存Person一覧から選ぶ
+// PersonSelectPanel に変更(タグ側のActionPanelは自由入力のまま維持)。
+// onBulkAssignPerson の型(name: string)は変更しない — 選択したperson.name
+// をそのまま既存bulk API(find-or-create)へ渡すだけで要望を満たす。
 
 type PanelKind = "tag" | "person" | null
 
@@ -93,6 +100,128 @@ function ActionPanel({
   )
 }
 
+type PersonFetchState =
+  | { phase: "loading" }
+  | { phase: "ok"; persons: PersonSummary[] }
+  | { phase: "error"; message: string }
+
+function PersonSelectPanel({
+  onSubmit,
+  onClose,
+}: {
+  onSubmit: (name: string) => Promise<string>
+  onClose: () => void
+}) {
+  const [fetchState, setFetchState] = useState<PersonFetchState>({ phase: "loading" })
+  const [query, setQuery] = useState("")
+  const [selectedId, setSelectedId] = useState("")
+  const [phase, setPhase] = useState<SubmitPhase>("idle")
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchPersons()
+      .then((persons) => {
+        if (!cancelled) setFetchState({ phase: "ok", persons })
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setFetchState({ phase: "error", message: (e as Error).message ?? "人物一覧の取得に失敗しました" })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const submit = async () => {
+    if (fetchState.phase !== "ok") return
+    const person = fetchState.persons.find((p) => p.id === selectedId)
+    if (!person) return
+    setPhase("submitting")
+    setMessage(null)
+    try {
+      const successMessage = await onSubmit(person.name)
+      setMessage(successMessage)
+      setPhase("idle")
+    } catch (e: unknown) {
+      setMessage((e as Error).message ?? "追加に失敗しました")
+      setPhase("error")
+    }
+  }
+
+  const isSubmitting = phase === "submitting"
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-amber-200 bg-white p-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-amber-800">人物を一括追加</span>
+        <button onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-700">
+          閉じる
+        </button>
+      </div>
+
+      {fetchState.phase === "loading" && (
+        <p className="text-xs text-zinc-400">読み込み中...</p>
+      )}
+
+      {fetchState.phase === "error" && (
+        <p className="text-xs text-red-500">{fetchState.message}</p>
+      )}
+
+      {fetchState.phase === "ok" && fetchState.persons.length === 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs text-zinc-500">
+            登録済みの人物がありません。先に人物マスターを追加してください。
+          </p>
+          <Link href="/masters?tab=persons" className="text-xs text-blue-600 hover:underline">
+            人物を管理 →
+          </Link>
+        </div>
+      )}
+
+      {fetchState.phase === "ok" && fetchState.persons.length > 0 && (
+        <>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={isSubmitting}
+            placeholder="人物名で検索"
+            className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            <select
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              disabled={isSubmitting}
+              className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+            >
+              <option value="">人物を選択</option>
+              {filterPersonsForBulkSelect(fetchState.persons, query).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => void submit()}
+              disabled={isSubmitting || selectedId === ""}
+              className="rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              {isSubmitting ? "追加中…" : "追加"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {message && (
+        <p className={`text-xs ${phase === "error" ? "text-red-500" : "text-green-700"}`}>{message}</p>
+      )}
+    </div>
+  )
+}
+
 export default function BulkSelectionToolbar({
   selectedCount,
   visibleCount,
@@ -148,9 +277,7 @@ export default function BulkSelectionToolbar({
         />
       )}
       {openPanel === "person" && (
-        <ActionPanel
-          label="人物を一括追加"
-          placeholder="人物名を入力"
+        <PersonSelectPanel
           onSubmit={onBulkAssignPerson}
           onClose={() => setOpenPanel(null)}
         />
