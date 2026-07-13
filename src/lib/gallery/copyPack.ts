@@ -29,19 +29,17 @@ export function buildPromptCopyText(detail: ImageDetail): string | null {
 }
 
 /**
- * "投稿/管理用まとめ" bundle: ファイル名 / シーン / タグ(承認済み) / AI候補タグ
+ * "投稿/管理用まとめ" bundle: ファイル名 / タグ(承認済み) / AI候補タグ
  * (PENDING) / 日本語訳 / Prompt, each as a labeled section. Empty/absent
  * fields are OMITTED entirely (not rendered as "未設定") — only ファイル名 is
  * guaranteed to always be present, so the result is never an empty string.
+ * Phase 10-14A: シーンは運用上不要になったため出力しない
+ * (detail.scene 自体は型・APIレスポンスに残っているが、ここでは参照しない)。
  */
 export function buildImageDetailCopyText(detail: ImageDetail): string {
   const sections: string[] = []
 
   sections.push(`【ファイル名】\n${detail.originalName}`)
-
-  if (detail.scene) {
-    sections.push(`【シーン】\n${detail.scene.name}`)
-  }
 
   if (detail.tags.length > 0) {
     sections.push(`【タグ】\n${joinLabels(detail.tags.map((t) => t.name))}`)

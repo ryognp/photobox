@@ -213,7 +213,7 @@ interface FilterContentProps {
  * Filter body shared by the desktop FilterSidebar and the mobile
  * FilterDrawer (Phase 10-8B) — same markup/logic, different chrome around it.
  */
-export default function FilterContent({ filters, onChange, scenes, tags, persons, suggestionTags }: FilterContentProps) {
+export default function FilterContent({ filters, onChange, tags, persons, suggestionTags }: FilterContentProps) {
   const hasAnyFilter =
     filters.sceneId !== null ||
     filters.tagIds.length > 0 ||
@@ -258,14 +258,9 @@ export default function FilterContent({ filters, onChange, scenes, tags, persons
         </div>
       </div>
 
-      {scenes.length > 0 && (
-        <Section
-          title="シーン"
-          items={scenes}
-          selectedId={filters.sceneId}
-          onSelect={(id) => onChange({ sceneId: id })}
-        />
-      )}
+      {/* Phase 10-14A: シーンフィルターUIは運用上不要になったため非表示。
+          filters.sceneId / scenes fetch はclient型・URL互換のため残す
+          (破壊的変更を避ける) — UIとして描画しないだけ。 */}
 
       {tags.length > 0 && (
         <TagFilterSection
