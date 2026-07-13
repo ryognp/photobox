@@ -281,6 +281,45 @@ export async function removeImageTag(imageId: string, tagId: string): Promise<Re
   return json.data;
 }
 
+/** Existing Person summary as returned by /api/persons and image person links. */
+export type PersonSummary = { id: string; name: string };
+
+/**
+ * Links an existing Person to an image (Phase 10-15B). personId must
+ * reference a Person already in the same workspace — this never creates a
+ * new Person. Idempotent server-side (safe to call again for an already
+ * linked person).
+ */
+export async function assignImagePerson(imageId: string, personId: string): Promise<PersonSummary> {
+  const res = await fetch(`/api/images/${imageId}/persons`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ personId }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to assign person (${res.status})`);
+  }
+  const json = (await res.json()) as { data: { person: PersonSummary } };
+  return json.data.person;
+}
+
+export type RemoveImagePersonResult = {
+  removed: boolean;
+  personId: string;
+};
+
+/** Unlinks a person from an image (ImagePerson row only; the Person itself is kept). */
+export async function removeImagePerson(imageId: string, personId: string): Promise<RemoveImagePersonResult> {
+  const res = await fetch(`/api/images/${imageId}/persons/${personId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to remove person (${res.status})`);
+  }
+  const json = (await res.json()) as { data: RemoveImagePersonResult };
+  return json.data;
+}
+
 export type AnalyzeImageResult = {
   cached: boolean;
   analysis: {
