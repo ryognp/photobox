@@ -359,6 +359,57 @@ export async function addManualImageTag(imageId: string, name: string): Promise<
   return json.data.tag;
 }
 
+/** Result shared by both bulk assignment endpoints (Phase 10-18B). */
+export type BulkAssignResult = {
+  requestedCount: number;
+  linkedCount: number;
+  alreadyLinkedCount: number;
+};
+
+export type BulkAddTagResult = BulkAssignResult & { tag: TagSummary };
+
+/**
+ * Adds one manually-typed tag to MANY images at once (Phase 10-18B). Same
+ * find-or-create-by-name semantics as addManualImageTag, applied in bulk via
+ * POST /api/images/bulk/tags. Idempotent (safe to call again for images that
+ * already have the tag).
+ */
+export async function bulkAddImageTag(imageIds: string[], name: string): Promise<BulkAddTagResult> {
+  const res = await fetch("/api/images/bulk/tags", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageIds, name }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to bulk add tag (${res.status})`);
+  }
+  const json = (await res.json()) as { data: BulkAddTagResult };
+  return json.data;
+}
+
+export type BulkAssignPersonResult = BulkAssignResult & { person: PersonSummary };
+
+/**
+ * Links one Person (found-or-created by name) to MANY images at once (Phase
+ * 10-18B) via POST /api/images/bulk/persons. Unlike assignImagePerson, this
+ * can create a new Person by name — there is no single-image equivalent.
+ * Idempotent (safe to call again for images that already have the person).
+ */
+export async function bulkAssignImagePerson(imageIds: string[], name: string): Promise<BulkAssignPersonResult> {
+  const res = await fetch("/api/images/bulk/persons", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageIds, name }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to bulk assign person (${res.status})`);
+  }
+  const json = (await res.json()) as { data: BulkAssignPersonResult };
+  return json.data;
+}
+
 export type AnalyzeImageResult = {
   cached: boolean;
   analysis: {

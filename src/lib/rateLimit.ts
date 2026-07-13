@@ -32,6 +32,8 @@ const PRESETS: Record<RateLimitPreset, { limit: number; window: `${number} ${"s"
   promptVariation: { limit: 10, window: "1 m" }, // POST /api/images/[id]/prompt-variations (Phase 10-11B)
   personAssignAction: { limit: 30, window: "1 m" }, // POST/DELETE /api/images/[id]/persons[/[personId]] (Phase 10-15B)
   manualTagAdd: { limit: 30, window: "1 m" }, // POST /api/images/[id]/tags (Phase 10-16B)
+  bulkTagAdd: { limit: 10, window: "1 m" }, // POST /api/images/bulk/tags (Phase 10-18B)
+  bulkPersonAssign: { limit: 10, window: "1 m" }, // POST /api/images/bulk/persons (Phase 10-18B)
 };
 
 const limiters = new Map<RateLimitPreset, LimiterLike>();
