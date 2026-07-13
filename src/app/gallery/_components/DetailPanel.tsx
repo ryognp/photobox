@@ -2,6 +2,7 @@
 
 import { useEffect, useReducer, useState } from "react"
 import {
+  addManualImageTag,
   analyzeImage,
   approveSuggestion,
   assignImagePerson,
@@ -17,6 +18,7 @@ import {
   type PersonSummary,
   type PromptVersionSummary,
   type TagSuggestion,
+  type TagSummary,
   type TranslatePromptResult,
   type VariationChange,
 } from "@/lib/gallery/imagesClient"
@@ -70,6 +72,8 @@ interface DetailPanelProps {
   onSuggestionResolved?: (payload: SuggestionResolvedPayload) => void
   onAnalyzed?: (suggestions: TagSuggestion[]) => void
   onTagRemoved?: (tagId: string) => void
+  /** Phase 10-16C: a manually-typed tag was added (fold into shared detail). */
+  onTagAdded?: (tag: TagSummary) => void
   /** Phase 10-15C: a person was linked/unlinked (fold into shared detail). */
   onPersonAssigned?: (person: PersonSummary) => void
   onPersonRemoved?: (personId: string) => void
@@ -1032,6 +1036,95 @@ function TagChip({
   )
 }
 
+// ---- TagAddForm: 手入力タグ追加 (Phase 10-16C) ----
+//
+// タグ名のtaxonomy/SYNONYM_MAP正規化はここでは行わない — 手入力はユーザーが
+// 明示したラベルとして verbatim にAPIへ渡す（validationはPOST側の
+// normalizeManualTagNameに一任、UI側では空文字/空白のみの軽い事前チェックの
+// み行う）。表示に使うのはAPIが返したtag.name（trim後の確定値）。
+
+type TagAddPhase = "closed" | "open" | "adding" | "error"
+
+function TagAddForm({
+  imageId,
+  onAdded,
+}: {
+  imageId: string
+  onAdded: (tag: TagSummary) => void
+}) {
+  const [phase, setPhase] = useState<TagAddPhase>("closed")
+  const [draft, setDraft] = useState("")
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  // 画像切り替え時にリセット（他subcomponentと同じprevId比較パターン）
+  const [prevImageId, setPrevImageId] = useState(imageId)
+  if (imageId !== prevImageId) {
+    setPrevImageId(imageId)
+    setPhase("closed")
+    setDraft("")
+    setErrorMsg(null)
+  }
+
+  const submit = async () => {
+    // UI側は空文字/空白のみの送信を防ぐ軽い事前チェックのみ — 40文字上限等の
+    // 本validationはAPI(normalizeManualTagName)に一任する。
+    if (draft.trim() === "") return
+    setPhase("adding")
+    setErrorMsg(null)
+    try {
+      const tag = await addManualImageTag(imageId, draft)
+      onAdded(tag)
+      setDraft("")
+      setPhase("open")
+    } catch (e: unknown) {
+      setErrorMsg((e as Error).message ?? "タグを追加できませんでした")
+      setPhase("error")
+    }
+  }
+
+  if (phase === "closed") {
+    return (
+      <button
+        onClick={() => setPhase("open")}
+        className="mt-1.5 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+      >
+        タグを追加
+      </button>
+    )
+  }
+
+  const isAdding = phase === "adding"
+
+  return (
+    <div className="mt-1.5 flex flex-col gap-1">
+      <div className="flex flex-wrap gap-1.5">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              void submit()
+            }
+          }}
+          disabled={isAdding}
+          placeholder="タグ名を入力"
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+        />
+        <button
+          onClick={() => void submit()}
+          disabled={isAdding || draft.trim() === ""}
+          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {isAdding ? "追加中…" : "追加"}
+        </button>
+      </div>
+      {phase === "error" && errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+    </div>
+  )
+}
+
 // ---- PersonChip / PersonSection: 画像への人物紐づけ・解除 (Phase 10-15C) ----
 //
 // PersonChip は TagChip の view/confirm/removing/error 遷移をそのまま流用する
@@ -1347,6 +1440,7 @@ export default function DetailPanel({
   onSuggestionResolved,
   onAnalyzed,
   onTagRemoved,
+  onTagAdded,
   onPersonAssigned,
   onPersonRemoved,
   onTranslated,
@@ -1492,9 +1586,9 @@ export default function DetailPanel({
             </div>
           </div>
 
-          {state.detail.tags.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">タグ</p>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">タグ</p>
+            {state.detail.tags.length > 0 && (
               <div className="mt-1 flex flex-wrap items-start gap-1">
                 {state.detail.tags.map((t) => (
                   <TagChip
@@ -1505,8 +1599,9 @@ export default function DetailPanel({
                   />
                 ))}
               </div>
-            </div>
-          )}
+            )}
+            <TagAddForm imageId={state.detail.id} onAdded={(tag) => onTagAdded?.(tag)} />
+          </div>
 
           <AnalyzeSection imageId={state.detail.id} onAnalyzed={onAnalyzed} />
 
