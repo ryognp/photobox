@@ -31,3 +31,55 @@ export function parseSavedScrollY(value: string | null | undefined): number | nu
 export function shouldRestoreScrollY(value: number | null): boolean {
   return value !== null && value > 0;
 }
+
+// Phase 10-23B: last-visible-image restore. Complements the scrollTop
+// save/restore above with a DOM-anchored fallback — if the previously most-
+// visible image is still present in the DOM (within currently-loaded pages),
+// scrollIntoView gives a more accurate restore than a raw scrollTop replay.
+// No auto-fetch: if the id isn't in the DOM (e.g. not yet loaded via "もっと
+// 見る"), callers fall back to the plain scrollTop restore above.
+
+export const GALLERY_LAST_VISIBLE_STORAGE_PREFIX = "photobox:gallery-last-visible:v1";
+
+/** Builds a sessionStorage key scoped to the current filter (pathname + search). */
+export function buildGalleryLastVisibleStorageKey(pathname: string, search: string): string {
+  return `${GALLERY_LAST_VISIBLE_STORAGE_PREFIX}:${pathname}:${search}`;
+}
+
+/** Parses a raw sessionStorage value into a valid image id, or null if
+ *  missing/empty/whitespace-only. Trims the value before returning it. */
+export function parseSavedLastVisibleImageId(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  return trimmed;
+}
+
+/** A single visible-card observation, decoupled from IntersectionObserverEntry
+ *  so this stays DOM-independent and unit-testable. */
+export interface VisibleImageEntry {
+  id: string;
+  intersectionRatio: number;
+  top: number;
+}
+
+/** Picks the "most visible" image id from a set of intersection observations:
+ *  highest intersectionRatio wins; ties broken by whichever is closest to the
+ *  top of the scroll container (smallest `top`). Entries with an empty id are
+ *  ignored. Returns null if there are no valid candidates. Does not mutate
+ *  the input array. */
+export function pickMostVisibleImageId(entries: VisibleImageEntry[]): string | null {
+  const candidates = entries.filter((e) => e.id !== "");
+  if (candidates.length === 0) return null;
+
+  let best = candidates[0];
+  for (const entry of candidates.slice(1)) {
+    if (
+      entry.intersectionRatio > best.intersectionRatio ||
+      (entry.intersectionRatio === best.intersectionRatio && entry.top < best.top)
+    ) {
+      best = entry;
+    }
+  }
+  return best.id;
+}

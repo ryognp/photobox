@@ -4,6 +4,11 @@ import {
   parseSavedScrollY,
   shouldRestoreScrollY,
   GALLERY_SCROLL_STORAGE_PREFIX,
+  buildGalleryLastVisibleStorageKey,
+  parseSavedLastVisibleImageId,
+  pickMostVisibleImageId,
+  GALLERY_LAST_VISIBLE_STORAGE_PREFIX,
+  type VisibleImageEntry,
 } from "@/lib/gallery/galleryScrollRestoration";
 
 describe("buildGalleryScrollStorageKey", () => {
@@ -75,5 +80,85 @@ describe("shouldRestoreScrollY", () => {
 
   it("is true for a positive value", () => {
     expect(shouldRestoreScrollY(150)).toBe(true);
+  });
+});
+
+describe("buildGalleryLastVisibleStorageKey", () => {
+  it("includes the prefix, pathname, and search", () => {
+    expect(buildGalleryLastVisibleStorageKey("/gallery", "?tagIds=a,b")).toBe(
+      `${GALLERY_LAST_VISIBLE_STORAGE_PREFIX}:/gallery:?tagIds=a,b`,
+    );
+  });
+
+  it("produces a different key than the scrollY key (separate namespace)", () => {
+    const scrollKey = buildGalleryScrollStorageKey("/gallery", "?q=cat");
+    const lastVisibleKey = buildGalleryLastVisibleStorageKey("/gallery", "?q=cat");
+    expect(lastVisibleKey).not.toBe(scrollKey);
+  });
+
+  it("produces a different key for a different search (different filter)", () => {
+    const a = buildGalleryLastVisibleStorageKey("/gallery", "?q=cat");
+    const b = buildGalleryLastVisibleStorageKey("/gallery", "?q=dog");
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("parseSavedLastVisibleImageId", () => {
+  it("returns null for null/undefined", () => {
+    expect(parseSavedLastVisibleImageId(null)).toBeNull();
+    expect(parseSavedLastVisibleImageId(undefined)).toBeNull();
+  });
+
+  it("returns null for an empty/whitespace-only string", () => {
+    expect(parseSavedLastVisibleImageId("")).toBeNull();
+    expect(parseSavedLastVisibleImageId("   ")).toBeNull();
+  });
+
+  it("returns the trimmed value for a valid imageId", () => {
+    expect(parseSavedLastVisibleImageId("img_123")).toBe("img_123");
+    expect(parseSavedLastVisibleImageId("  img_123  ")).toBe("img_123");
+  });
+});
+
+describe("pickMostVisibleImageId", () => {
+  it("picks the entry with the highest intersectionRatio", () => {
+    const entries: VisibleImageEntry[] = [
+      { id: "a", intersectionRatio: 0.3, top: 10 },
+      { id: "b", intersectionRatio: 0.9, top: 200 },
+      { id: "c", intersectionRatio: 0.5, top: 50 },
+    ];
+    expect(pickMostVisibleImageId(entries)).toBe("b");
+  });
+
+  it("breaks ties by picking the smallest top (closest to container top edge)", () => {
+    const entries: VisibleImageEntry[] = [
+      { id: "a", intersectionRatio: 0.5, top: 100 },
+      { id: "b", intersectionRatio: 0.5, top: 20 },
+      { id: "c", intersectionRatio: 0.5, top: 60 },
+    ];
+    expect(pickMostVisibleImageId(entries)).toBe("b");
+  });
+
+  it("ignores entries with an empty id", () => {
+    const entries: VisibleImageEntry[] = [
+      { id: "", intersectionRatio: 1, top: 0 },
+      { id: "b", intersectionRatio: 0.4, top: 30 },
+    ];
+    expect(pickMostVisibleImageId(entries)).toBe("b");
+  });
+
+  it("returns null when there are no candidates", () => {
+    expect(pickMostVisibleImageId([])).toBeNull();
+    expect(pickMostVisibleImageId([{ id: "", intersectionRatio: 1, top: 0 }])).toBeNull();
+  });
+
+  it("does not mutate the input array", () => {
+    const entries: VisibleImageEntry[] = [
+      { id: "a", intersectionRatio: 0.3, top: 10 },
+      { id: "b", intersectionRatio: 0.9, top: 200 },
+    ];
+    const copy = [...entries];
+    pickMostVisibleImageId(entries);
+    expect(entries).toEqual(copy);
   });
 });
