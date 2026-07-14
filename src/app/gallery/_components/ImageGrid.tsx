@@ -7,6 +7,10 @@ import {
   buildGalleryScrollStorageKey,
   parseSavedScrollY,
   shouldRestoreScrollY,
+  buildGalleryLastVisibleStorageKey,
+  parseSavedLastVisibleImageId,
+  pickMostVisibleImageId,
+  type VisibleImageEntry,
 } from "@/lib/gallery/galleryScrollRestoration"
 import ImageCard from "./ImageCard"
 
@@ -50,21 +54,44 @@ export default function ImageGrid({
   const containerRef = useRef<HTMLDivElement>(null)
   const restoredKeyRef = useRef<string | null>(null)
   const storageKey = buildGalleryScrollStorageKey(pathname, searchParams.toString())
+  // Phase 10-23B: separate namespace from storageKey (scrollTop) — holds the
+  // last-most-visible image id so reload can scrollIntoView it directly.
+  const lastVisibleStorageKey = buildGalleryLastVisibleStorageKey(pathname, searchParams.toString())
 
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
 
     // 復元は同じstorageKeyに対して一度だけ試みる(filter変更でstorageKeyが
-    // 変わった場合のみ再度復元を試みる)。
+    // 変わった場合のみ再度復元を試みる)。優先順位: lastVisibleImageIdが
+    // DOM上に見つかればscrollIntoView、見つからなければ既存scrollTop復元。
     if (restoredKeyRef.current !== storageKey) {
+      let restoredViaLastVisible = false
       try {
-        const savedY = parseSavedScrollY(sessionStorage.getItem(storageKey))
-        if (shouldRestoreScrollY(savedY)) {
-          el.scrollTop = savedY as number
+        const lastVisibleId = parseSavedLastVisibleImageId(sessionStorage.getItem(lastVisibleStorageKey))
+        if (lastVisibleId !== null) {
+          const cards = el.querySelectorAll<HTMLElement>("[data-image-id]")
+          for (const card of cards) {
+            if (card.dataset.imageId === lastVisibleId) {
+              card.scrollIntoView({ block: "center" })
+              restoredViaLastVisible = true
+              break
+            }
+          }
         }
       } catch {
-        // sessionStorage unavailable (private mode等) — 無視して続行
+        // sessionStorage unavailable (private mode等) — フォールバックへ続行
+      }
+
+      if (!restoredViaLastVisible) {
+        try {
+          const savedY = parseSavedScrollY(sessionStorage.getItem(storageKey))
+          if (shouldRestoreScrollY(savedY)) {
+            el.scrollTop = savedY as number
+          }
+        } catch {
+          // sessionStorage unavailable (private mode等) — 無視して続行
+        }
       }
       restoredKeyRef.current = storageKey
     }
@@ -91,7 +118,45 @@ export default function ImageGrid({
       el.removeEventListener("scroll", handleScroll)
       window.removeEventListener("beforeunload", persist)
     }
-  }, [loading, images.length, storageKey])
+  }, [loading, images.length, storageKey, lastVisibleStorageKey])
+
+  // Phase 10-23B: IntersectionObserverでcontainerRef内の[data-image-id]要素を
+  // 監視し、最も見えているカードのidをsessionStorageへ保存する。auto-fetchは
+  // しない(見えている範囲の観測のみ)。images.length/storageKeyが変わるたびに
+  // observerを作り直す。
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const cards = el.querySelectorAll<HTMLElement>("[data-image-id]")
+    if (cards.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (observerEntries) => {
+        const visible: VisibleImageEntry[] = []
+        for (const entry of observerEntries) {
+          if (!entry.isIntersecting) continue
+          const id = (entry.target as HTMLElement).dataset.imageId ?? ""
+          visible.push({
+            id,
+            intersectionRatio: entry.intersectionRatio,
+            top: entry.boundingClientRect.top,
+          })
+        }
+        const pickedId = pickMostVisibleImageId(visible)
+        if (pickedId === null) return
+        try {
+          sessionStorage.setItem(lastVisibleStorageKey, pickedId)
+        } catch {
+          // sessionStorage unavailable (private mode等) — 無視
+        }
+      },
+      { root: el, threshold: [0, 0.25, 0.5, 0.75, 1] },
+    )
+
+    for (const card of cards) observer.observe(card)
+    return () => observer.disconnect()
+  }, [images.length, lastVisibleStorageKey])
 
   if (loading) {
     return (

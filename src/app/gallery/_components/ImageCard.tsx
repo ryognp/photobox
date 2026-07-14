@@ -39,6 +39,7 @@ export default function ImageCard({ image, selected, onClick, bulkSelected, onBu
     <div
       role="button"
       tabIndex={0}
+      data-image-id={image.id}
       onClick={onClick}
       onKeyDown={(e) => {
         // イベント発生元が親div自身でない場合(例: 内側のcheckbox buttonに
