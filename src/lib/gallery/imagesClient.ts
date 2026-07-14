@@ -340,6 +340,22 @@ export async function removeImagePerson(imageId: string, personId: string): Prom
 export type TagSummary = { id: string; name: string };
 
 /**
+ * Fetches the full existing-Tag list for the current workspace (Phase 10-22A
+ * bulk-add candidate list). Read-only — never creates a Tag. Kept minimal:
+ * ignores /api/tags' optional `q` search param and imageCount field, since
+ * the bulk-add picker only needs { id, name } (mirrors fetchPersons()).
+ */
+export async function fetchTags(): Promise<TagSummary[]> {
+  const res = await fetch("/api/tags");
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? `Failed to load tags (${res.status})`);
+  }
+  const json = (await res.json()) as { data: TagSummary[] };
+  return json.data;
+}
+
+/**
  * Adds a manually-typed tag to an image (Phase 10-16B). Finds/creates the
  * Tag by name (workspace-scoped) and attaches ImageTag — no taxonomy/synonym
  * normalization is applied, the name is used verbatim (trimmed). Idempotent

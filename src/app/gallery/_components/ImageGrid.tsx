@@ -1,7 +1,13 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import { useEffect, useRef } from "react"
+import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import type { GalleryImage } from "@/lib/gallery/imagesClient"
+import {
+  buildGalleryScrollStorageKey,
+  parseSavedScrollY,
+  shouldRestoreScrollY,
+} from "@/lib/gallery/galleryScrollRestoration"
 import ImageCard from "./ImageCard"
 
 interface ImageGridProps {
@@ -33,6 +39,59 @@ export default function ImageGrid({
 }: ImageGridProps) {
   const bulkSelectedSet = new Set(bulkSelectedIds)
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Phase 10-22B: スクロール位置のsessionStorage保存/復元。ImageGrid自身が
+  // overflow-y-autoの実スクロールコンテナを持つため、windowではなくこの
+  // containerRefに対してscrollTop/scrollイベントを扱う。keyはフィルター
+  // (pathname+search)ごとに分け、cursor paginationでまだ読み込まれていない
+  // 位置までは無理に復元しない(既知の制約 — 大量の自動追加fetchはしない)。
+  const containerRef = useRef<HTMLDivElement>(null)
+  const restoredKeyRef = useRef<string | null>(null)
+  const storageKey = buildGalleryScrollStorageKey(pathname, searchParams.toString())
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    // 復元は同じstorageKeyに対して一度だけ試みる(filter変更でstorageKeyが
+    // 変わった場合のみ再度復元を試みる)。
+    if (restoredKeyRef.current !== storageKey) {
+      try {
+        const savedY = parseSavedScrollY(sessionStorage.getItem(storageKey))
+        if (shouldRestoreScrollY(savedY)) {
+          el.scrollTop = savedY as number
+        }
+      } catch {
+        // sessionStorage unavailable (private mode等) — 無視して続行
+      }
+      restoredKeyRef.current = storageKey
+    }
+
+    let ticking = false
+    const persist = () => {
+      try {
+        sessionStorage.setItem(storageKey, String(el.scrollTop))
+      } catch {
+        // ignore
+      }
+    }
+    const handleScroll = () => {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(() => {
+        persist()
+        ticking = false
+      })
+    }
+    el.addEventListener("scroll", handleScroll, { passive: true })
+    window.addEventListener("beforeunload", persist)
+    return () => {
+      el.removeEventListener("scroll", handleScroll)
+      window.removeEventListener("beforeunload", persist)
+    }
+  }, [loading, images.length, storageKey])
 
   if (loading) {
     return (
@@ -79,7 +138,7 @@ export default function ImageGrid({
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto p-4">
+    <div ref={containerRef} className="flex flex-1 flex-col overflow-y-auto p-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {images.map((img) => (
           <ImageCard
