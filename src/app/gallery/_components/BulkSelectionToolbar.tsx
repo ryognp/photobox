@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import Link from "next/link"
 import { fetchPersons, fetchTags, type PersonSummary, type TagSummary } from "@/lib/gallery/imagesClient"
 import { filterPersonsForBulkSelect } from "@/lib/gallery/personSelectFilter"
@@ -110,7 +110,10 @@ function TagSelectPanel({
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-white p-2.5">
-      <div className="flex items-center justify-between">
+      {/* Phase 10-25E-B: mobileではこの見出し行を隠す — 同内容のタイトル+
+          閉じるボタンをMobileBulkPanelSheet側のsheetヘッダーが持つため、
+          二重表示を避ける。desktopは従来通りここに表示。 */}
+      <div className="hidden items-center justify-between md:flex">
         <span className="text-xs font-semibold text-amber-800">タグを一括追加</span>
         <button onClick={onClose} className="min-h-10 px-2 text-xs text-zinc-400 hover:text-zinc-700">
           閉じる
@@ -275,7 +278,8 @@ function PersonSelectPanel({
 
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-amber-200 bg-white p-2.5">
-      <div className="flex items-center justify-between">
+      {/* Phase 10-25E-B: mobileではこの見出し行を隠す(理由はTagSelectPanelと同じ)。 */}
+      <div className="hidden items-center justify-between md:flex">
         <span className="text-xs font-semibold text-amber-800">人物を一括追加</span>
         <button onClick={onClose} className="min-h-10 px-2 text-xs text-zinc-400 hover:text-zinc-700">
           閉じる
@@ -346,6 +350,54 @@ function PersonSelectPanel({
   )
 }
 
+/**
+ * Phase 10-25E-B: mobile-only bottom sheet chrome around the tag/person
+ * panel — desktop keeps the existing inline-in-toolbar rendering (this
+ * wrapper is `md:static ...` and effectively invisible-as-a-sheet there,
+ * relying on TagSelectPanel/PersonSelectPanel's own card styling like
+ * before). Wraps a SINGLE existing panel instance (no duplicate render), so
+ * fetchTags/fetchPersons still only ever fire once per open.
+ */
+function MobileBulkPanelSheet({
+  title,
+  onClose,
+  children,
+}: {
+  title: string
+  onClose: () => void
+  children: ReactNode
+}) {
+  return (
+    <div
+      className="
+        fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl bg-white shadow-xl
+        pb-[env(safe-area-inset-bottom)]
+        md:static md:z-auto md:flex-none md:rounded-none md:bg-transparent md:shadow-none md:pb-0
+      "
+      style={{ maxHeight: "85dvh" }}
+    >
+      {/* Mobile-only sheet header: pull handle + title + close (mirrors
+          MobileFilterDrawer/MobileDetailDrawer's existing pattern). */}
+      <div className="flex flex-shrink-0 flex-col border-b border-zinc-200 md:hidden">
+        <div className="flex justify-center pt-2">
+          <div className="h-1 w-10 rounded-full bg-zinc-300" />
+        </div>
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <span className="text-sm font-semibold text-zinc-800">{title}</span>
+          <button onClick={onClose} className="min-h-10 px-2 text-zinc-400 hover:text-zinc-700" aria-label="閉じる">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="max-h-[60vh] overflow-y-auto p-3 md:max-h-none md:overflow-visible md:p-0">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 export default function BulkSelectionToolbar({
   selectedCount,
   visibleCount,
@@ -355,6 +407,20 @@ export default function BulkSelectionToolbar({
   onBulkAssignPerson,
 }: BulkSelectionToolbarProps) {
   const [openPanel, setOpenPanel] = useState<PanelKind>(null)
+
+  // Phase 10-25E-B: mobile sheet表示中は背後のGalleryスクロールをロックする
+  // (既存のMobileFilterDrawer/MobileDetailDrawerと同じパターン)。
+  // selectedCount===0で早期returnする前に呼ぶ必要がある(Rules of Hooks)。
+  useEffect(() => {
+    if (openPanel !== null) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = ""
+    }
+    return () => {
+      document.body.style.overflow = ""
+    }
+  }, [openPanel])
 
   if (selectedCount === 0) return null
 
@@ -407,24 +473,31 @@ export default function BulkSelectionToolbar({
         </button>
       </div>
 
-      {/* Phase 10-25D: mobile下固定バーは高さが伸びると画面を圧迫するため、
-          パネル部分だけ最大高さを設けて内部スクロールにする(本格的な
-          ボトムシート化はPhase 10-25Eで別途検討)。 */}
+      {/* Phase 10-25E-B: mobileのみbackdrop表示(desktopは既存インライン展開
+          のまま、backdrop不要)。クリックで閉じる。 */}
+      {openPanel !== null && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={() => setOpenPanel(null)}
+          aria-hidden="true"
+        />
+      )}
+
       {openPanel === "tag" && (
-        <div className="max-h-[60vh] overflow-y-auto md:max-h-none md:overflow-visible">
+        <MobileBulkPanelSheet title="タグを一括追加" onClose={() => setOpenPanel(null)}>
           <TagSelectPanel
             onSubmit={onBulkAddTag}
             onClose={() => setOpenPanel(null)}
           />
-        </div>
+        </MobileBulkPanelSheet>
       )}
       {openPanel === "person" && (
-        <div className="max-h-[60vh] overflow-y-auto md:max-h-none md:overflow-visible">
+        <MobileBulkPanelSheet title="人物を一括追加" onClose={() => setOpenPanel(null)}>
           <PersonSelectPanel
             onSubmit={onBulkAssignPerson}
             onClose={() => setOpenPanel(null)}
           />
-        </div>
+        </MobileBulkPanelSheet>
       )}
     </div>
   )
