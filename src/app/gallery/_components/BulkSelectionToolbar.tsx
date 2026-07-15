@@ -408,19 +408,35 @@ export default function BulkSelectionToolbar({
 }: BulkSelectionToolbarProps) {
   const [openPanel, setOpenPanel] = useState<PanelKind>(null)
 
+  // レビュー修正: パネルを開いたまま「選択解除」等でselectedCountが0に
+  // なると、Toolbar自体はreturn nullするがopenPanelはtag/personのまま
+  // 内部stateに残ってしまい(コンポーネント自体はunmountされずnullを描画
+  // し続けるだけなのでstateは保持される)、後で再選択した際にパネルが
+  // 勝手に開いた状態で復活してしまう。DetailPanel.tsxのprevImageIdと同じ
+  // 「render中に前回値と比較してstateを補正する」パターンで、effect内での
+  // setState(react-hooks/set-state-in-effect違反)を避けつつ補正する。
+  const [prevSelectedCount, setPrevSelectedCount] = useState(selectedCount)
+  if (selectedCount !== prevSelectedCount) {
+    setPrevSelectedCount(selectedCount)
+    if (selectedCount === 0 && openPanel !== null) {
+      setOpenPanel(null)
+    }
+  }
+
   // Phase 10-25E-B: mobile sheet表示中は背後のGalleryスクロールをロックする
   // (既存のMobileFilterDrawer/MobileDetailDrawerと同じパターン)。
-  // selectedCount===0で早期returnする前に呼ぶ必要がある(Rules of Hooks)。
+  // selectedCount===0(Toolbar非表示中)はlockしない — panelActiveで両条件
+  // を明示的にORではなくANDで判定する。
+  const panelActive = selectedCount > 0 && openPanel !== null
   useEffect(() => {
-    if (openPanel !== null) {
+    if (panelActive) {
+      const previousOverflow = document.body.style.overflow
       document.body.style.overflow = "hidden"
-    } else {
-      document.body.style.overflow = ""
+      return () => {
+        document.body.style.overflow = previousOverflow
+      }
     }
-    return () => {
-      document.body.style.overflow = ""
-    }
-  }, [openPanel])
+  }, [panelActive])
 
   if (selectedCount === 0) return null
 
@@ -466,7 +482,12 @@ export default function BulkSelectionToolbar({
           人物を一括追加
         </button>
         <button
-          onClick={onClear}
+          onClick={() => {
+            // レビュー修正: 選択解除でToolbarごと非表示になる前に、開いている
+            // パネル(sheet)も明示的に閉じておく。
+            setOpenPanel(null)
+            onClear()
+          }}
           className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-600 hover:bg-zinc-50"
         >
           選択解除
