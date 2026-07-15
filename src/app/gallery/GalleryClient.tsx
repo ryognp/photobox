@@ -350,45 +350,58 @@ function GalleryInner() {
       {/* Header (Phase 10-8D: nav buttons hidden below md so the mobile
           "フィルター" trigger always fits — it was being pushed off-screen
           by Quick Add/Masters/Import + fixed-width SearchBar on narrow
-          viewports) */}
-      <header className="flex items-center gap-3 border-b border-zinc-200 bg-white px-4 py-3 sm:gap-4 sm:px-5">
-        <button
-          onClick={() => router.push("/quick-add")}
-          className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
-        >
-          Quick Add
-        </button>
-        <button
-          onClick={() => router.push("/masters")}
-          className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
-        >
-          Masters
-        </button>
-        <button
-          onClick={() => router.push("/import")}
-          className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
-        >
-          Import
-        </button>
-        <h1 className="shrink-0 text-base font-semibold text-zinc-900">Gallery</h1>
-        <span className="hidden shrink-0 text-sm text-zinc-400 sm:inline">
-          {state.loading ? "..." : `${state.images.length} 枚`}
-        </span>
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-          <div className="min-w-0 flex-1 sm:max-w-72">
-            <SearchBar value={filters.q} onChange={handleQChange} />
-          </div>
+          viewports).
+          Phase 10-25D-pre: that hid ALL image-add entry points on mobile
+          (Quick Add/Masters/Import are all md:inline-only) — added a
+          mobile-only "＋ 追加" button (→ /quick-add, matching the desktop
+          "Quick Add" link) so mobile users have a way in. Header switches to
+          a 2-row layout on mobile (row 1: title + 追加 + フィルター, row 2:
+          full-width search) and stays a single row on desktop (md:flex-row),
+          since 追加/フィルター are both md:hidden there anyway. */}
+      <header className="flex flex-col gap-2 border-b border-zinc-200 bg-white px-4 py-3 sm:gap-3 sm:px-5 md:flex-row md:items-center md:gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <button
+            onClick={() => router.push("/quick-add")}
+            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
+          >
+            Quick Add
+          </button>
+          <button
+            onClick={() => router.push("/masters")}
+            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
+          >
+            Masters
+          </button>
+          <button
+            onClick={() => router.push("/import")}
+            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
+          >
+            Import
+          </button>
+          <h1 className="shrink-0 text-base font-semibold text-zinc-900">Gallery</h1>
+          <span className="hidden shrink-0 text-sm text-zinc-400 sm:inline">
+            {state.loading ? "..." : `${state.images.length} 枚`}
+          </span>
+          <button
+            onClick={() => router.push("/quick-add")}
+            className="ml-auto min-h-10 shrink-0 rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 md:hidden"
+          >
+            ＋ 追加
+          </button>
           {/* md以上はFilterSidebarが常時表示のため不要 */}
           <button
             onClick={() => {
               dispatch({ type: "select", id: null })
               setFilterDrawerOpen(true)
             }}
-            className="shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 md:hidden"
+            className="min-h-10 shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 md:hidden"
             aria-label="フィルターを開く"
           >
             フィルター
           </button>
+        </div>
+        <div className="min-w-0 flex-1 sm:max-w-72 md:ml-auto">
+          <SearchBar value={filters.q} onChange={handleQChange} />
         </div>
       </header>
 
