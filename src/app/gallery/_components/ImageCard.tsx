@@ -60,7 +60,10 @@ export default function ImageCard({ image, selected, onClick, bulkSelected, onBu
             : "border-zinc-200 hover:border-zinc-300 hover:shadow-md"
       }`}
     >
-      {/* Bulk-select checkbox (左上). stopPropagation で DetailPanel を開かない。 */}
+      {/* Bulk-select checkbox (左上). stopPropagation で DetailPanel を開かない。
+          Phase 10-25B: buttonのタップ領域を44px近くまで拡大(スマホでの誤操作対策)。
+          見た目のチップは従来サイズ(h-6 w-6)のまま、button自体はh-10 w-10の
+          透明な当たり判定として配置する。 */}
       <button
         type="button"
         onClick={(e) => {
@@ -69,13 +72,17 @@ export default function ImageCard({ image, selected, onClick, bulkSelected, onBu
         }}
         aria-label={bulkSelected ? "選択を解除" : "選択"}
         aria-pressed={bulkSelected}
-        className={`absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
-          bulkSelected
-            ? "border-amber-500 bg-amber-500 text-white"
-            : "border-zinc-300 bg-white/80 text-transparent hover:border-amber-400 hover:text-amber-400"
-        }`}
+        className="absolute left-1 top-1 z-10 flex h-10 w-10 items-center justify-center"
       >
-        ✓
+        <span
+          className={`flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
+            bulkSelected
+              ? "border-amber-500 bg-amber-500 text-white"
+              : "border-zinc-300 bg-white/80 text-transparent hover:border-amber-400 hover:text-amber-400"
+          }`}
+        >
+          ✓
+        </span>
       </button>
 
       {/* Thumbnail (Phase 10-9A: object-position 上寄せで顔/上半身が切れにくく) */}

@@ -112,7 +112,7 @@ function TagSelectPanel({
     <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-white p-2.5">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-amber-800">タグを一括追加</span>
-        <button onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-700">
+        <button onClick={onClose} className="min-h-10 px-2 text-xs text-zinc-400 hover:text-zinc-700">
           閉じる
         </button>
       </div>
@@ -147,14 +147,14 @@ function TagSelectPanel({
                 onChange={(e) => setQuery(e.target.value)}
                 disabled={isSubmitting}
                 placeholder="タグ名で検索"
-                className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+                className="min-h-10 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
               />
               <div className="flex flex-wrap gap-1.5">
                 <select
                   value={selectedId}
                   onChange={(e) => setSelectedId(e.target.value)}
                   disabled={isSubmitting}
-                  className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+                  className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
                 >
                   <option value="">タグを選択</option>
                   {filteredTags.map((t) => (
@@ -166,7 +166,7 @@ function TagSelectPanel({
                 <button
                   onClick={() => void submitExisting()}
                   disabled={isSubmitting || !selectedTag}
-                  className="rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+                  className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
                 >
                   {isSubmitting ? "追加中…" : "追加"}
                 </button>
@@ -196,12 +196,12 @@ function TagSelectPanel({
             }}
             disabled={isSubmitting}
             placeholder="新しいタグ名を入力"
-            className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+            className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
           />
           <button
             onClick={() => void submitNew()}
             disabled={isSubmitting || newTagDraft.trim() === ""}
-            className="rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+            className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
           >
             {isSubmitting ? "追加中…" : "新規タグを追加"}
           </button>
@@ -277,7 +277,7 @@ function PersonSelectPanel({
     <div className="flex flex-col gap-1.5 rounded-md border border-amber-200 bg-white p-2.5">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-amber-800">人物を一括追加</span>
-        <button onClick={onClose} className="text-xs text-zinc-400 hover:text-zinc-700">
+        <button onClick={onClose} className="min-h-10 px-2 text-xs text-zinc-400 hover:text-zinc-700">
           閉じる
         </button>
       </div>
@@ -309,14 +309,14 @@ function PersonSelectPanel({
             onChange={(e) => setQuery(e.target.value)}
             disabled={isSubmitting}
             placeholder="人物名で検索"
-            className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+            className="min-h-10 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
           />
           <div className="flex flex-wrap gap-1.5">
             <select
               value={selectedId}
               onChange={(e) => setSelectedId(e.target.value)}
               disabled={isSubmitting}
-              className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+              className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
             >
               <option value="">人物を選択</option>
               {filteredPersons.map((p) => (
@@ -328,7 +328,7 @@ function PersonSelectPanel({
             <button
               onClick={() => void submit()}
               disabled={isSubmitting || !selectedPerson}
-              className="rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+              className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
             >
               {isSubmitting ? "追加中…" : "追加"}
             </button>
@@ -367,26 +367,26 @@ export default function BulkSelectionToolbar({
         {!allVisibleSelected && (
           <button
             onClick={onSelectVisible}
-            className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-100"
+            className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100"
           >
             表示中を全選択
           </button>
         )}
         <button
           onClick={() => setOpenPanel(openPanel === "tag" ? null : "tag")}
-          className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-100"
+          className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100"
         >
           タグを一括追加
         </button>
         <button
           onClick={() => setOpenPanel(openPanel === "person" ? null : "person")}
-          className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-100"
+          className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100"
         >
           人物を一括追加
         </button>
         <button
           onClick={onClear}
-          className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+          className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-600 hover:bg-zinc-50"
         >
           選択解除
         </button>
