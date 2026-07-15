@@ -361,7 +361,22 @@ export default function BulkSelectionToolbar({
   const allVisibleSelected = visibleCount > 0 && selectedCount >= visibleCount
 
   return (
-    <div className="sticky top-0 z-20 flex flex-col gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 sm:px-5">
+    // Phase 10-25D: mobileは画面下部固定(親指操作域)、desktopは既存の上部
+    // sticky維持。コンポーネントを分割せず1つのwrapperでレスポンシブに位置を
+    // 切り替える — TagSelectPanel/PersonSelectPanelを二重レンダリングしない
+    // ため(openPanel stateは既存通り1つ)。safe-area対応はここが初導入
+    // (MobileFilterDrawer/MobileDetailDrawerは対応していない、今回は触らない)。
+    <div
+      className="
+        fixed inset-x-0 bottom-0 z-20
+        flex flex-col gap-2
+        border-t border-amber-200 bg-amber-50
+        px-4 py-2 pb-[env(safe-area-inset-bottom)]
+        sm:px-5
+        md:sticky md:inset-x-auto md:bottom-auto md:top-0
+        md:border-t-0 md:border-b md:pb-2
+      "
+    >
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm font-medium text-amber-800">選択中: {selectedCount}件</span>
         {!allVisibleSelected && (
@@ -392,17 +407,24 @@ export default function BulkSelectionToolbar({
         </button>
       </div>
 
+      {/* Phase 10-25D: mobile下固定バーは高さが伸びると画面を圧迫するため、
+          パネル部分だけ最大高さを設けて内部スクロールにする(本格的な
+          ボトムシート化はPhase 10-25Eで別途検討)。 */}
       {openPanel === "tag" && (
-        <TagSelectPanel
-          onSubmit={onBulkAddTag}
-          onClose={() => setOpenPanel(null)}
-        />
+        <div className="max-h-[60vh] overflow-y-auto md:max-h-none md:overflow-visible">
+          <TagSelectPanel
+            onSubmit={onBulkAddTag}
+            onClose={() => setOpenPanel(null)}
+          />
+        </div>
       )}
       {openPanel === "person" && (
-        <PersonSelectPanel
-          onSubmit={onBulkAssignPerson}
-          onClose={() => setOpenPanel(null)}
-        />
+        <div className="max-h-[60vh] overflow-y-auto md:max-h-none md:overflow-visible">
+          <PersonSelectPanel
+            onSubmit={onBulkAssignPerson}
+            onClose={() => setOpenPanel(null)}
+          />
+        </div>
       )}
     </div>
   )
