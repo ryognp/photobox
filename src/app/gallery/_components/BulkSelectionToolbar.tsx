@@ -83,6 +83,7 @@ function TagSelectPanel({
     try {
       const successMessage = await onSubmit(selectedTag.name)
       setMessage(successMessage)
+      setSelectedId("")
       setPhase("idle")
     } catch (e: unknown) {
       setMessage((e as Error).message ?? "追加に失敗しました")
@@ -262,6 +263,7 @@ function PersonSelectPanel({
     try {
       const successMessage = await onSubmit(selectedPerson.name)
       setMessage(successMessage)
+      setSelectedId("")
       setPhase("idle")
     } catch (e: unknown) {
       setMessage((e as Error).message ?? "追加に失敗しました")
