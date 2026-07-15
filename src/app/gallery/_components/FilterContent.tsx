@@ -4,6 +4,8 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import type { GalleryFilters } from "@/lib/gallery/imagesClient"
 import { toggleTagId } from "@/lib/gallery/tagFilters"
+import { filterTagsForBulkSelect } from "@/lib/gallery/tagSelectFilter"
+import { filterPersonsForBulkSelect } from "@/lib/gallery/personSelectFilter"
 
 export type SimpleItem = { id: string; name: string }
 /** AI candidate tag option (Phase 10-9B): keyed by label, not id. */
@@ -38,15 +40,30 @@ function Section({
   items,
   selectedId,
   onSelect,
+  query,
+  onQueryChange,
+  searchPlaceholder,
+  emptyMessage,
 }: {
   title: string
   items: SimpleItem[]
   selectedId: string | null
   onSelect: (id: string | null) => void
+  query: string
+  onQueryChange: (value: string) => void
+  searchPlaceholder: string
+  emptyMessage: string
 }) {
   return (
     <div>
       <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">{title}</p>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        placeholder={searchPlaceholder}
+        className="mb-1.5 min-h-10 w-full rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-700"
+      />
       <div className="flex flex-col gap-0.5">
         <button
           onClick={() => onSelect(null)}
@@ -71,6 +88,9 @@ function Section({
             {item.name}
           </button>
         ))}
+        {items.length === 0 && (
+          <p className="px-2 py-1 text-xs text-zinc-400">{emptyMessage}</p>
+        )}
       </div>
     </div>
   )
@@ -83,12 +103,21 @@ function Section({
  */
 function TagFilterSection({
   items,
+  allItems,
   selectedIds,
   onToggle,
+  query,
+  onQueryChange,
 }: {
+  /** Search-filtered list to display as the toggle list. */
   items: SimpleItem[]
+  /** Full (unfiltered) list, used to resolve selected chip labels even when
+   *  the search query hides the selected tag from the toggle list below. */
+  allItems: SimpleItem[]
   selectedIds: string[]
   onToggle: (id: string) => void
+  query: string
+  onQueryChange: (value: string) => void
 }) {
   return (
     <div>
@@ -96,7 +125,7 @@ function TagFilterSection({
       {selectedIds.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1">
           {selectedIds.map((id) => {
-            const item = items.find((i) => i.id === id)
+            const item = allItems.find((i) => i.id === id)
             return (
               <span
                 key={id}
@@ -115,6 +144,13 @@ function TagFilterSection({
           })}
         </div>
       )}
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        placeholder="タグ名で検索"
+        className="mb-1.5 min-h-10 w-full rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-700"
+      />
       <div className="flex flex-col gap-0.5">
         {items.map((item) => {
           const selected = selectedIds.includes(item.id)
@@ -130,6 +166,9 @@ function TagFilterSection({
             </button>
           )
         })}
+        {items.length === 0 && (
+          <p className="px-2 py-1 text-xs text-zinc-400">該当するタグがありません</p>
+        )}
       </div>
     </div>
   )
@@ -222,6 +261,14 @@ export default function FilterContent({ filters, onChange, tags, persons, sugges
     filters.personId !== null ||
     filters.favorite !== null
 
+  // Phase 10-25C: client-side search-the-filter-list, scoped to this
+  // component only (no URL/filter state change — selection itself is
+  // unaffected by the search query, only which items are shown below).
+  const [tagQuery, setTagQuery] = useState("")
+  const [personQuery, setPersonQuery] = useState("")
+  const filteredTags = filterTagsForBulkSelect(tags, tagQuery)
+  const filteredPersons = filterPersonsForBulkSelect(persons, personQuery)
+
   return (
     <div className="flex flex-1 flex-col gap-5">
       {/* Favorite */}
@@ -265,9 +312,12 @@ export default function FilterContent({ filters, onChange, tags, persons, sugges
 
       {tags.length > 0 && (
         <TagFilterSection
-          items={tags}
+          items={filteredTags}
+          allItems={tags}
           selectedIds={filters.tagIds}
           onToggle={(id) => onChange({ tagIds: toggleTagId(filters.tagIds, id) })}
+          query={tagQuery}
+          onQueryChange={setTagQuery}
         />
       )}
 
@@ -289,12 +339,25 @@ export default function FilterContent({ filters, onChange, tags, persons, sugges
       )}
 
       {persons.length > 0 && (
-        <Section
-          title="人物"
-          items={persons}
-          selectedId={filters.personId}
-          onSelect={(id) => onChange({ personId: id })}
-        />
+        <>
+          <Section
+            title="人物"
+            items={filteredPersons}
+            selectedId={filters.personId}
+            onSelect={(id) => onChange({ personId: id })}
+            query={personQuery}
+            onQueryChange={setPersonQuery}
+            searchPlaceholder="人物名で検索"
+            emptyMessage="該当する人物がありません"
+          />
+          {/* Phase 10-25C: 人物マスターへの管理導線(タグ側の既存導線と対称に)。 */}
+          <Link
+            href="/masters?tab=persons"
+            className="text-xs text-blue-600 hover:underline"
+          >
+            人物を管理 →
+          </Link>
+        </>
       )}
 
       {hasAnyFilter && (
