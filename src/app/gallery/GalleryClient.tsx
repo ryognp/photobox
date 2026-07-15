@@ -165,11 +165,17 @@ function reducer(s: GalleryState, a: GalleryAction): GalleryState {
     case "bulk_clear_selection":
       return { ...s, bulkSelectedIds: clearBulkSelectedIds() }
     case "bulk_tag_added": {
-      // 現在開いているdetailがbulk対象に含まれる場合のみ更新。state.imagesは
-      // 更新しない(既存の単体tag_addedと同じ制限、カード上のタグ表示は次回
-      // fetch/reloadまで反映されない)。bulkSelectedIdsは成功後も維持する。
-      if (!s.detail || !a.imageIds.includes(s.detail.id)) return s
-      return { ...s, detail: { ...s.detail, tags: addUniqueById(s.detail.tags, a.tag) } }
+      // Phase 10-24B: state.imagesの対象画像にもtagをローカルmergeし、Grid
+      // カードのタグ表示を即時反映する。開いているdetailがbulk対象に含まれる
+      // 場合はdetail.tagsも同様に更新。bulkSelectedIdsは成功後も維持する。
+      const images = s.images.map((img) =>
+        a.imageIds.includes(img.id) ? { ...img, tags: addUniqueById(img.tags, a.tag) } : img,
+      )
+      const detail =
+        s.detail && a.imageIds.includes(s.detail.id)
+          ? { ...s.detail, tags: addUniqueById(s.detail.tags, a.tag) }
+          : s.detail
+      return { ...s, images, detail }
     }
     case "bulk_person_assigned": {
       if (!s.detail || !a.imageIds.includes(s.detail.id)) return s
