@@ -203,7 +203,15 @@ export default function ImageGrid({
   }
 
   return (
-    <div ref={containerRef} className="flex flex-1 flex-col overflow-y-auto p-4">
+    <div
+      ref={containerRef}
+      className={`flex flex-1 flex-col overflow-y-auto p-4 ${
+        // Phase 10-25D: mobileの下固定一括操作バーが最後の行/「もっと見る」
+        // ボタンに重ならないよう、選択中のみ余分な下paddingを足す。desktop
+        // は上部stickyバーのため不要(既存のp-4のまま)。
+        bulkSelectedIds.length > 0 ? "pb-24 md:pb-4" : ""
+      }`}
+    >
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {images.map((img) => (
           <ImageCard
