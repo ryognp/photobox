@@ -24,6 +24,7 @@ import { applyTranslationUpdate, applyPromptEditToDetailPrompt } from "@/lib/gal
 import { normalizeTagIds } from "@/lib/gallery/tagFilters"
 import { normalizeSuggestionLabels } from "@/lib/gallery/suggestionFilters"
 import { parseGalleryDensity, getGalleryDensityLabel, GALLERY_DENSITY_STORAGE_KEY, type GalleryDensity } from "@/lib/gallery/galleryDensity"
+import { parseGallerySort } from "@/lib/gallery/gallerySort"
 import SearchBar from "./_components/SearchBar"
 import FilterSidebar from "./_components/FilterSidebar"
 import ImageGrid from "./_components/ImageGrid"
@@ -234,7 +235,7 @@ function GalleryInner() {
     suggestionLabels: normalizeSuggestionLabels(searchParams.get("suggestionLabels")),
     favorite: searchParams.get("favorite") === "true" ? true : null,
     q: searchParams.get("q") ?? "",
-    sort: (searchParams.get("sort") as "newest" | "oldest") || "newest",
+    sort: parseGallerySort(searchParams.get("sort")),
     // Phase 10-28B: organization quick filters.
     untagged: searchParams.get("untagged") === "true",
     unpersoned: searchParams.get("unpersoned") === "true",

@@ -10,6 +10,7 @@ import {
   getGalleryDensityLabel,
   type GalleryDensity,
 } from "@/lib/gallery/galleryDensity"
+import { getGallerySortLabel } from "@/lib/gallery/gallerySort"
 
 export type SimpleItem = { id: string; name: string }
 /** AI candidate tag option (Phase 10-9B): keyed by label, not id. */
@@ -364,7 +365,7 @@ export default function FilterContent({
       <div>
         <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">並び順</p>
         <div className="flex flex-col gap-0.5">
-          {(["newest", "oldest"] as const).map((s) => (
+          {(["newest", "oldest", "needs_review"] as const).map((s) => (
             <button
               key={s}
               onClick={() => onChange({ sort: s })}
@@ -374,7 +375,7 @@ export default function FilterContent({
                   : "text-zinc-700 hover:bg-zinc-100"
               }`}
             >
-              {s === "newest" ? "新しい順" : "古い順"}
+              {getGallerySortLabel(s)}
             </button>
           ))}
         </div>

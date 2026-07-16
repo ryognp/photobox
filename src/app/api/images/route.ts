@@ -17,6 +17,8 @@ import { getDatabaseUrl } from "@/lib/database-url";
 import { normalizeTagIds } from "@/lib/gallery/tagFilters";
 import { normalizeSuggestionLabels } from "@/lib/gallery/suggestionFilters";
 import { buildImagesWhere } from "@/lib/gallery/imagesWhere";
+import { parseGallerySort } from "@/lib/gallery/gallerySort";
+import { getCurrentAnalysisModelIdSuffix } from "@/lib/analysis/currentAnalysisSuggestionFilter";
 
 const BUCKET = "photobox-private";
 const THUMB_EXPIRY = 900; // 15min
@@ -234,7 +236,11 @@ export async function GET(request: NextRequest) {
   const personId = sp.get("personId") ?? null;
   const favorite = sp.get("favorite") === "true" ? true : null;
   const cursor = sp.get("cursor") ?? null;
-  const sort = sp.get("sort") === "oldest" ? "asc" : "desc";
+  // Phase 10-29B: sortMode ("needs_review" drives a dedicated query strategy,
+  // not just a direction) is separate from orderDirection (used by the
+  // Prisma/debug orderBy, which only understands asc/desc).
+  const sortMode = parseGallerySort(sp.get("sort"));
+  const orderDirection: "asc" | "desc" = sortMode === "oldest" ? "asc" : "desc";
   const limitRaw = parseInt(sp.get("limit") ?? String(LIMIT_DEFAULT), 10);
   const limit = Math.min(isNaN(limitRaw) || limitRaw < 1 ? LIMIT_DEFAULT : limitRaw, LIMIT_MAX);
   const debugDb = sp.get("debugDb") === "1";
@@ -261,7 +267,7 @@ export async function GET(request: NextRequest) {
   // Runs 4 sequential findMany with increasing select depth to isolate which
   // relation is expensive. Does NOT affect the normal response path below.
   if (debugDb) {
-    const dbgOrderBy: Prisma.ImageOrderByWithRelationInput[] = [{ createdAt: sort }, { id: sort }];
+    const dbgOrderBy: Prisma.ImageOrderByWithRelationInput[] = [{ createdAt: orderDirection }, { id: orderDirection }];
     const dbgBase = {
       where, orderBy: dbgOrderBy, take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -386,26 +392,152 @@ export async function GET(request: NextRequest) {
   // ── Query path selection ────────────────────────────────────────────────
   // Raw path: first page, default sort, no filters.
   // Everything else (cursor / filters / sort=asc) falls back to Prisma.
+  const hasAnyNonDefaultFilter =
+    q !== "" ||
+    sceneId !== null ||
+    tagIds.length > 0 ||
+    suggestionLabels.length > 0 ||
+    personId !== null ||
+    favorite !== null ||
+    untagged ||
+    unpersoned ||
+    hasSuggestions;
+
+  // Phase 10-29B: "needs_review" is a dedicated raw-SQL path, first-page-only
+  // (no keyset pagination for a computed score — out of scope for this
+  // phase) and only when no other filter is active (the query below doesn't
+  // express buildImagesWhere's conditions). Any other combination falls back
+  // to the Prisma path below with orderDirection "desc" (newest-equivalent).
+  const useNeedsReviewPath = sortMode === "needs_review" && cursor === null && !hasAnyNonDefaultFilter;
+
   const useRawPath =
+    !useNeedsReviewPath &&
     cursor === null &&
-    sort === "desc" &&
-    q === "" &&
-    sceneId === null &&
-    tagIds.length === 0 &&
-    suggestionLabels.length === 0 &&
-    personId === null &&
-    favorite === null &&
-    // Phase 10-28B: organization quick filters aren't expressed in the raw
-    // SQL's hardcoded WHERE (route.ts:437-439 equivalent) — fall back to the
-    // Prisma path (which uses buildImagesWhere) whenever any is active.
-    !untagged &&
-    !unpersoned &&
-    !hasSuggestions;
+    orderDirection === "desc" &&
+    !hasAnyNonDefaultFilter;
 
   let rawImages: PageImage[];
-  let queryMode: "raw" | "prisma";
+  let queryMode: "raw" | "prisma" | "needs_review";
 
-  if (useRawPath) {
+  if (useNeedsReviewPath) {
+    // ── needs_review $queryRaw path (Phase 10-29B) ─────────────────────────
+    // First-page-only, no other filters (see useNeedsReviewPath above).
+    // Computes a review-priority score purely from existing DB state (no AI
+    // re-analysis): untagged images first, then person-unassigned, then
+    // images with a current-model PENDING TagSuggestion — same
+    // getCurrentAnalysisModelIdSuffix() used by the hasSuggestions filter and
+    // GET /api/images/[id], so this stays consistent with what DetailPanel
+    // actually shows as AI candidates. The score is ORDER BY-only — never
+    // selected/returned to the client. LIMIT is `limit` (not limit+1), so the
+    // shared hasMore/nextCursor logic below naturally yields nextCursor:
+    // null — "もっと見る" is intentionally unsupported for this sort (would
+    // require keyset pagination on a computed score, out of scope here).
+    await prisma.$queryRaw`SELECT 1`;
+    perf.mark("dbPingMs");
+    type RawRow = {
+      id: string;
+      original_name: string;
+      width_px: number | null;
+      height_px: number | null;
+      thumbnail_path: string | null;
+      preview_path: string | null;
+      is_favorite: boolean;
+      rating: number | null;
+      created_at: Date;
+      scene_id: string | null;
+      scene_name: string | null;
+      tags: unknown; // JSON_AGG → parsed by pg driver as JS array
+      prompt_body: string | null;
+      prompt_version_count: number | bigint;
+    };
+
+    const currentSuggestionModelIdPattern = `%${getCurrentAnalysisModelIdSuffix()}`;
+
+    const rows = await prisma.$queryRaw<RawRow[]>(
+      Prisma.sql`
+        SELECT
+          i.id,
+          i.original_name,
+          i.width_px,
+          i.height_px,
+          i.thumbnail_path,
+          i.preview_path,
+          i.is_favorite,
+          i.rating,
+          i.created_at,
+          s.id                                                      AS scene_id,
+          s.name                                                    AS scene_name,
+          COALESCE(
+            JSON_AGG(DISTINCT JSONB_BUILD_OBJECT('id', t.id, 'name', t.name))
+              FILTER (WHERE t.id IS NOT NULL),
+            '[]'::json
+          )                                                         AS tags,
+          p.current_body                                            AS prompt_body,
+          CAST(COUNT(DISTINCT pv.id) AS integer)                    AS prompt_version_count
+        FROM images i
+        LEFT JOIN scenes          s  ON s.id        = i.scene_id
+        LEFT JOIN image_tags      it ON it.image_id  = i.id
+        LEFT JOIN tags            t  ON t.id         = it.tag_id
+        LEFT JOIN prompts         p  ON p.image_id   = i.id
+        LEFT JOIN prompt_versions pv ON pv.prompt_id = p.id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS tag_count
+          FROM image_tags itc
+          WHERE itc.image_id = i.id
+        ) tag_stats ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS person_count
+          FROM image_persons ip
+          WHERE ip.image_id = i.id
+        ) person_stats ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS current_pending_suggestion_count
+          FROM tag_suggestions ts
+          JOIN image_analyses ia ON ia.id = ts.analysis_id
+          WHERE ts.image_id = i.id
+            AND ts.workspace_id = ${workspace.id}
+            AND ts.status = 'PENDING'
+            AND ia.model_id LIKE ${currentSuggestionModelIdPattern}
+        ) suggestion_stats ON TRUE
+        WHERE i.workspace_id = ${workspace.id}
+          AND i.status       = 'ACTIVE'
+          AND i.deleted_at   IS NULL
+        GROUP BY i.id, s.id, s.name, p.current_body
+        ORDER BY
+          (
+            CASE WHEN MAX(tag_stats.tag_count) = 0 THEN 100 ELSE 0 END +
+            CASE WHEN MAX(person_stats.person_count) = 0 THEN 50 ELSE 0 END +
+            CASE WHEN MAX(suggestion_stats.current_pending_suggestion_count) > 0 THEN 25 ELSE 0 END
+          ) DESC,
+          i.created_at DESC,
+          i.id DESC
+        LIMIT ${limit}
+      `,
+    );
+    perf.mark("dbNeedsReviewMainMs");
+    queryMode = "needs_review";
+
+    rawImages = rows.map((row) => {
+      const tags = Array.isArray(row.tags)
+        ? (row.tags as { id: string; name: string }[])
+        : (JSON.parse(row.tags as string) as { id: string; name: string }[]);
+      return {
+        id: row.id,
+        originalName: row.original_name,
+        widthPx: row.width_px,
+        heightPx: row.height_px,
+        thumbnailPath: row.thumbnail_path,
+        previewPath: row.preview_path,
+        isFavorite: row.is_favorite,
+        rating: row.rating,
+        createdAt: row.created_at,
+        scene: row.scene_id ? { id: row.scene_id, name: row.scene_name! } : null,
+        tags,
+        promptBody: row.prompt_body,
+        promptVersionCount: Number(row.prompt_version_count),
+      };
+    });
+  } else if (useRawPath) {
     // ── $queryRaw path: single SQL round-trip with LEFT JOINs ─────────────
     // ~4× faster than Prisma multi-SELECT for uncached first pages.
     // workspaceId bound as parameter — never interpolated into SQL string.
@@ -490,7 +622,7 @@ export async function GET(request: NextRequest) {
     // ── Prisma path: cursor / filters / sort=asc ───────────────────────────
     const prismaRows = await prisma.image.findMany({
       where,
-      orderBy: [{ createdAt: sort }, { id: sort }],
+      orderBy: [{ createdAt: orderDirection }, { id: orderDirection }],
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       take: limit + 1,
       select: {
@@ -608,7 +740,7 @@ export async function GET(request: NextRequest) {
     hasPersonFilter: !!personId,
     hasSceneFilter: !!sceneId,
     hasFavoriteFilter: favorite !== null,
-    sort,
+    sortMode,
     limit,
     sceneCount,
     tagCount,
