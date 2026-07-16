@@ -16,6 +16,9 @@ interface MobileDetailDrawerProps {
   onPersonRemoved?: (personId: string) => void
   onTranslated?: (result: TranslatePromptResult) => void
   onPromptSaved?: (prompt: ImageDetail["prompt"]) => void
+  /** Phase 10-26B: DetailPanelへそのまま中継する。 */
+  isBulkSelected?: boolean
+  onToggleBulkSelected?: () => void
   prefetchedDetail?: ImageDetail | null
   prefetchedLoading?: boolean
   prefetchedError?: string | null
@@ -33,6 +36,8 @@ export default function MobileDetailDrawer({
   onPersonRemoved,
   onTranslated,
   onPromptSaved,
+  isBulkSelected,
+  onToggleBulkSelected,
   prefetchedDetail,
   prefetchedLoading,
   prefetchedError,
@@ -97,6 +102,8 @@ export default function MobileDetailDrawer({
             onPersonRemoved={onPersonRemoved}
             onTranslated={onTranslated}
             onPromptSaved={onPromptSaved}
+            isBulkSelected={isBulkSelected}
+            onToggleBulkSelected={onToggleBulkSelected}
             hideHeader
             fullWidth
             prefetchedDetail={prefetchedDetail}

@@ -85,6 +85,12 @@ interface DetailPanelProps {
   hideHeader?: boolean
   /** Phase 10-8C: モバイルdrawer用。デスクトップ幅 w-80 固定を解除する */
   fullWidth?: boolean
+  /** Phase 10-26B: 現在表示中の画像がGalleryの一括選択(bulkSelectedIds)に
+   *  含まれているか。onToggleBulkSelectedと対で使う。 */
+  isBulkSelected?: boolean
+  /** Phase 10-26B: 現在表示中の画像を一括選択に追加/解除する
+   *  (GalleryClient側で既存のbulk_toggle_imageをdispatchする)。 */
+  onToggleBulkSelected?: () => void
   /** 外部からfetch済みdetailを渡す場合（二重fetch防止） */
   prefetchedDetail?: ImageDetail | null
   prefetchedLoading?: boolean
@@ -1447,6 +1453,8 @@ export default function DetailPanel({
   onPromptSaved,
   hideHeader = false,
   fullWidth = false,
+  isBulkSelected,
+  onToggleBulkSelected,
   prefetchedDetail,
   prefetchedLoading,
   prefetchedError,
@@ -1585,6 +1593,22 @@ export default function DetailPanel({
               {state.detail.isFavorite && <span className="text-yellow-500">★ お気に入り</span>}
             </div>
           </div>
+
+          {/* Phase 10-26B: 一括選択トグル。headerはhideHeaderでモバイルでは
+              非表示になるため、PC/モバイル共通のこの本文部分に置く。 */}
+          {onToggleBulkSelected && (
+            <button
+              type="button"
+              onClick={onToggleBulkSelected}
+              className={`min-h-10 rounded-md border px-3 py-2 text-sm font-medium transition ${
+                isBulkSelected
+                  ? "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                  : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+              }`}
+            >
+              {isBulkSelected ? "✓ 一括選択中(外す)" : "一括選択に追加"}
+            </button>
+          )}
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">タグ</p>
