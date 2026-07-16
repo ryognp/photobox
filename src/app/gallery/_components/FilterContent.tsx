@@ -276,7 +276,10 @@ export default function FilterContent({
     filters.tagIds.length > 0 ||
     filters.suggestionLabels.length > 0 ||
     filters.personId !== null ||
-    filters.favorite !== null
+    filters.favorite !== null ||
+    filters.untagged ||
+    filters.unpersoned ||
+    filters.hasSuggestions
 
   // Phase 10-25C: client-side search-the-filter-list, scoped to this
   // component only (no URL/filter state change — selection itself is
@@ -322,6 +325,39 @@ export default function FilterContent({
         >
           <span>★</span> お気に入りのみ
         </button>
+      </div>
+
+      {/* Phase 10-28B: 整理フィルター(未タグ/人物未設定/AI候補あり)。PC/Mobile
+          共通で常時表示(density切替とは異なり、フィルターは共有URLの意味を
+          持つため両方に出す)。 */}
+      <div>
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">整理</p>
+        <div className="flex flex-col gap-0.5">
+          <label className="flex min-h-10 items-center gap-2 rounded px-2 py-1 text-sm text-zinc-700 hover:bg-zinc-100">
+            <input
+              type="checkbox"
+              checked={filters.untagged}
+              onChange={(e) => onChange({ untagged: e.target.checked })}
+            />
+            未タグ
+          </label>
+          <label className="flex min-h-10 items-center gap-2 rounded px-2 py-1 text-sm text-zinc-700 hover:bg-zinc-100">
+            <input
+              type="checkbox"
+              checked={filters.unpersoned}
+              onChange={(e) => onChange({ unpersoned: e.target.checked })}
+            />
+            人物未設定
+          </label>
+          <label className="flex min-h-10 items-center gap-2 rounded px-2 py-1 text-sm text-zinc-700 hover:bg-zinc-100">
+            <input
+              type="checkbox"
+              checked={filters.hasSuggestions}
+              onChange={(e) => onChange({ hasSuggestions: e.target.checked })}
+            />
+            AI候補あり
+          </label>
+        </div>
       </div>
 
       {/* Sort */}
@@ -400,7 +436,18 @@ export default function FilterContent({
 
       {hasAnyFilter && (
         <button
-          onClick={() => onChange({ sceneId: null, tagIds: [], suggestionLabels: [], personId: null, favorite: null })}
+          onClick={() =>
+            onChange({
+              sceneId: null,
+              tagIds: [],
+              suggestionLabels: [],
+              personId: null,
+              favorite: null,
+              untagged: false,
+              unpersoned: false,
+              hasSuggestions: false,
+            })
+          }
           className="mt-auto rounded border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50"
         >
           フィルタをリセット

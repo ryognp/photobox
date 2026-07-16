@@ -211,6 +211,10 @@ function filtersToSearchParams(filters: GalleryFilters): URLSearchParams {
   if (filters.favorite) sp.set("favorite", "true")
   if (filters.q) sp.set("q", filters.q)
   if (filters.sort !== "newest") sp.set("sort", filters.sort)
+  // Phase 10-28B: organization quick filters.
+  if (filters.untagged) sp.set("untagged", "true")
+  if (filters.unpersoned) sp.set("unpersoned", "true")
+  if (filters.hasSuggestions) sp.set("hasSuggestions", "true")
   return sp
 }
 
@@ -231,6 +235,10 @@ function GalleryInner() {
     favorite: searchParams.get("favorite") === "true" ? true : null,
     q: searchParams.get("q") ?? "",
     sort: (searchParams.get("sort") as "newest" | "oldest") || "newest",
+    // Phase 10-28B: organization quick filters.
+    untagged: searchParams.get("untagged") === "true",
+    unpersoned: searchParams.get("unpersoned") === "true",
+    hasSuggestions: searchParams.get("hasSuggestions") === "true",
   }
 
   const [state, dispatch] = useReducer(reducer, {
