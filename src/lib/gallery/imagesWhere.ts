@@ -4,6 +4,7 @@
 // workspaceId/deletedAt/status are ALWAYS present; this is the workspace
 // scoping boundary (no RLS — see docs/OPERATIONS.md).
 import type { Prisma } from "@/generated/prisma/client";
+import { getCurrentAnalysisModelIdSuffix } from "@/lib/analysis/currentAnalysisSuggestionFilter";
 
 export function buildImagesWhere(args: {
   workspaceId: string;
@@ -19,6 +20,18 @@ export function buildImagesWhere(args: {
    * (approved Tags). Defaults to [] when omitted (backward compatible).
    */
   suggestionLabels?: string[];
+  /** Phase 10-28B: organization quick filters. All default to false/omitted
+   *  (backward compatible — no behavior change when unset). Contradictory
+   *  combinations with tagIds/personId (e.g. untagged + tagIds) are not
+   *  specially handled — they simply yield zero rows, which is correct. */
+  untagged?: boolean;
+  unpersoned?: boolean;
+  /** True when the image has at least one PENDING TagSuggestion produced by
+   *  the CURRENT analysis prompt version (same "current model" definition as
+   *  GET /api/images/[id] and GET /api/tag-suggestions — see
+   *  currentAnalysisSuggestionFilter.ts). Stale-model PENDING rows never
+   *  count, so this stays consistent with what DetailPanel actually shows. */
+  hasSuggestions?: boolean;
 }): Prisma.ImageWhereInput {
   const qFilter: Prisma.ImageWhereInput = args.q
     ? {
@@ -41,6 +54,21 @@ export function buildImagesWhere(args: {
     ...suggestionLabels.map((label) => ({
       tagSuggestions: { some: { status: "PENDING" as const, label, workspaceId: args.workspaceId } },
     })),
+    ...(args.untagged ? [{ imageTags: { none: {} } }] : []),
+    ...(args.unpersoned ? [{ imagePersons: { none: {} } }] : []),
+    ...(args.hasSuggestions
+      ? [
+          {
+            tagSuggestions: {
+              some: {
+                status: "PENDING" as const,
+                workspaceId: args.workspaceId,
+                analysis: { modelId: { endsWith: getCurrentAnalysisModelIdSuffix() } },
+              },
+            },
+          },
+        ]
+      : []),
   ];
 
   return {

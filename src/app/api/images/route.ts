@@ -239,8 +239,23 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(isNaN(limitRaw) || limitRaw < 1 ? LIMIT_DEFAULT : limitRaw, LIMIT_MAX);
   const debugDb = sp.get("debugDb") === "1";
   const debugAuth = sp.get("debugAuth") === "1";
+  // Phase 10-28B: organization quick filters.
+  const untagged = sp.get("untagged") === "true";
+  const unpersoned = sp.get("unpersoned") === "true";
+  const hasSuggestions = sp.get("hasSuggestions") === "true";
 
-  const where = buildImagesWhere({ workspaceId: workspace.id, q, sceneId, personId, favorite, tagIds, suggestionLabels });
+  const where = buildImagesWhere({
+    workspaceId: workspace.id,
+    q,
+    sceneId,
+    personId,
+    favorite,
+    tagIds,
+    suggestionLabels,
+    untagged,
+    unpersoned,
+    hasSuggestions,
+  });
 
   // ── debugDb: staged query breakdown (?debugDb=1 only) ──────────────────
   // Runs 4 sequential findMany with increasing select depth to isolate which
@@ -379,7 +394,13 @@ export async function GET(request: NextRequest) {
     tagIds.length === 0 &&
     suggestionLabels.length === 0 &&
     personId === null &&
-    favorite === null;
+    favorite === null &&
+    // Phase 10-28B: organization quick filters aren't expressed in the raw
+    // SQL's hardcoded WHERE (route.ts:437-439 equivalent) — fall back to the
+    // Prisma path (which uses buildImagesWhere) whenever any is active.
+    !untagged &&
+    !unpersoned &&
+    !hasSuggestions;
 
   let rawImages: PageImage[];
   let queryMode: "raw" | "prisma";

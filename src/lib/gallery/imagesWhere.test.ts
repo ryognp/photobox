@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildImagesWhere } from "@/lib/gallery/imagesWhere";
+import { getCurrentAnalysisModelIdSuffix } from "@/lib/analysis/currentAnalysisSuggestionFilter";
 
 const BASE = { workspaceId: "ws1", q: "", sceneId: null, personId: null, favorite: null, tagIds: [] as string[] };
 
@@ -102,6 +103,70 @@ describe("buildImagesWhere", () => {
     expect(where.AND).toEqual([
       { imageTags: { some: { tagId: "t1" } } },
       { tagSuggestions: { some: { status: "PENDING", label: "海", workspaceId: "ws1" } } },
+    ]);
+  });
+
+  // Phase 10-28B: organization quick filters (untagged / unpersoned / hasSuggestions)
+  it("untagged omitted/false → no AND (backward compat)", () => {
+    expect(buildImagesWhere(BASE).AND).toBeUndefined();
+    expect(buildImagesWhere({ ...BASE, untagged: false }).AND).toBeUndefined();
+  });
+
+  it("untagged=true → imageTags none clause", () => {
+    const where = buildImagesWhere({ ...BASE, untagged: true });
+    expect(where.AND).toEqual([{ imageTags: { none: {} } }]);
+  });
+
+  it("unpersoned omitted/false → no AND (backward compat)", () => {
+    expect(buildImagesWhere({ ...BASE, unpersoned: false }).AND).toBeUndefined();
+  });
+
+  it("unpersoned=true → imagePersons none clause", () => {
+    const where = buildImagesWhere({ ...BASE, unpersoned: true });
+    expect(where.AND).toEqual([{ imagePersons: { none: {} } }]);
+  });
+
+  it("hasSuggestions omitted/false → no AND (backward compat)", () => {
+    expect(buildImagesWhere({ ...BASE, hasSuggestions: false }).AND).toBeUndefined();
+  });
+
+  it("hasSuggestions=true → PENDING + workspaceId + current-model analysis clause", () => {
+    const where = buildImagesWhere({ ...BASE, hasSuggestions: true });
+    expect(where.AND).toEqual([
+      {
+        tagSuggestions: {
+          some: {
+            status: "PENDING",
+            workspaceId: "ws1",
+            analysis: { modelId: { endsWith: getCurrentAnalysisModelIdSuffix() } },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("untagged + unpersoned + hasSuggestions all combine into one AND array", () => {
+    const where = buildImagesWhere({ ...BASE, untagged: true, unpersoned: true, hasSuggestions: true });
+    expect(where.AND).toEqual([
+      { imageTags: { none: {} } },
+      { imagePersons: { none: {} } },
+      {
+        tagSuggestions: {
+          some: {
+            status: "PENDING",
+            workspaceId: "ws1",
+            analysis: { modelId: { endsWith: getCurrentAnalysisModelIdSuffix() } },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("untagged + tagIds combine into one AND array (contradictory but not specially handled)", () => {
+    const where = buildImagesWhere({ ...BASE, untagged: true, tagIds: ["t1"] });
+    expect(where.AND).toEqual([
+      { imageTags: { some: { tagId: "t1" } } },
+      { imageTags: { none: {} } },
     ]);
   });
 });

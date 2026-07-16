@@ -163,6 +163,12 @@ export type GalleryFilters = {
   personId: string | null;
   favorite: boolean | null;
   sort: "newest" | "oldest";
+  /** Phase 10-28B: organization quick filters — approved-tag-free images. */
+  untagged: boolean;
+  /** Phase 10-28B: organization quick filters — person-unassigned images. */
+  unpersoned: boolean;
+  /** Phase 10-28B: has at least one current-model PENDING TagSuggestion. */
+  hasSuggestions: boolean;
 };
 
 export type ImagesPage = {
@@ -182,6 +188,9 @@ export async function fetchImages(
   if (filters.personId) sp.set("personId", filters.personId);
   if (filters.favorite !== null) sp.set("favorite", String(filters.favorite));
   if (filters.sort !== "newest") sp.set("sort", filters.sort);
+  if (filters.untagged) sp.set("untagged", "true");
+  if (filters.unpersoned) sp.set("unpersoned", "true");
+  if (filters.hasSuggestions) sp.set("hasSuggestions", "true");
   if (cursor) sp.set("cursor", cursor);
 
   const res = await fetch(`/api/images?${sp.toString()}`);
