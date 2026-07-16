@@ -345,6 +345,14 @@ function GalleryInner() {
     return formatBulkPersonSuccessMessage(result.person.name, result)
   }
 
+  // Phase 10-26B: DetailPanel/MobileDetailDrawerから現在表示中の画像を一括
+  // 選択に追加/解除する。新しいactionは作らず、既存のbulk_toggle_imageを
+  // そのまま再利用する(ImageGridのonBulkToggleと同じdispatch)。
+  const isDetailBulkSelected = state.selectedId !== null && state.bulkSelectedIds.includes(state.selectedId)
+  const handleToggleBulkSelected = () => {
+    if (state.selectedId) dispatch({ type: "bulk_toggle_image", imageId: state.selectedId })
+  }
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-50">
       {/* Header (Phase 10-8D: nav buttons hidden below md so the mobile
@@ -453,6 +461,8 @@ function GalleryInner() {
             onPersonRemoved={(personId) => dispatch({ type: "person_removed", personId })}
             onTranslated={(result) => dispatch({ type: "translation_updated", result })}
             onPromptSaved={(prompt) => dispatch({ type: "prompt_updated", prompt })}
+            isBulkSelected={isDetailBulkSelected}
+            onToggleBulkSelected={handleToggleBulkSelected}
             prefetchedDetail={state.detail}
             prefetchedLoading={state.detailLoading}
             prefetchedError={state.detailError}
@@ -473,6 +483,8 @@ function GalleryInner() {
         onPersonRemoved={(personId) => dispatch({ type: "person_removed", personId })}
         onTranslated={(result) => dispatch({ type: "translation_updated", result })}
         onPromptSaved={(prompt) => dispatch({ type: "prompt_updated", prompt })}
+        isBulkSelected={isDetailBulkSelected}
+        onToggleBulkSelected={handleToggleBulkSelected}
         prefetchedDetail={state.detail}
         prefetchedLoading={state.detailLoading}
         prefetchedError={state.detailError}
