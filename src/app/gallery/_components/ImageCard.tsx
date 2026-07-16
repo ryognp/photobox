@@ -2,6 +2,7 @@
 
 import { useReducer } from "react"
 import type { GalleryImage } from "@/lib/gallery/imagesClient"
+import type { GalleryDensity } from "@/lib/gallery/galleryDensity"
 
 interface ImageCardProps {
   image: GalleryImage
@@ -11,6 +12,10 @@ interface ImageCardProps {
    *  single DetailPanel selection). */
   bulkSelected: boolean
   onBulkToggle: (imageId: string) => void
+  /** Phase 10-27B: only affects the tag-preview count below the thumbnail
+   *  ("compact" shows fewer). Checkbox hit area / rings / click behavior are
+   *  intentionally unaffected by density. */
+  density: GalleryDensity
 }
 
 function ImagePlaceholder() {
@@ -28,8 +33,12 @@ function ImagePlaceholder() {
   )
 }
 
-export default function ImageCard({ image, selected, onClick, bulkSelected, onBulkToggle }: ImageCardProps) {
+export default function ImageCard({ image, selected, onClick, bulkSelected, onBulkToggle, density }: ImageCardProps) {
   const [imgError, markError] = useReducer(() => true, false)
+  // Phase 10-27B: compactでは1件+N、それ以外(comfortable/standard)は現状通り3件+N。
+  const visibleTagLimit = density === "compact" ? 1 : 3
+  const visibleTags = image.tags.slice(0, visibleTagLimit)
+  const hiddenTagCount = image.tags.length - visibleTags.length
 
   // Phase 10-18C: 外側は button ではなく role="button" の div。checkbox 用の
   // button を内側に持つため（button の入れ子は不正HTML）。クリック/Enter/Space
@@ -109,7 +118,7 @@ export default function ImageCard({ image, selected, onClick, bulkSelected, onBu
       {image.tags.length > 0 && (
         <div className="p-2">
           <div className="flex flex-wrap gap-1">
-            {image.tags.slice(0, 3).map((t) => (
+            {visibleTags.map((t) => (
               <span
                 key={t.id}
                 className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600"
@@ -117,8 +126,8 @@ export default function ImageCard({ image, selected, onClick, bulkSelected, onBu
                 {t.name}
               </span>
             ))}
-            {image.tags.length > 3 && (
-              <span className="text-xs text-zinc-400">+{image.tags.length - 3}</span>
+            {hiddenTagCount > 0 && (
+              <span className="text-xs text-zinc-400">+{hiddenTagCount}</span>
             )}
           </div>
         </div>

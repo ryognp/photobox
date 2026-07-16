@@ -12,6 +12,7 @@ import {
   pickMostVisibleImageId,
   type VisibleImageEntry,
 } from "@/lib/gallery/galleryScrollRestoration"
+import { getGalleryDensityGridClass, type GalleryDensity } from "@/lib/gallery/galleryDensity"
 import ImageCard from "./ImageCard"
 
 interface ImageGridProps {
@@ -26,6 +27,7 @@ interface ImageGridProps {
   onLoadMore: () => void
   onRetry: () => void
   error: string | null
+  density: GalleryDensity
 }
 
 export default function ImageGrid({
@@ -40,6 +42,7 @@ export default function ImageGrid({
   onLoadMore,
   onRetry,
   error,
+  density,
 }: ImageGridProps) {
   const bulkSelectedSet = new Set(bulkSelectedIds)
   const router = useRouter()
@@ -158,6 +161,31 @@ export default function ImageGrid({
     return () => observer.disconnect()
   }, [images.length, lastVisibleStorageKey])
 
+  // Phase 10-27B: density変更でgrid列数が変わると、生のscrollTop(px)は別の
+  // 画像を指すようになり意味をなさない。lastVisibleImageIdはid基準なので
+  // density変更後も同じ画像をscrollIntoViewし直せる — 上の復元effect(mount/
+  // filter変更時のみ)とは別に、density"変更"時だけ再実行する。
+  const prevDensityRef = useRef(density)
+  useEffect(() => {
+    if (prevDensityRef.current === density) return
+    prevDensityRef.current = density
+    const el = containerRef.current
+    if (!el) return
+    try {
+      const lastVisibleId = parseSavedLastVisibleImageId(sessionStorage.getItem(lastVisibleStorageKey))
+      if (lastVisibleId === null) return
+      const cards = el.querySelectorAll<HTMLElement>("[data-image-id]")
+      for (const card of cards) {
+        if (card.dataset.imageId === lastVisibleId) {
+          card.scrollIntoView({ block: "center" })
+          break
+        }
+      }
+    } catch {
+      // sessionStorage unavailable (private mode等) — 無視
+    }
+  }, [density, lastVisibleStorageKey])
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
@@ -212,7 +240,7 @@ export default function ImageGrid({
         bulkSelectedIds.length > 0 ? "pb-24 md:pb-4" : ""
       }`}
     >
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className={`grid gap-3 ${getGalleryDensityGridClass(density)}`}>
         {images.map((img) => (
           <ImageCard
             key={img.id}
@@ -221,6 +249,7 @@ export default function ImageGrid({
             onClick={() => onSelect(img.id)}
             bulkSelected={bulkSelectedSet.has(img.id)}
             onBulkToggle={onBulkToggle}
+            density={density}
           />
         ))}
       </div>

@@ -6,6 +6,10 @@ import type { GalleryFilters } from "@/lib/gallery/imagesClient"
 import { toggleTagId } from "@/lib/gallery/tagFilters"
 import { filterTagsForBulkSelect } from "@/lib/gallery/tagSelectFilter"
 import { filterPersonsForBulkSelect } from "@/lib/gallery/personSelectFilter"
+import {
+  getGalleryDensityLabel,
+  type GalleryDensity,
+} from "@/lib/gallery/galleryDensity"
 
 export type SimpleItem = { id: string; name: string }
 /** AI candidate tag option (Phase 10-9B): keyed by label, not id. */
@@ -247,13 +251,26 @@ interface FilterContentProps {
   tags: SimpleItem[]
   persons: SimpleItem[]
   suggestionTags: SuggestionTagItem[]
+  /** Phase 10-27B: display density switch. FilterSidebar (desktop) also
+   *  passes these through for type completeness, but the section itself is
+   *  md:hidden — PC uses the header switch instead, to avoid duplication. */
+  density: GalleryDensity
+  onDensityChange: (density: GalleryDensity) => void
 }
 
 /**
  * Filter body shared by the desktop FilterSidebar and the mobile
  * FilterDrawer (Phase 10-8B) — same markup/logic, different chrome around it.
  */
-export default function FilterContent({ filters, onChange, tags, persons, suggestionTags }: FilterContentProps) {
+export default function FilterContent({
+  filters,
+  onChange,
+  tags,
+  persons,
+  suggestionTags,
+  density,
+  onDensityChange,
+}: FilterContentProps) {
   const hasAnyFilter =
     filters.sceneId !== null ||
     filters.tagIds.length > 0 ||
@@ -271,6 +288,27 @@ export default function FilterContent({ filters, onChange, tags, persons, sugges
 
   return (
     <div className="flex flex-1 flex-col gap-5">
+      {/* Phase 10-27B: 表示密度切替。PCはheader内に専用UIがあるため、ここは
+          mobile drawer専用(md:hidden)にして重複を避ける。 */}
+      <div className="md:hidden">
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">表示密度</p>
+        <div className="flex flex-wrap gap-1.5">
+          {(["comfortable", "standard", "compact"] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => onDensityChange(d)}
+              className={`min-h-10 rounded-md border px-3 py-2 text-sm ${
+                density === d
+                  ? "border-amber-500 bg-amber-50 font-medium text-amber-700"
+                  : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+              }`}
+            >
+              {getGalleryDensityLabel(d)}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Favorite */}
       <div>
         <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">お気に入り</p>
