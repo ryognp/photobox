@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 import type { GalleryFilters } from "@/lib/gallery/imagesClient"
+import type { GalleryDensity } from "@/lib/gallery/galleryDensity"
 import FilterContent, { useFilterOptions } from "./FilterContent"
 
 interface MobileFilterDrawerProps {
@@ -9,6 +10,9 @@ interface MobileFilterDrawerProps {
   filters: GalleryFilters
   onChange: (patch: Partial<GalleryFilters>) => void
   onClose: () => void
+  /** Phase 10-27B: passed through to FilterContent's mobile-only density section. */
+  density: GalleryDensity
+  onDensityChange: (density: GalleryDensity) => void
 }
 
 /**
@@ -18,7 +22,14 @@ interface MobileFilterDrawerProps {
  * Filter changes do NOT close the drawer (multi-select is easier that way);
  * the user closes it explicitly via × or "完了".
  */
-export default function MobileFilterDrawer({ open, filters, onChange, onClose }: MobileFilterDrawerProps) {
+export default function MobileFilterDrawer({
+  open,
+  filters,
+  onChange,
+  onClose,
+  density,
+  onDensityChange,
+}: MobileFilterDrawerProps) {
   const options = useFilterOptions()
 
   // body scroll lock while open
@@ -57,7 +68,13 @@ export default function MobileFilterDrawer({ open, filters, onChange, onClose }:
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          <FilterContent filters={filters} onChange={onChange} {...options} />
+          <FilterContent
+            filters={filters}
+            onChange={onChange}
+            density={density}
+            onDensityChange={onDensityChange}
+            {...options}
+          />
         </div>
 
         {/* Footer: explicit close, since filter changes don't auto-close */}

@@ -23,6 +23,7 @@ import BulkSelectionToolbar from "./_components/BulkSelectionToolbar"
 import { applyTranslationUpdate, applyPromptEditToDetailPrompt } from "@/lib/gallery/translationState"
 import { normalizeTagIds } from "@/lib/gallery/tagFilters"
 import { normalizeSuggestionLabels } from "@/lib/gallery/suggestionFilters"
+import { parseGalleryDensity, getGalleryDensityLabel, GALLERY_DENSITY_STORAGE_KEY, type GalleryDensity } from "@/lib/gallery/galleryDensity"
 import SearchBar from "./_components/SearchBar"
 import FilterSidebar from "./_components/FilterSidebar"
 import ImageGrid from "./_components/ImageGrid"
@@ -244,6 +245,30 @@ function GalleryInner() {
   // reducer, which only tracks fetched data).
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false)
 
+  // Phase 10-27B: Gallery display density (comfortable/standard/compact).
+  // Pure display preference, not fetched data — kept out of the reducer.
+  // Read via a lazy useState initializer (not a mount effect + setState,
+  // which react-hooks/set-state-in-effect flags) — safe here because the
+  // grid itself never appears in server-rendered HTML anyway (state.loading
+  // starts true, so ImageGrid renders "読み込み中..." until the client-side
+  // fetch effect resolves), so there is no SSR/hydration mismatch risk.
+  const [density, setDensity] = useState<GalleryDensity>(() => {
+    if (typeof window === "undefined") return "standard"
+    try {
+      return parseGalleryDensity(window.localStorage.getItem(GALLERY_DENSITY_STORAGE_KEY))
+    } catch {
+      return "standard"
+    }
+  })
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(GALLERY_DENSITY_STORAGE_KEY, density)
+    } catch {
+      // ignore — best-effort persistence only
+    }
+  }, [density])
+
   // Debounce q from URL → debouncedQ in state
   useEffect(() => {
     if (qTimer.current) clearTimeout(qTimer.current)
@@ -390,6 +415,22 @@ function GalleryInner() {
           <span className="hidden shrink-0 text-sm text-zinc-400 sm:inline">
             {state.loading ? "..." : `${state.images.length} 枚`}
           </span>
+          {/* Phase 10-27B: PC専用の表示密度切替(モバイルはFilter drawer内)。 */}
+          <div className="hidden shrink-0 items-center gap-1 md:flex">
+            {(["comfortable", "standard", "compact"] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDensity(d)}
+                className={`min-h-10 rounded-md border px-2.5 py-1.5 text-xs ${
+                  density === d
+                    ? "border-amber-500 bg-amber-50 font-medium text-amber-700"
+                    : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+                }`}
+              >
+                {getGalleryDensityLabel(d)}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => router.push("/quick-add")}
             className="ml-auto min-h-10 shrink-0 rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 md:hidden"
@@ -429,6 +470,8 @@ function GalleryInner() {
         <FilterSidebar
           filters={filters}
           onChange={handleFilterChange}
+          density={density}
+          onDensityChange={setDensity}
         />
 
         <ImageGrid
@@ -440,6 +483,7 @@ function GalleryInner() {
           }}
           bulkSelectedIds={state.bulkSelectedIds}
           onBulkToggle={(imageId) => dispatch({ type: "bulk_toggle_image", imageId })}
+          density={density}
           loading={state.loading}
           loadingMore={state.loadingMore}
           hasMore={state.nextCursor !== null}
@@ -496,6 +540,8 @@ function GalleryInner() {
         filters={filters}
         onChange={handleFilterChange}
         onClose={() => setFilterDrawerOpen(false)}
+        density={density}
+        onDensityChange={setDensity}
       />
     </div>
   )
