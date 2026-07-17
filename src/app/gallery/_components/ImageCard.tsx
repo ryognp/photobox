@@ -1,7 +1,7 @@
 "use client"
 
 import { useReducer } from "react"
-import type { GalleryImage } from "@/lib/gallery/imagesClient"
+import type { GalleryImage, GalleryFilters } from "@/lib/gallery/imagesClient"
 import type { GalleryDensity } from "@/lib/gallery/galleryDensity"
 
 interface ImageCardProps {
@@ -21,6 +21,11 @@ interface ImageCardProps {
    *  populates image.isUntagged/isUnpersoned/hasCurrentPendingSuggestions),
    *  so callers should pass `sort === "needs_review"` here. */
   showOrganizationBadges: boolean
+  /** Phase 10-31B: clicking an organization-reason badge turns the matching
+   *  filter ON (never OFF) via the existing filter-change/URL-update path —
+   *  sort and other filters are preserved (handleFilterChange merges the
+   *  patch into the current GalleryFilters). */
+  onFilterChange: (patch: Partial<GalleryFilters>) => void
 }
 
 function ImagePlaceholder() {
@@ -46,6 +51,7 @@ export default function ImageCard({
   onBulkToggle,
   density,
   showOrganizationBadges,
+  onFilterChange,
 }: ImageCardProps) {
   const [imgError, markError] = useReducer(() => true, false)
   // Phase 10-27B: compactでは1件+N、それ以外(comfortable/standard)は現状通り3件+N。
@@ -57,16 +63,33 @@ export default function ImageCard({
   // のみimage側にデータが入っているため、showOrganizationBadgesで表示可否を
   // 制御する(呼び出し元がsort==="needs_review"を渡す)。amberは一括選択リング
   // と紛らわしいため使わない。compactでは最大2個に制限する。
-  const organizationBadges: { key: string; label: string; className: string }[] = []
+  // Phase 10-31B: 各バッジに対応するfilter patchを持たせ、クリックで該当
+  // filterをONにできるようにする(OFFトグルはしない、既にtrueでもそのまま)。
+  const organizationBadges: { key: string; label: string; className: string; patch: Partial<GalleryFilters> }[] = []
   if (showOrganizationBadges) {
     if (image.isUntagged) {
-      organizationBadges.push({ key: "untagged", label: "未タグ", className: "bg-orange-50 text-orange-700" })
+      organizationBadges.push({
+        key: "untagged",
+        label: "未タグ",
+        className: "bg-orange-50 text-orange-700",
+        patch: { untagged: true },
+      })
     }
     if (image.isUnpersoned) {
-      organizationBadges.push({ key: "unpersoned", label: "人物未設定", className: "bg-violet-50 text-violet-700" })
+      organizationBadges.push({
+        key: "unpersoned",
+        label: "人物未設定",
+        className: "bg-violet-50 text-violet-700",
+        patch: { unpersoned: true },
+      })
     }
     if (image.hasCurrentPendingSuggestions) {
-      organizationBadges.push({ key: "hasSuggestions", label: "AI候補あり", className: "bg-emerald-50 text-emerald-700" })
+      organizationBadges.push({
+        key: "hasSuggestions",
+        label: "AI候補あり",
+        className: "bg-emerald-50 text-emerald-700",
+        patch: { hasSuggestions: true },
+      })
     }
   }
   const visibleOrganizationBadges = density === "compact" ? organizationBadges.slice(0, 2) : organizationBadges
@@ -144,16 +167,23 @@ export default function ImageCard({
       </div>
 
       {/* Phase 10-30B: 整理理由バッジ(needs_review時のみ)。タグチップと混ざら
-          ないよう別行にする。 */}
+          ないよう別行にする。
+          Phase 10-31B: クリックで該当filterをON(OFFにはしない)。stopPropagation
+          でカード本体クリック(DetailPanelを開く)とは分離する。 */}
       {visibleOrganizationBadges.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-2 pt-2">
+        <div className="flex flex-wrap gap-1.5 px-2 pt-2">
           {visibleOrganizationBadges.map((b) => (
-            <span
+            <button
               key={b.key}
-              className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${b.className}`}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onFilterChange(b.patch)
+              }}
+              className={`rounded-full px-2 py-1 text-[10px] font-medium ${b.className}`}
             >
               {b.label}
-            </span>
+            </button>
           ))}
         </div>
       )}

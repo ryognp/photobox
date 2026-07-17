@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import type { GalleryImage } from "@/lib/gallery/imagesClient"
+import type { GalleryImage, GalleryFilters } from "@/lib/gallery/imagesClient"
 import {
   buildGalleryScrollStorageKey,
   parseSavedScrollY,
@@ -33,6 +33,9 @@ interface ImageGridProps {
    *  (image.isUntagged/isUnpersoned/hasCurrentPendingSuggestions) — used to
    *  gate ImageCard's badge row. */
   sort: GallerySort
+  /** Phase 10-31B: passed straight through to ImageCard's organization-reason
+   *  badges (click-to-filter-ON). */
+  onFilterChange: (patch: Partial<GalleryFilters>) => void
 }
 
 export default function ImageGrid({
@@ -49,6 +52,7 @@ export default function ImageGrid({
   error,
   density,
   sort,
+  onFilterChange,
 }: ImageGridProps) {
   const bulkSelectedSet = new Set(bulkSelectedIds)
   const router = useRouter()
@@ -257,6 +261,7 @@ export default function ImageGrid({
             onBulkToggle={onBulkToggle}
             density={density}
             showOrganizationBadges={sort === "needs_review"}
+            onFilterChange={onFilterChange}
           />
         ))}
       </div>
