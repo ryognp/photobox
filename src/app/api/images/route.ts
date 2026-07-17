@@ -660,6 +660,23 @@ export async function GET(request: NextRequest) {
             _count: { select: { versions: true } },
           },
         },
+        // Phase 10-30C: organization-reason badges when needs_review's
+        // dedicated raw path isn't in play (any other filter active, or
+        // cursor !== null) — same current-model-suggestion basis as
+        // hasSuggestions/needs_review, via Prisma's filtered relation count
+        // (no raw SQL needed here). imageTags is already selected above as a
+        // full list, so isUntagged is derived from its length instead.
+        _count: {
+          select: {
+            imagePersons: true,
+            tagSuggestions: {
+              where: {
+                status: "PENDING",
+                analysis: { modelId: { endsWith: getCurrentAnalysisModelIdSuffix() } },
+              },
+            },
+          },
+        },
       },
     });
     perf.mark("dbFindManyMs");
@@ -679,6 +696,9 @@ export async function GET(request: NextRequest) {
       tags: img.imageTags.map((t) => t.tag),
       promptBody: img.prompt?.currentBody ?? null,
       promptVersionCount: img.prompt?._count?.versions ?? 0,
+      isUntagged: img.imageTags.length === 0,
+      isUnpersoned: img._count.imagePersons === 0,
+      hasCurrentPendingSuggestions: img._count.tagSuggestions > 0,
     }));
   }
 
