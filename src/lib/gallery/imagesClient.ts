@@ -1,3 +1,5 @@
+import type { GallerySort } from "@/lib/gallery/gallerySort";
+
 export type GalleryImage = {
   id: string;
   originalName: string;
@@ -162,7 +164,9 @@ export type GalleryFilters = {
   suggestionLabels: string[];
   personId: string | null;
   favorite: boolean | null;
-  sort: "newest" | "oldest";
+  /** Phase 10-29B: "needs_review" drives a dedicated first-page-only sort
+   *  strategy server-side (not a plain asc/desc direction) — see gallerySort.ts. */
+  sort: GallerySort;
   /** Phase 10-28B: organization quick filters — approved-tag-free images. */
   untagged: boolean;
   /** Phase 10-28B: organization quick filters — person-unassigned images. */
