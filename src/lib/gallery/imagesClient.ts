@@ -13,6 +13,13 @@ export type GalleryImage = {
   promptSnippet: string | null;
   promptVersionCount: number;
   thumbnailUrl: string | null;
+  /** Phase 10-30B: organization-reason badges. Only populated by GET
+   *  /api/images's needs_review path (sort=needs_review, first page, no
+   *  other filters) — undefined for every other sort/filter combination, so
+   *  ImageCard should only render badges when `sort === "needs_review"`. */
+  isUntagged?: boolean;
+  isUnpersoned?: boolean;
+  hasCurrentPendingSuggestions?: boolean;
 };
 
 /** AI tag candidate awaiting review. Never a real Tag until approved. */
