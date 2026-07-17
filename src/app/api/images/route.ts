@@ -387,6 +387,12 @@ export async function GET(request: NextRequest) {
     tags: { id: string; name: string }[];
     promptBody: string | null;
     promptVersionCount: number;
+    // Phase 10-30B: organization-reason badges for ImageCard, only populated
+    // by the needs_review path (see useNeedsReviewPath below) — the raw fast
+    // path and the Prisma path leave these undefined (badges hidden then).
+    isUntagged?: boolean;
+    isUnpersoned?: boolean;
+    hasCurrentPendingSuggestions?: boolean;
   };
 
   // ── Query path selection ────────────────────────────────────────────────
@@ -449,6 +455,11 @@ export async function GET(request: NextRequest) {
       tags: unknown; // JSON_AGG → parsed by pg driver as JS array
       prompt_body: string | null;
       prompt_version_count: number | bigint;
+      // Phase 10-30B: organization-reason badges — reuses the same LATERAL
+      // aggregates already computed for the review-priority ORDER BY above.
+      tag_count: number;
+      person_count: number;
+      current_pending_suggestion_count: number;
     };
 
     const currentSuggestionModelIdPattern = `%${getCurrentAnalysisModelIdSuffix()}`;
@@ -473,7 +484,10 @@ export async function GET(request: NextRequest) {
             '[]'::json
           )                                                         AS tags,
           p.current_body                                            AS prompt_body,
-          CAST(COUNT(DISTINCT pv.id) AS integer)                    AS prompt_version_count
+          CAST(COUNT(DISTINCT pv.id) AS integer)                    AS prompt_version_count,
+          MAX(tag_stats.tag_count)                                  AS tag_count,
+          MAX(person_stats.person_count)                            AS person_count,
+          MAX(suggestion_stats.current_pending_suggestion_count)    AS current_pending_suggestion_count
         FROM images i
         LEFT JOIN scenes          s  ON s.id        = i.scene_id
         LEFT JOIN image_tags      it ON it.image_id  = i.id
@@ -535,6 +549,9 @@ export async function GET(request: NextRequest) {
         tags,
         promptBody: row.prompt_body,
         promptVersionCount: Number(row.prompt_version_count),
+        isUntagged: Number(row.tag_count) === 0,
+        isUnpersoned: Number(row.person_count) === 0,
+        hasCurrentPendingSuggestions: Number(row.current_pending_suggestion_count) > 0,
       };
     });
   } else if (useRawPath) {
@@ -702,6 +719,11 @@ export async function GET(request: NextRequest) {
       promptSnippet: img.promptBody?.slice(0, 80) ?? null,
       promptVersionCount: img.promptVersionCount,
       thumbnailUrl: thumbnailUrl ?? fallbackUrl,
+      // Phase 10-30B: only defined on the needs_review path (see PageImage) —
+      // omitted (undefined, dropped by JSON.stringify) on the raw/Prisma paths.
+      isUntagged: img.isUntagged,
+      isUnpersoned: img.isUnpersoned,
+      hasCurrentPendingSuggestions: img.hasCurrentPendingSuggestions,
     };
   });
   perf.mark("serializeMs");

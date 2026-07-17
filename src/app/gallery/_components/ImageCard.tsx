@@ -16,6 +16,11 @@ interface ImageCardProps {
    *  ("compact" shows fewer). Checkbox hit area / rings / click behavior are
    *  intentionally unaffected by density. */
   density: GalleryDensity
+  /** Phase 10-30B: show organization-reason badges (未タグ/人物未設定/AI候補あり)
+   *  — only meaningful when sort==="needs_review" (the only path that
+   *  populates image.isUntagged/isUnpersoned/hasCurrentPendingSuggestions),
+   *  so callers should pass `sort === "needs_review"` here. */
+  showOrganizationBadges: boolean
 }
 
 function ImagePlaceholder() {
@@ -33,12 +38,38 @@ function ImagePlaceholder() {
   )
 }
 
-export default function ImageCard({ image, selected, onClick, bulkSelected, onBulkToggle, density }: ImageCardProps) {
+export default function ImageCard({
+  image,
+  selected,
+  onClick,
+  bulkSelected,
+  onBulkToggle,
+  density,
+  showOrganizationBadges,
+}: ImageCardProps) {
   const [imgError, markError] = useReducer(() => true, false)
   // Phase 10-27B: compactでは1件+N、それ以外(comfortable/standard)は現状通り3件+N。
   const visibleTagLimit = density === "compact" ? 1 : 3
   const visibleTags = image.tags.slice(0, visibleTagLimit)
   const hiddenTagCount = image.tags.length - visibleTags.length
+
+  // Phase 10-30B: 整理理由バッジ(未タグ/人物未設定/AI候補あり)。needs_review時
+  // のみimage側にデータが入っているため、showOrganizationBadgesで表示可否を
+  // 制御する(呼び出し元がsort==="needs_review"を渡す)。amberは一括選択リング
+  // と紛らわしいため使わない。compactでは最大2個に制限する。
+  const organizationBadges: { key: string; label: string; className: string }[] = []
+  if (showOrganizationBadges) {
+    if (image.isUntagged) {
+      organizationBadges.push({ key: "untagged", label: "未タグ", className: "bg-orange-50 text-orange-700" })
+    }
+    if (image.isUnpersoned) {
+      organizationBadges.push({ key: "unpersoned", label: "人物未設定", className: "bg-violet-50 text-violet-700" })
+    }
+    if (image.hasCurrentPendingSuggestions) {
+      organizationBadges.push({ key: "hasSuggestions", label: "AI候補あり", className: "bg-emerald-50 text-emerald-700" })
+    }
+  }
+  const visibleOrganizationBadges = density === "compact" ? organizationBadges.slice(0, 2) : organizationBadges
 
   // Phase 10-18C: 外側は button ではなく role="button" の div。checkbox 用の
   // button を内側に持つため（button の入れ子は不正HTML）。クリック/Enter/Space
@@ -111,6 +142,21 @@ export default function ImageCard({ image, selected, onClick, bulkSelected, onBu
           <ImagePlaceholder />
         )}
       </div>
+
+      {/* Phase 10-30B: 整理理由バッジ(needs_review時のみ)。タグチップと混ざら
+          ないよう別行にする。 */}
+      {visibleOrganizationBadges.length > 0 && (
+        <div className="flex flex-wrap gap-1 px-2 pt-2">
+          {visibleOrganizationBadges.map((b) => (
+            <span
+              key={b.key}
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${b.className}`}
+            >
+              {b.label}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Phase 10-9A: カードはサムネイル + 承認済みタグのみ。originalName /
           scene / promptSnippet / Favorite badge / 履歴 badge は非表示。

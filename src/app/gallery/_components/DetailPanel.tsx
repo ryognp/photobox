@@ -1610,6 +1610,32 @@ export default function DetailPanel({
             </button>
           )}
 
+          {/* Phase 10-30B: 整理理由バッジ。sortに関係なく常時表示(既存の
+              tags/persons/tagSuggestionsから算出できるためAPI変更不要)。
+              tagSuggestionsは既にcurrent modelId + PENDINGでフィルタ済み
+              (GET /api/images/[id]、hasSuggestions filterと同じ基準)。 */}
+          {(state.detail.tags.length === 0 ||
+            state.detail.persons.length === 0 ||
+            state.detail.tagSuggestions.length > 0) && (
+            <div className="flex flex-wrap gap-1">
+              {state.detail.tags.length === 0 && (
+                <span className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700">
+                  未タグ
+                </span>
+              )}
+              {state.detail.persons.length === 0 && (
+                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
+                  人物未設定
+                </span>
+              )}
+              {state.detail.tagSuggestions.length > 0 && (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                  AI候補あり
+                </span>
+              )}
+            </div>
+          )}
+
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">タグ</p>
             {state.detail.tags.length > 0 && (

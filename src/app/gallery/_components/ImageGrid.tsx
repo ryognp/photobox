@@ -13,6 +13,7 @@ import {
   type VisibleImageEntry,
 } from "@/lib/gallery/galleryScrollRestoration"
 import { getGalleryDensityGridClass, type GalleryDensity } from "@/lib/gallery/galleryDensity"
+import type { GallerySort } from "@/lib/gallery/gallerySort"
 import ImageCard from "./ImageCard"
 
 interface ImageGridProps {
@@ -28,6 +29,10 @@ interface ImageGridProps {
   onRetry: () => void
   error: string | null
   density: GalleryDensity
+  /** Phase 10-30B: only "needs_review" carries organization-reason data
+   *  (image.isUntagged/isUnpersoned/hasCurrentPendingSuggestions) — used to
+   *  gate ImageCard's badge row. */
+  sort: GallerySort
 }
 
 export default function ImageGrid({
@@ -43,6 +48,7 @@ export default function ImageGrid({
   onRetry,
   error,
   density,
+  sort,
 }: ImageGridProps) {
   const bulkSelectedSet = new Set(bulkSelectedIds)
   const router = useRouter()
@@ -250,6 +256,7 @@ export default function ImageGrid({
             bulkSelected={bulkSelectedSet.has(img.id)}
             onBulkToggle={onBulkToggle}
             density={density}
+            showOrganizationBadges={sort === "needs_review"}
           />
         ))}
       </div>

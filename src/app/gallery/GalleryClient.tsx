@@ -493,6 +493,7 @@ function GalleryInner() {
           bulkSelectedIds={state.bulkSelectedIds}
           onBulkToggle={(imageId) => dispatch({ type: "bulk_toggle_image", imageId })}
           density={density}
+          sort={filters.sort}
           loading={state.loading}
           loadingMore={state.loadingMore}
           hasMore={state.nextCursor !== null}
