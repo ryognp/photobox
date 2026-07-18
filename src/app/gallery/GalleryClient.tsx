@@ -422,7 +422,7 @@ function GalleryInner() {
           </button>
           <h1 className="shrink-0 text-base font-semibold text-zinc-900">Gallery</h1>
           <span className="hidden shrink-0 text-sm text-zinc-400 sm:inline">
-            {state.loading ? "..." : `${state.images.length} 枚`}
+            {state.loading ? "…" : `${state.images.length} 枚`}
           </span>
           {/* Phase 10-27B: PC専用の表示密度切替(モバイルはFilter drawer内)。 */}
           <div className="hidden shrink-0 items-center gap-1 md:flex">
