@@ -910,7 +910,7 @@ function SuggestionCard({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={40}
-          className="w-full rounded border border-amber-300 bg-white px-2 py-2 text-sm text-zinc-800 focus:outline-none"
+          className="w-full rounded border border-amber-300 bg-white px-2 py-2 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
         />
         <div className="mt-2 flex gap-2">
           <button
