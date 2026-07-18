@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { parseGallerySort, getGallerySortLabel } from "@/lib/gallery/gallerySort";
+import { parseGallerySort, getGallerySortLabel, GALLERY_SORT_STORAGE_KEY } from "@/lib/gallery/gallerySort";
+
+describe("GALLERY_SORT_STORAGE_KEY", () => {
+  it("is a stable, versioned key", () => {
+    expect(GALLERY_SORT_STORAGE_KEY).toBe("photobox:gallery-sort:v1");
+  });
+});
 
 describe("parseGallerySort", () => {
   it("returns newest as-is", () => {
