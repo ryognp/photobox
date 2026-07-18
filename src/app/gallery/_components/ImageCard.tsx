@@ -115,7 +115,7 @@ export default function ImageCard({
           onClick()
         }
       }}
-      className={`group relative cursor-pointer overflow-hidden rounded-lg border bg-zinc-100 text-left transition-shadow ${
+      className={`group relative cursor-pointer overflow-hidden rounded-lg border bg-zinc-100 text-left transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
         bulkSelected
           ? "border-amber-500 ring-2 ring-amber-500"
           : selected
@@ -135,7 +135,7 @@ export default function ImageCard({
         }}
         aria-label={bulkSelected ? "選択を解除" : "選択"}
         aria-pressed={bulkSelected}
-        className="absolute left-1 top-1 z-10 flex h-10 w-10 items-center justify-center"
+        className="absolute left-1 top-1 z-10 flex h-10 w-10 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1"
       >
         <span
           className={`flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
@@ -180,7 +180,7 @@ export default function ImageCard({
                 e.stopPropagation()
                 onFilterChange(b.patch)
               }}
-              className={`rounded-full px-2 py-1 text-[10px] font-medium ${b.className}`}
+              className={`rounded-full px-2 py-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${b.className}`}
             >
               {b.label}
             </button>
