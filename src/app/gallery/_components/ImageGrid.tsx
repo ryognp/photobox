@@ -199,7 +199,7 @@ export default function ImageGrid({
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
-        読み込み中...
+        読み込み中…
       </div>
     )
   }
@@ -273,7 +273,7 @@ export default function ImageGrid({
             disabled={loadingMore}
             className="rounded-md border border-zinc-300 px-5 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
           >
-            {loadingMore ? "読み込み中..." : "もっと見る"}
+            {loadingMore ? "読み込み中…" : "もっと見る"}
           </button>
         </div>
       )}

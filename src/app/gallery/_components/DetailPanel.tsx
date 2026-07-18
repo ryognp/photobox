@@ -295,7 +295,7 @@ function PromptEditor({
           disabled={phase === "saving"}
           className="rounded bg-zinc-800 px-3 py-1 text-xs text-white hover:bg-zinc-600 disabled:opacity-50"
         >
-          {phase === "saving" ? "保存中..." : "保存"}
+          {phase === "saving" ? "保存中…" : "保存"}
         </button>
         <button
           onClick={cancel}
@@ -400,7 +400,7 @@ function TranslationSection({
           disabled={phase === "translating"}
           className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
         >
-          {phase === "translating" ? "翻訳中..." : hasTranslation ? "日本語訳を再生成" : "日本語訳を追加"}
+          {phase === "translating" ? "翻訳中…" : hasTranslation ? "日本語訳を再生成" : "日本語訳を追加"}
         </button>
       )}
 
@@ -533,7 +533,7 @@ function PromptVariationSection({
         disabled={selected.length === 0 || phase === "generating"}
         className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
       >
-        {phase === "generating" ? "生成中..." : "新しいプロンプトを生成"}
+        {phase === "generating" ? "生成中…" : "新しいプロンプトを生成"}
       </button>
       <p className="mt-1 text-xs text-zinc-400">
         生成結果はこのブラウザに一時保存されます。既存promptには反映されません。必要に応じてコピーして編集してください。
@@ -1293,7 +1293,7 @@ function PersonSection({
       )}
 
       {addPhase === "loading" && (
-        <p className="mt-1.5 text-xs text-zinc-400">読み込み中...</p>
+        <p className="mt-1.5 text-xs text-zinc-400">読み込み中…</p>
       )}
 
       {addPhase === "error" && (
@@ -1408,7 +1408,7 @@ function AnalyzeSection({
           disabled={phase === "analyzing"}
           className="rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
         >
-          {phase === "analyzing" ? "解析中..." : "AI解析する"}
+          {phase === "analyzing" ? "解析中…" : "AI解析する"}
         </button>
         {hasResult && (
           <button
@@ -1569,7 +1569,7 @@ export default function DetailPanel({
 
       {state.phase === "loading" && (
         <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
-          読み込み中...
+          読み込み中…
         </div>
       )}
 
@@ -1805,7 +1805,7 @@ export default function DetailPanel({
                 disabled
                 className="w-full cursor-not-allowed rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-400"
               >
-                削除中...
+                削除中…
               </button>
             )}
 

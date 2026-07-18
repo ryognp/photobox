@@ -121,7 +121,7 @@ function TagSelectPanel({
       </div>
 
       {fetchState.phase === "loading" && (
-        <p className="text-xs text-zinc-400">読み込み中...</p>
+        <p className="text-xs text-zinc-400">読み込み中…</p>
       )}
 
       {fetchState.phase === "error" && (
@@ -287,7 +287,7 @@ function PersonSelectPanel({
       </div>
 
       {fetchState.phase === "loading" && (
-        <p className="text-xs text-zinc-400">読み込み中...</p>
+        <p className="text-xs text-zinc-400">読み込み中…</p>
       )}
 
       {fetchState.phase === "error" && (

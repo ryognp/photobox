@@ -30,7 +30,7 @@ export default function SearchBar({ value, onChange }: SearchBarProps) {
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="画像を検索..."
+        placeholder="画像を検索…"
         className="h-9 w-full rounded-md border border-zinc-200 bg-white pl-9 pr-8 text-sm text-zinc-900 placeholder-zinc-400 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
       />
       {value && (
