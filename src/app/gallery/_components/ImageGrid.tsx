@@ -199,7 +199,7 @@ export default function ImageGrid({
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
-        読み込み中...
+        読み込み中…
       </div>
     )
   }

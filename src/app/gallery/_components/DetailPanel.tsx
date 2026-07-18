@@ -1293,7 +1293,7 @@ function PersonSection({
       )}
 
       {addPhase === "loading" && (
-        <p className="mt-1.5 text-xs text-zinc-400">読み込み中...</p>
+        <p className="mt-1.5 text-xs text-zinc-400">読み込み中…</p>
       )}
 
       {addPhase === "error" && (
@@ -1569,7 +1569,7 @@ export default function DetailPanel({
 
       {state.phase === "loading" && (
         <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
-          読み込み中...
+          読み込み中…
         </div>
       )}
 
@@ -1805,7 +1805,7 @@ export default function DetailPanel({
                 disabled
                 className="w-full cursor-not-allowed rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-400"
               >
-                削除中...
+                削除中…
               </button>
             )}
 
