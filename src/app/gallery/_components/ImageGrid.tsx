@@ -247,7 +247,7 @@ export default function ImageGrid({
         // Phase 10-25D: mobileの下固定一括操作バーが最後の行/「もっと見る」
         // ボタンに重ならないよう、選択中のみ余分な下paddingを足す。desktop
         // は上部stickyバーのため不要(既存のp-4のまま)。
-        bulkSelectedIds.length > 0 ? "pb-24 md:pb-4" : ""
+        bulkSelectedIds.length > 0 ? "pb-36 md:pb-4" : ""
       }`}
     >
       <div className={`grid gap-3 ${getGalleryDensityGridClass(density)}`}>
