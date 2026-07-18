@@ -201,7 +201,7 @@ function SuggestionTagFilterSection({
     <div>
       <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
         AI候補タグ
-        <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-700">
+        <span className="rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium normal-case tracking-normal text-emerald-700">
           AI候補
         </span>
       </p>
@@ -210,13 +210,13 @@ function SuggestionTagFilterSection({
           {selectedLabels.map((label) => (
             <span
               key={label}
-              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700"
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700"
             >
               {label}
               <button
                 onClick={() => onToggle(label)}
                 aria-label={`${label} を解除`}
-                className="text-amber-500 hover:text-amber-800"
+                className="text-emerald-500 hover:text-emerald-800"
               >
                 ×
               </button>
@@ -232,7 +232,7 @@ function SuggestionTagFilterSection({
               key={item.label}
               onClick={() => onToggle(item.label)}
               className={`truncate rounded px-2 py-1 text-left text-sm ${
-                selected ? "bg-amber-50 font-medium text-amber-700" : "text-zinc-700 hover:bg-zinc-100"
+                selected ? "bg-emerald-50 font-medium text-emerald-700" : "text-zinc-700 hover:bg-zinc-100"
               }`}
             >
               {selected ? "✓ " : ""}{item.label}
@@ -303,7 +303,7 @@ export default function FilterContent({
               onClick={() => onDensityChange(d)}
               className={`min-h-10 rounded-md border px-3 py-2 text-sm ${
                 density === d
-                  ? "border-amber-500 bg-amber-50 font-medium text-amber-700"
+                  ? "border-blue-500 bg-blue-50 font-medium text-blue-700"
                   : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
               }`}
             >

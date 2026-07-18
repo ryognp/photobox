@@ -432,7 +432,7 @@ function GalleryInner() {
                 onClick={() => setDensity(d)}
                 className={`min-h-10 rounded-md border px-2.5 py-1.5 text-xs ${
                   density === d
-                    ? "border-amber-500 bg-amber-50 font-medium text-amber-700"
+                    ? "border-blue-500 bg-blue-50 font-medium text-blue-700"
                     : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
                 }`}
               >

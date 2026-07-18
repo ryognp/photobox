@@ -135,7 +135,7 @@ export default function ImageCard({
         }}
         aria-label={bulkSelected ? "選択を解除" : "選択"}
         aria-pressed={bulkSelected}
-        className="absolute left-1 top-1 z-10 flex h-10 w-10 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1"
+        className="absolute left-1 top-1 z-10 flex h-10 w-10 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
         <span
           className={`flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
