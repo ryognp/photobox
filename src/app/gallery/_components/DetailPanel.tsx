@@ -904,18 +904,18 @@ function SuggestionCard({
 
   if (phase === "editing") {
     return (
-      <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5">
+      <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2.5">
         <input
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={40}
-          className="w-full rounded border border-amber-300 bg-white px-2 py-2 text-sm text-zinc-800 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+          className="w-full rounded border border-emerald-300 bg-white px-2 py-2 text-sm text-zinc-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
         />
         <div className="mt-2 flex gap-2">
           <button
             onClick={() => void approve(draft)}
-            className="flex-1 rounded-md bg-amber-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-amber-700"
+            className="flex-1 rounded-md bg-emerald-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-emerald-700"
           >
             保存して承認
           </button>
@@ -932,25 +932,25 @@ function SuggestionCard({
 
   if (phase === "submitting") {
     return (
-      <div className="rounded-md border border-amber-100 bg-amber-50 p-2.5 text-sm text-amber-400">
+      <div className="rounded-md border border-emerald-100 bg-emerald-50 p-2.5 text-sm text-emerald-400">
         {suggestion.label} …
       </div>
     )
   }
 
   return (
-    <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5">
-      <p className="text-sm text-amber-800">{suggestion.label}</p>
+    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2.5">
+      <p className="text-sm text-emerald-800">{suggestion.label}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button
           onClick={() => void approve()}
-          className="min-w-[64px] flex-1 rounded-md bg-amber-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-amber-700"
+          className="min-w-[64px] flex-1 rounded-md bg-emerald-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-emerald-700"
         >
           承認
         </button>
         <button
           onClick={startEdit}
-          className="min-w-[64px] flex-1 rounded-md border border-amber-300 bg-white px-3 py-2.5 text-center text-sm text-amber-700 hover:bg-amber-50"
+          className="min-w-[64px] flex-1 rounded-md border border-emerald-300 bg-white px-3 py-2.5 text-center text-sm text-emerald-700 hover:bg-emerald-50"
         >
           編集
         </button>
