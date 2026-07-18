@@ -24,7 +24,7 @@ import { applyTranslationUpdate, applyPromptEditToDetailPrompt } from "@/lib/gal
 import { normalizeTagIds } from "@/lib/gallery/tagFilters"
 import { normalizeSuggestionLabels } from "@/lib/gallery/suggestionFilters"
 import { parseGalleryDensity, getGalleryDensityLabel, GALLERY_DENSITY_STORAGE_KEY, type GalleryDensity } from "@/lib/gallery/galleryDensity"
-import { parseGallerySort } from "@/lib/gallery/gallerySort"
+import { parseGallerySort, GALLERY_SORT_STORAGE_KEY } from "@/lib/gallery/gallerySort"
 import SearchBar from "./_components/SearchBar"
 import FilterSidebar from "./_components/FilterSidebar"
 import ImageGrid from "./_components/ImageGrid"
@@ -248,6 +248,14 @@ function GalleryInner() {
   })
   const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchSeq = useRef(0)
+  // Phase 10-34B: sort restoration runs its substantive logic at most once
+  // per mount (guarded by this ref, not an empty dep array — see below).
+  const didRunSortRestoreRef = useRef(false)
+  // Phase 10-34B: set by the restore effect right before it redirects to an
+  // injected `sort`, so the very next persist-effect run (which still sees
+  // the pre-redirect "newest" filters.sort in this same initial render)
+  // skips writing that stale "newest" over the value we're about to restore.
+  const skipInitialSortPersistRef = useRef(false)
 
   // Phase 10-8B: mobile filter drawer is exclusive with the mobile detail
   // drawer — ephemeral UI state, so it lives here as local state (not in the
@@ -277,6 +285,47 @@ function GalleryInner() {
       // ignore — best-effort persistence only
     }
   }, [density])
+
+  // Phase 10-34B: restore the last-used sort from localStorage — but only
+  // when the URL doesn't already specify one. URL stays the single source
+  // of truth for `filters.sort`: this effect never sets React state, it
+  // only issues a one-time `router.replace()` that injects `sort` into the
+  // URL, which `filters` then re-derives from on the next render (same path
+  // as any other filter change). Runs before the fetch effect below so the
+  // restored sort is picked up before/alongside the first fetch.
+  useEffect(() => {
+    if (didRunSortRestoreRef.current) return
+    didRunSortRestoreRef.current = true
+    if (searchParams.get("sort") !== null) return // URL優先: 何もしない
+    try {
+      const saved = parseGallerySort(window.localStorage.getItem(GALLERY_SORT_STORAGE_KEY))
+      if (saved === "newest") return // 復元不要(既定と同じ)
+      skipInitialSortPersistRef.current = true
+      const sp = new URLSearchParams(searchParams.toString())
+      sp.set("sort", saved)
+      router.replace(`/gallery?${sp.toString()}`)
+    } catch {
+      // localStorage unavailable (private mode等) — 無視して現状通りnewestで続行
+    }
+  }, [searchParams, router])
+
+  // Phase 10-34B: mirror filters.sort into localStorage on every change
+  // (including "newest") so a later visit with no `sort` in the URL can
+  // restore the last explicit choice — see the restore effect above.
+  useEffect(() => {
+    if (skipInitialSortPersistRef.current && filters.sort === "newest" && searchParams.get("sort") === null) {
+      // 復元用redirectを発行した直後の初回commitでは、まだ古い"newest"の
+      // filters.sortしか見えていない — この1回だけ書き込みをskipし、
+      // redirect後の正しい値で次にこの effect が走った時に保存する。
+      skipInitialSortPersistRef.current = false
+      return
+    }
+    try {
+      window.localStorage.setItem(GALLERY_SORT_STORAGE_KEY, filters.sort)
+    } catch {
+      // ignore — best-effort persistence only
+    }
+  }, [filters.sort, searchParams])
 
   // Debounce q from URL → debouncedQ in state
   useEffect(() => {

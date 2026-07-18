@@ -10,6 +10,8 @@
 
 export type GallerySort = "newest" | "oldest" | "needs_review";
 
+export const GALLERY_SORT_STORAGE_KEY = "photobox:gallery-sort:v1";
+
 /** Parses a raw URL query value into a valid sort mode, defaulting to
  *  "newest" for anything missing/invalid (unknown string, null, undefined). */
 export function parseGallerySort(value: string | null | undefined): GallerySort {
