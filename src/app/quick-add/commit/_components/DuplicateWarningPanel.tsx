@@ -112,9 +112,9 @@ export default function DuplicateWarningPanel({ items, onSkip, onUnskip }: Props
                   <button
                     onClick={() => handleSkip(id)}
                     disabled={isLoading}
-                    className="rounded bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200 disabled:opacity-50"
+                    className="rounded bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                   >
-                    {isLoading ? "..." : "スキップ"}
+                    {isLoading ? "…" : "スキップ"}
                   </button>
                 )}
                 {isSkipped && (
@@ -123,9 +123,9 @@ export default function DuplicateWarningPanel({ items, onSkip, onUnskip }: Props
                     <button
                       onClick={() => handleUnskip(id)}
                       disabled={isLoading}
-                      className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200 disabled:opacity-50"
+                      className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                     >
-                      {isLoading ? "..." : "解除"}
+                      {isLoading ? "…" : "解除"}
                     </button>
                   </>
                 )}
