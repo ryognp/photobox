@@ -58,7 +58,16 @@ export default function FileDropzone({ onFile, loading, error }: FileDropzonePro
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 transition-colors ${
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            inputRef.current?.click()
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-disabled={loading}
+        className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
           dragging ? "border-blue-400 bg-blue-50" : "border-zinc-300 bg-white hover:border-zinc-400 hover:bg-zinc-50"
         }`}
       >
@@ -86,7 +95,7 @@ export default function FileDropzone({ onFile, loading, error }: FileDropzonePro
       )}
 
       {loading && (
-        <p className="text-center text-sm text-zinc-500">解析中...</p>
+        <p className="text-center text-sm text-zinc-500">解析中…</p>
       )}
     </div>
   )

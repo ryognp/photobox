@@ -78,7 +78,7 @@ export default function ColumnMapping({ result, mapping, onChange, onBack }: Col
 
       {/* Actions */}
       <div className="flex items-center gap-3">
-        <button onClick={onBack} className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+        <button onClick={onBack} className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           ← 解析結果に戻る
         </button>
 
@@ -90,7 +90,7 @@ export default function ColumnMapping({ result, mapping, onChange, onBack }: Col
         {/* disabled ボタン — Day 7-B-2 で active になる */}
         <button
           disabled={!canProceed}
-          className="cursor-not-allowed rounded-md bg-blue-600 px-4 py-2 text-sm text-white opacity-40"
+          className="cursor-not-allowed rounded-md bg-blue-600 px-4 py-2 text-sm text-white opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           title="Day 7-B-2 で実装予定"
         >
           Import プレビューへ →

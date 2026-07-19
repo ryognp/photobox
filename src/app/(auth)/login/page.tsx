@@ -70,9 +70,9 @@ function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+        className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
-        {loading ? "ログイン中..." : "ログイン"}
+        {loading ? "ログイン中…" : "ログイン"}
       </button>
     </form>
   );
@@ -92,7 +92,7 @@ export default function LoginPage() {
 
       <p className="text-center text-sm text-zinc-500">
         アカウントをお持ちでない方は{" "}
-        <Link href="/signup" className="font-medium text-zinc-900 underline underline-offset-2">
+        <Link href="/signup" className="font-medium text-zinc-900 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           サインアップ
         </Link>
       </p>

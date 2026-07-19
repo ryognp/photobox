@@ -110,9 +110,9 @@ export default function ImportClient() {
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-50">
       {/* Header */}
       <header className="flex items-center gap-4 border-b border-zinc-200 bg-white px-5 py-3">
-        <button onClick={() => router.push("/gallery")} className="text-sm text-zinc-500 hover:text-zinc-900">Gallery</button>
-        <button onClick={() => router.push("/quick-add")} className="text-sm text-zinc-500 hover:text-zinc-900">Quick Add</button>
-        <button onClick={() => router.push("/masters")} className="text-sm text-zinc-500 hover:text-zinc-900">Masters</button>
+        <button onClick={() => router.push("/gallery")} className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Gallery</button>
+        <button onClick={() => router.push("/quick-add")} className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Quick Add</button>
+        <button onClick={() => router.push("/masters")} className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Masters</button>
         <h1 className="text-base font-semibold text-zinc-900">Import</h1>
       </header>
 
