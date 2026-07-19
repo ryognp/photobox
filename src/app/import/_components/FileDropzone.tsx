@@ -39,8 +39,14 @@ export default function FileDropzone({ onFile, loading, error }: FileDropzonePro
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragging(false)
+    if (loading) return
     const file = e.dataTransfer.files[0]
     if (file) handleFile(file)
+  }
+
+  const openFileDialog = () => {
+    if (loading) return
+    inputRef.current?.click()
   }
 
   const displayError = localError ?? error
@@ -54,18 +60,18 @@ export default function FileDropzone({ onFile, loading, error }: FileDropzonePro
 
       {/* Drop zone */}
       <div
-        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+        onDragOver={(e) => { e.preventDefault(); if (!loading) setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
+        onClick={openFileDialog}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
-            inputRef.current?.click()
+            openFileDialog()
           }
         }}
         role="button"
-        tabIndex={0}
+        tabIndex={loading ? -1 : 0}
         aria-disabled={loading}
         className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
           dragging ? "border-blue-400 bg-blue-50" : "border-zinc-300 bg-white hover:border-zinc-400 hover:bg-zinc-50"
