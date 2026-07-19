@@ -83,15 +83,15 @@ export default function SignupPage() {
         <button
           type="submit"
           disabled={loading}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
-          {loading ? "作成中..." : "アカウントを作成"}
+          {loading ? "作成中…" : "アカウントを作成"}
         </button>
       </form>
 
       <p className="text-center text-sm text-zinc-500">
         既にアカウントをお持ちの方は{" "}
-        <Link href="/login" className="font-medium text-zinc-900 underline underline-offset-2">
+        <Link href="/login" className="font-medium text-zinc-900 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           ログイン
         </Link>
       </p>
