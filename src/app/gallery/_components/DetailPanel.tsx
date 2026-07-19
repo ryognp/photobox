@@ -244,7 +244,7 @@ function PromptEditor({
             <CopyButton text={prompt.currentBody} label="コピー" />
             <button
               onClick={startEdit}
-              className="text-xs text-zinc-400 hover:text-zinc-700"
+              className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             >
               編集
             </button>
@@ -257,7 +257,7 @@ function PromptEditor({
         {isLong && (
           <button
             onClick={() => setExpanded(!expanded)}
-            className="mt-1 text-xs text-zinc-400 hover:text-zinc-600"
+            className="mt-1 text-xs text-zinc-400 hover:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             {expanded ? "閉じる ▲" : "全文表示 ▼"}
           </button>
@@ -272,7 +272,7 @@ function PromptEditor({
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">プロンプト編集</p>
       </div>
       <textarea
-        className="mt-1 w-full rounded border border-zinc-300 p-2 text-xs text-zinc-800 focus:border-blue-400 focus:outline-none"
+        className="mt-1 w-full rounded border border-zinc-300 p-2 text-xs text-zinc-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
         rows={8}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -284,7 +284,7 @@ function PromptEditor({
         value={changeNote}
         onChange={(e) => setChangeNote(e.target.value)}
         disabled={phase === "saving"}
-        className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 focus:border-blue-400 focus:outline-none"
+        className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
       />
       {errorMsg && (
         <p className="mt-1 text-xs text-red-500">{errorMsg}</p>
@@ -293,14 +293,14 @@ function PromptEditor({
         <button
           onClick={() => void save()}
           disabled={phase === "saving"}
-          className="rounded bg-zinc-800 px-3 py-1 text-xs text-white hover:bg-zinc-600 disabled:opacity-50"
+          className="rounded bg-zinc-800 px-3 py-1 text-xs text-white hover:bg-zinc-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           {phase === "saving" ? "保存中…" : "保存"}
         </button>
         <button
           onClick={cancel}
           disabled={phase === "saving"}
-          className="text-xs text-zinc-400 hover:text-zinc-700"
+          className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           キャンセル
         </button>
@@ -384,7 +384,7 @@ function TranslationSection({
           {isLong && (
             <button
               onClick={() => setExpanded(!expanded)}
-              className="mt-1 text-xs text-zinc-400 hover:text-zinc-600"
+              className="mt-1 text-xs text-zinc-400 hover:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             >
               {expanded ? "閉じる ▲" : "全文表示 ▼"}
             </button>
@@ -398,7 +398,7 @@ function TranslationSection({
         <button
           onClick={() => void run()}
           disabled={phase === "translating"}
-          className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           {phase === "translating" ? "翻訳中…" : hasTranslation ? "日本語訳を再生成" : "日本語訳を追加"}
         </button>
@@ -531,7 +531,7 @@ function PromptVariationSection({
       <button
         onClick={() => void run()}
         disabled={selected.length === 0 || phase === "generating"}
-        className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
         {phase === "generating" ? "生成中…" : "新しいプロンプトを生成"}
       </button>
@@ -560,7 +560,7 @@ function PromptVariationSection({
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">最近生成した案</p>
             <button
               onClick={handleClearHistory}
-              className="text-xs text-zinc-400 hover:text-red-600"
+              className="text-xs text-zinc-400 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             >
               すべて削除
             </button>
@@ -579,14 +579,14 @@ function PromptVariationSection({
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => setModalContent({ text: item.text, changes: item.changes })}
-                      className="text-zinc-500 hover:text-zinc-800"
+                      className="text-zinc-500 hover:text-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                     >
                       表示
                     </button>
                     <CopyButton text={item.text} label="コピー" />
                     <button
                       onClick={() => handleRemoveHistoryItem(item.id)}
-                      className="text-zinc-400 hover:text-red-600"
+                      className="text-zinc-400 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                     >
                       削除
                     </button>
@@ -632,7 +632,10 @@ function FavoritePromptsSection({
     <div>
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">お気に入りプロンプト</p>
-        <button onClick={onClearAll} className="text-xs text-zinc-400 hover:text-red-600">
+        <button
+          onClick={onClearAll}
+          className="text-xs text-zinc-400 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+        >
           すべて削除
         </button>
       </div>
@@ -653,7 +656,10 @@ function FavoritePromptsSection({
               <p className="mt-1 whitespace-pre-wrap break-words text-zinc-700">{preview}</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <CopyButton text={item.text} label="コピー" />
-                <button onClick={() => onRemove(item.id)} className="text-zinc-400 hover:text-red-600">
+                <button
+                  onClick={() => onRemove(item.id)}
+                  className="text-zinc-400 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                >
                   削除
                 </button>
               </div>
@@ -723,20 +729,20 @@ function CopyPackSection({
         <button
           onClick={() => promptText && void copy(promptText, "Prompt")}
           disabled={!promptText}
-          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           Promptをコピー
         </button>
         <button
           onClick={() => void copy(buildImageDetailCopyText(detail), "詳細")}
-          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           詳細をまとめてコピー
         </button>
         <button
           onClick={saveFavorite}
           disabled={!promptText}
-          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           現在のPromptをお気に入り保存
         </button>
@@ -770,7 +776,7 @@ function CopyButton({ text, label = "コピー" }: { text: string; label?: strin
     <span className="inline-flex items-center gap-1.5">
       <button
         onClick={() => void handleCopy()}
-        className="text-xs text-zinc-400 hover:text-zinc-700"
+        className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
         {label}
       </button>
@@ -825,7 +831,7 @@ function PromptVersionCard({ version }: { version: PromptVersionSummary }) {
       {isLong && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="mt-1 text-zinc-400 hover:text-zinc-600"
+          className="mt-1 text-zinc-400 hover:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           {expanded ? "閉じる ▲" : "全文表示 ▼"}
         </button>
@@ -915,13 +921,13 @@ function SuggestionCard({
         <div className="mt-2 flex gap-2">
           <button
             onClick={() => void approve(draft)}
-            className="flex-1 rounded-md bg-emerald-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-emerald-700"
+            className="flex-1 rounded-md bg-emerald-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
             保存して承認
           </button>
           <button
             onClick={() => setPhase("view")}
-            className="flex-1 rounded-md border border-zinc-200 px-3 py-2.5 text-center text-sm text-zinc-600 hover:bg-zinc-50"
+            className="flex-1 rounded-md border border-zinc-200 px-3 py-2.5 text-center text-sm text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
             キャンセル
           </button>
@@ -944,19 +950,19 @@ function SuggestionCard({
       <div className="mt-2 flex flex-wrap gap-2">
         <button
           onClick={() => void approve()}
-          className="min-w-[64px] flex-1 rounded-md bg-emerald-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-emerald-700"
+          className="min-w-[64px] flex-1 rounded-md bg-emerald-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         >
           承認
         </button>
         <button
           onClick={startEdit}
-          className="min-w-[64px] flex-1 rounded-md border border-emerald-300 bg-white px-3 py-2.5 text-center text-sm text-emerald-700 hover:bg-emerald-50"
+          className="min-w-[64px] flex-1 rounded-md border border-emerald-300 bg-white px-3 py-2.5 text-center text-sm text-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         >
           編集
         </button>
         <button
           onClick={() => void reject()}
-          className="min-w-[64px] flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2.5 text-center text-sm text-zinc-600 hover:bg-red-50 hover:text-red-600"
+          className="min-w-[64px] flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2.5 text-center text-sm text-zinc-600 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         >
           却下
         </button>
@@ -1001,14 +1007,14 @@ function TagChip({
         <span>{tag.name}</span>
         <button
           onClick={() => void remove()}
-          className="rounded px-1.5 py-1 text-red-600 hover:bg-red-50 hover:text-red-800"
+          className="rounded px-1.5 py-1 text-red-600 hover:bg-red-50 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label="外す"
         >
           外す
         </button>
         <button
           onClick={() => setPhase("view")}
-          className="rounded px-1.5 py-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
+          className="rounded px-1.5 py-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label="キャンセル"
         >
           キャンセル
@@ -1031,7 +1037,7 @@ function TagChip({
         <span>{tag.name}</span>
         <button
           onClick={() => setPhase("confirm")}
-          className="rounded px-1.5 py-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
+          className="rounded px-1.5 py-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label={`タグ「${tag.name}」を外す`}
         >
           ×
@@ -1092,7 +1098,7 @@ function TagAddForm({
     return (
       <button
         onClick={() => setPhase("open")}
-        className="mt-1.5 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+        className="mt-1.5 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
         タグを追加
       </button>
@@ -1116,12 +1122,12 @@ function TagAddForm({
           }}
           disabled={isAdding}
           placeholder="タグ名を入力"
-          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
         />
         <button
           onClick={() => void submit()}
           disabled={isAdding || draft.trim() === ""}
-          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           {isAdding ? "追加中…" : "追加"}
         </button>
@@ -1171,14 +1177,14 @@ function PersonChip({
         <span>{person.name}</span>
         <button
           onClick={() => void remove()}
-          className="rounded px-1.5 py-1 text-red-600 hover:bg-red-50 hover:text-red-800"
+          className="rounded px-1.5 py-1 text-red-600 hover:bg-red-50 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label="外す"
         >
           外す
         </button>
         <button
           onClick={() => setPhase("view")}
-          className="rounded px-1.5 py-1 text-blue-400 hover:bg-blue-100 hover:text-blue-700"
+          className="rounded px-1.5 py-1 text-blue-400 hover:bg-blue-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label="キャンセル"
         >
           キャンセル
@@ -1201,7 +1207,7 @@ function PersonChip({
         <span>{person.name}</span>
         <button
           onClick={() => setPhase("confirm")}
-          className="rounded px-1.5 py-1 text-blue-400 hover:bg-blue-200 hover:text-red-600"
+          className="rounded px-1.5 py-1 text-blue-400 hover:bg-blue-200 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label={`人物「${person.name}」を外す`}
         >
           ×
@@ -1286,7 +1292,7 @@ function PersonSection({
       {addPhase === "closed" && (
         <button
           onClick={() => void openAdd()}
-          className="mt-1.5 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+          className="mt-1.5 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           人物を追加
         </button>
@@ -1301,7 +1307,7 @@ function PersonSection({
           <p className="text-xs text-red-500">{loadError}</p>
           <button
             onClick={() => void openAdd()}
-            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             再試行
           </button>
@@ -1323,7 +1329,7 @@ function PersonSection({
                   key={c.id}
                   onClick={() => void assign(c.id)}
                   disabled={assigningId === c.id}
-                  className="rounded-full border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                  className="rounded-full border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
                   {assigningId === c.id ? `${c.name} …` : `+ ${c.name}`}
                 </button>
@@ -1333,7 +1339,7 @@ function PersonSection({
           {assignError && <p className="text-xs text-red-500">{assignError}</p>}
           <button
             onClick={() => setAddPhase("closed")}
-            className="self-start text-xs text-zinc-400 hover:text-zinc-700"
+            className="self-start text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             閉じる
           </button>
@@ -1406,7 +1412,7 @@ function AnalyzeSection({
         <button
           onClick={() => void run(false)}
           disabled={phase === "analyzing"}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           {phase === "analyzing" ? "解析中…" : "AI解析する"}
         </button>
@@ -1414,7 +1420,7 @@ function AnalyzeSection({
           <button
             onClick={() => void run(true)}
             disabled={phase === "analyzing"}
-            className="px-2 py-2 text-xs text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
+            className="px-2 py-2 text-xs text-zinc-400 hover:text-zinc-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             強制再解析
           </button>
@@ -1557,7 +1563,7 @@ export default function DetailPanel({
           <span className="text-sm font-semibold text-zinc-800">詳細</span>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-700"
+            className="text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             aria-label="閉じる"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1719,7 +1725,7 @@ export default function DetailPanel({
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">メモ</p>
                 <button
                   onClick={() => void handleCopyLegacy(state.detail.notes!)}
-                  className="text-xs text-zinc-400 hover:text-zinc-700"
+                  className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
                   コピー
                 </button>
@@ -1763,7 +1769,7 @@ export default function DetailPanel({
               href={state.detail.signedUrls.originalUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50"
+              className="rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             >
               オリジナルを開く ↗
             </a>
@@ -1774,7 +1780,7 @@ export default function DetailPanel({
             {deletePhase === "view" && (
               <button
                 onClick={() => setDeletePhase("confirm")}
-                className="w-full rounded-md border border-red-200 px-3 py-2 text-center text-xs text-red-600 hover:bg-red-50"
+                className="w-full rounded-md border border-red-200 px-3 py-2 text-center text-xs text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
                 画像を削除
               </button>
@@ -1786,13 +1792,13 @@ export default function DetailPanel({
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDelete(state.detail.id)}
-                    className="flex-1 rounded-md bg-red-600 px-3 py-2 text-center text-xs font-medium text-white hover:bg-red-700"
+                    className="flex-1 rounded-md bg-red-600 px-3 py-2 text-center text-xs font-medium text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
                     削除する
                   </button>
                   <button
                     onClick={() => setDeletePhase("view")}
-                    className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50"
+                    className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
                     キャンセル
                   </button>
@@ -1815,13 +1821,13 @@ export default function DetailPanel({
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDelete(state.detail.id)}
-                    className="flex-1 rounded-md bg-red-600 px-3 py-2 text-center text-xs font-medium text-white hover:bg-red-700"
+                    className="flex-1 rounded-md bg-red-600 px-3 py-2 text-center text-xs font-medium text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
                     再試行
                   </button>
                   <button
                     onClick={() => setDeletePhase("view")}
-                    className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50"
+                    className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
                     キャンセル
                   </button>
