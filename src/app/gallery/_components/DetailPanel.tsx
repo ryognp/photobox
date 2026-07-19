@@ -272,7 +272,7 @@ function PromptEditor({
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">プロンプト編集</p>
       </div>
       <textarea
-        className="mt-1 w-full rounded border border-zinc-300 p-2 text-xs text-zinc-800 focus:border-blue-400 focus:outline-none"
+        className="mt-1 w-full rounded border border-zinc-300 p-2 text-xs text-zinc-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
         rows={8}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -284,7 +284,7 @@ function PromptEditor({
         value={changeNote}
         onChange={(e) => setChangeNote(e.target.value)}
         disabled={phase === "saving"}
-        className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 focus:border-blue-400 focus:outline-none"
+        className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
       />
       {errorMsg && (
         <p className="mt-1 text-xs text-red-500">{errorMsg}</p>
