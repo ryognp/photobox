@@ -16,7 +16,7 @@ export default function RatingInput({ value, onChange, disabled }: Props) {
           disabled={disabled}
           onClick={() => onChange(value === star ? null : star)}
           className={[
-            "text-xl leading-none transition-colors",
+            "text-xl leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
             disabled ? "cursor-not-allowed opacity-40" : "hover:text-yellow-400",
             (value ?? 0) >= star ? "text-yellow-400" : "text-zinc-300",
           ].join(" ")}
@@ -30,7 +30,7 @@ export default function RatingInput({ value, onChange, disabled }: Props) {
           type="button"
           disabled={disabled}
           onClick={() => onChange(null)}
-          className="ml-1 text-xs text-zinc-400 hover:text-zinc-600 disabled:opacity-40"
+          className="ml-1 text-xs text-zinc-400 hover:text-zinc-600 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           クリア
         </button>

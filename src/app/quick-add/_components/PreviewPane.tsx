@@ -85,7 +85,7 @@ export default function PreviewPane({ selectedItem, items, onNavigate }: Props) 
         <button
           onClick={() => onNavigate("prev")}
           disabled={!hasPrev}
-          className="rounded px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-30"
+          className="rounded px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           ← 前へ
         </button>
@@ -95,7 +95,7 @@ export default function PreviewPane({ selectedItem, items, onNavigate }: Props) 
         <button
           onClick={() => onNavigate("next")}
           disabled={!hasNext}
-          className="rounded px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-30"
+          className="rounded px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           次へ →
         </button>

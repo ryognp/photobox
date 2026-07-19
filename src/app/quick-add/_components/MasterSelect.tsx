@@ -59,7 +59,7 @@ export default function MasterSelect(props: Props) {
           value={props.value ?? ""}
           onChange={(e) => props.onChange(e.target.value || null)}
           disabled={disabled}
-          className="rounded border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-800 disabled:opacity-50"
+          className="rounded border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-800 disabled:opacity-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
         >
           <option value="">未選択</option>
           {options.map((o) => (
@@ -84,7 +84,7 @@ export default function MasterSelect(props: Props) {
                     props.onChange(props.value.filter((id) => id !== o.id));
                   }
                 }}
-                className="h-3 w-3"
+                className="h-3 w-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               />
               <span className="text-xs text-zinc-700">{o.name}</span>
             </label>
@@ -95,20 +95,20 @@ export default function MasterSelect(props: Props) {
       <div className="flex items-center gap-1">
         <input
           type="text"
-          placeholder="新規追加..."
+          placeholder="新規追加…"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleCreate(); } }}
           disabled={disabled || creating}
-          className="flex-1 rounded border border-zinc-200 px-2 py-0.5 text-xs disabled:opacity-50"
+          className="flex-1 rounded border border-zinc-200 px-2 py-0.5 text-xs disabled:opacity-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
         />
         <button
           type="button"
           onClick={() => void handleCreate()}
           disabled={disabled || creating || !newName.trim()}
-          className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-200 disabled:opacity-40"
+          className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-200 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
-          {creating ? "..." : "追加"}
+          {creating ? "…" : "追加"}
         </button>
       </div>
       {createError && <p className="text-xs text-red-500">{createError}</p>}

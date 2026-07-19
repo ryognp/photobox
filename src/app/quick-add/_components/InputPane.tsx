@@ -226,25 +226,25 @@ function ItemForm({
           value={localPromptDraft}
           onChange={(e) => { setLocalPromptDraft(e.target.value); setPromptSaveError(null); }}
           disabled={!isEditable}
-          placeholder={!isDone ? "アップロード完了後に入力できます" : isCommitted ? "コミット済みのため編集できません" : "プロンプトを入力..."}
+          placeholder={!isDone ? "アップロード完了後に入力できます" : isCommitted ? "コミット済みのため編集できません" : "プロンプトを入力…"}
           className="resize-none rounded-md border border-zinc-200 px-3 py-2 text-xs text-zinc-800 placeholder-zinc-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
         />
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => void handleSaveDraft()} disabled={!isEditable || promptSaveState === "saving"}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             下書き保存
           </button>
           <button type="button" onClick={() => void handleSaveFilled()} disabled={!isEditable || promptSaveState === "saving"}
-            className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+            className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             入力済みにする
           </button>
           <button type="button" onClick={() => void handleSaveAndNext()} disabled={!isEditable || promptSaveState === "saving"}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             保存して次へ
           </button>
         </div>
         <div className="min-h-[16px]">
-          {promptSaveState === "saving" && <p className="text-[10px] text-zinc-400">保存中...</p>}
+          {promptSaveState === "saving" && <p className="text-[10px] text-zinc-400">保存中…</p>}
           {promptSaveState === "saved" && <p className="text-[10px] text-green-600">保存しました ✓</p>}
           {promptSaveState === "error" && promptSaveError && <p className="text-[10px] text-red-500">{promptSaveError}</p>}
         </div>
@@ -265,11 +265,11 @@ function ItemForm({
           createScene={createScene} createTag={createTag} createPerson={createPerson}
         />
         <button type="button" onClick={() => void handleSaveMeta()} disabled={!isEditable || metaSaveState === "saving"}
-          className="self-start rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">
+          className="self-start rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           メタデータ保存
         </button>
         <div className="min-h-[16px]">
-          {metaSaveState === "saving" && <p className="text-[10px] text-zinc-400">保存中...</p>}
+          {metaSaveState === "saving" && <p className="text-[10px] text-zinc-400">保存中…</p>}
           {metaSaveState === "saved" && <p className="text-[10px] text-green-600">保存しました ✓</p>}
           {metaSaveState === "error" && metaSaveError && <p className="text-[10px] text-red-500">{metaSaveError}</p>}
         </div>
@@ -306,11 +306,11 @@ export default function InputPane({
       {/* Mode tabs */}
       <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-2">
         <button type="button" onClick={() => setMode("A")}
-          className={["rounded px-3 py-1 text-xs font-medium transition-colors", mode === "A" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
+          className={["rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1", mode === "A" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
           単体入力 (A)
         </button>
         <button type="button" onClick={() => setMode("B")}
-          className={["rounded px-3 py-1 text-xs font-medium transition-colors", mode === "B" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
+          className={["rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1", mode === "B" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
           一括適用 (B)
         </button>
         {checkedClientIds.length > 0 && (
