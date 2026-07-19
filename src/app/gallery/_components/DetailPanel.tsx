@@ -1600,7 +1600,7 @@ export default function DetailPanel({
             <button
               type="button"
               onClick={onToggleBulkSelected}
-              className={`min-h-10 rounded-md border px-3 py-2 text-sm font-medium transition ${
+              className={`min-h-10 rounded-md border px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
                 isBulkSelected
                   ? "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-100"
                   : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"

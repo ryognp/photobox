@@ -115,7 +115,10 @@ function TagSelectPanel({
           二重表示を避ける。desktopは従来通りここに表示。 */}
       <div className="hidden items-center justify-between md:flex">
         <span className="text-xs font-semibold text-amber-800">タグを一括追加</span>
-        <button onClick={onClose} className="min-h-10 px-2 text-xs text-zinc-400 hover:text-zinc-700">
+        <button
+          onClick={onClose}
+          className="min-h-10 px-2 text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+        >
           閉じる
         </button>
       </div>
@@ -150,14 +153,14 @@ function TagSelectPanel({
                 onChange={(e) => setQuery(e.target.value)}
                 disabled={isSubmitting}
                 placeholder="タグ名で検索"
-                className="min-h-10 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+                className="min-h-10 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
               <div className="flex flex-wrap gap-1.5">
                 <select
                   value={selectedId}
                   onChange={(e) => setSelectedId(e.target.value)}
                   disabled={isSubmitting}
-                  className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+                  className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                 >
                   <option value="">タグを選択</option>
                   {filteredTags.map((t) => (
@@ -169,7 +172,7 @@ function TagSelectPanel({
                 <button
                   onClick={() => void submitExisting()}
                   disabled={isSubmitting || !selectedTag}
-                  className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+                  className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
                   {isSubmitting ? "追加中…" : "追加"}
                 </button>
@@ -199,12 +202,12 @@ function TagSelectPanel({
             }}
             disabled={isSubmitting}
             placeholder="新しいタグ名を入力"
-            className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+            className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           />
           <button
             onClick={() => void submitNew()}
             disabled={isSubmitting || newTagDraft.trim() === ""}
-            className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+            className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             {isSubmitting ? "追加中…" : "新規タグを追加"}
           </button>
@@ -281,7 +284,10 @@ function PersonSelectPanel({
       {/* Phase 10-25E-B: mobileではこの見出し行を隠す(理由はTagSelectPanelと同じ)。 */}
       <div className="hidden items-center justify-between md:flex">
         <span className="text-xs font-semibold text-amber-800">人物を一括追加</span>
-        <button onClick={onClose} className="min-h-10 px-2 text-xs text-zinc-400 hover:text-zinc-700">
+        <button
+          onClick={onClose}
+          className="min-h-10 px-2 text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+        >
           閉じる
         </button>
       </div>
@@ -313,14 +319,14 @@ function PersonSelectPanel({
             onChange={(e) => setQuery(e.target.value)}
             disabled={isSubmitting}
             placeholder="人物名で検索"
-            className="min-h-10 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+            className="min-h-10 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           />
           <div className="flex flex-wrap gap-1.5">
             <select
               value={selectedId}
               onChange={(e) => setSelectedId(e.target.value)}
               disabled={isSubmitting}
-              className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50"
+              className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs text-zinc-700 disabled:opacity-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             >
               <option value="">人物を選択</option>
               {filteredPersons.map((p) => (
@@ -332,7 +338,7 @@ function PersonSelectPanel({
             <button
               onClick={() => void submit()}
               disabled={isSubmitting || !selectedPerson}
-              className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+              className="min-h-10 rounded-md border border-amber-400 bg-amber-500 px-2.5 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             >
               {isSubmitting ? "追加中…" : "追加"}
             </button>
@@ -384,7 +390,11 @@ function MobileBulkPanelSheet({
         </div>
         <div className="flex items-center justify-between px-4 py-2.5">
           <span className="text-sm font-semibold text-zinc-800">{title}</span>
-          <button onClick={onClose} className="min-h-10 px-2 text-zinc-400 hover:text-zinc-700" aria-label="閉じる">
+          <button
+            onClick={onClose}
+            className="min-h-10 px-2 text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+            aria-label="閉じる"
+          >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -464,20 +474,20 @@ export default function BulkSelectionToolbar({
         {!allVisibleSelected && (
           <button
             onClick={onSelectVisible}
-            className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100"
+            className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             表示中を全選択
           </button>
         )}
         <button
           onClick={() => setOpenPanel(openPanel === "tag" ? null : "tag")}
-          className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100"
+          className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           タグを一括追加
         </button>
         <button
           onClick={() => setOpenPanel(openPanel === "person" ? null : "person")}
-          className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100"
+          className="min-h-10 rounded-md border border-amber-300 bg-white px-3 py-2 text-xs text-amber-700 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           人物を一括追加
         </button>
@@ -488,7 +498,7 @@ export default function BulkSelectionToolbar({
             setOpenPanel(null)
             onClear()
           }}
-          className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-600 hover:bg-zinc-50"
+          className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           選択解除
         </button>

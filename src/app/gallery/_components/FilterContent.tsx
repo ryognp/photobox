@@ -67,12 +67,12 @@ function Section({
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         placeholder={searchPlaceholder}
-        className="mb-1.5 min-h-10 w-full rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-700"
+        className="mb-1.5 min-h-10 w-full rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-700 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
       />
       <div className="flex flex-col gap-0.5">
         <button
           onClick={() => onSelect(null)}
-          className={`rounded px-2 py-1 text-left text-sm ${
+          className={`rounded px-2 py-1 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
             selectedId === null
               ? "bg-blue-50 font-medium text-blue-700"
               : "text-zinc-700 hover:bg-zinc-100"
@@ -84,7 +84,7 @@ function Section({
           <button
             key={item.id}
             onClick={() => onSelect(selectedId === item.id ? null : item.id)}
-            className={`truncate rounded px-2 py-1 text-left text-sm ${
+            className={`truncate rounded px-2 py-1 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
               selectedId === item.id
                 ? "bg-blue-50 font-medium text-blue-700"
                 : "text-zinc-700 hover:bg-zinc-100"
@@ -140,7 +140,7 @@ function TagFilterSection({
                 <button
                   onClick={() => onToggle(id)}
                   aria-label={`${item?.name ?? id} を解除`}
-                  className="text-blue-500 hover:text-blue-800"
+                  className="text-blue-500 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
                   ×
                 </button>
@@ -154,7 +154,7 @@ function TagFilterSection({
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         placeholder="タグ名で検索"
-        className="mb-1.5 min-h-10 w-full rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-700"
+        className="mb-1.5 min-h-10 w-full rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-700 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
       />
       <div className="flex flex-col gap-0.5">
         {items.map((item) => {
@@ -163,7 +163,7 @@ function TagFilterSection({
             <button
               key={item.id}
               onClick={() => onToggle(item.id)}
-              className={`truncate rounded px-2 py-1 text-left text-sm ${
+              className={`truncate rounded px-2 py-1 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                 selected ? "bg-blue-50 font-medium text-blue-700" : "text-zinc-700 hover:bg-zinc-100"
               }`}
             >
@@ -216,7 +216,7 @@ function SuggestionTagFilterSection({
               <button
                 onClick={() => onToggle(label)}
                 aria-label={`${label} を解除`}
-                className="text-emerald-500 hover:text-emerald-800"
+                className="text-emerald-500 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
                 ×
               </button>
@@ -231,7 +231,7 @@ function SuggestionTagFilterSection({
             <button
               key={item.label}
               onClick={() => onToggle(item.label)}
-              className={`truncate rounded px-2 py-1 text-left text-sm ${
+              className={`truncate rounded px-2 py-1 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                 selected ? "bg-emerald-50 font-medium text-emerald-700" : "text-zinc-700 hover:bg-zinc-100"
               }`}
             >
@@ -301,7 +301,7 @@ export default function FilterContent({
             <button
               key={d}
               onClick={() => onDensityChange(d)}
-              className={`min-h-10 rounded-md border px-3 py-2 text-sm ${
+              className={`min-h-10 rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                 density === d
                   ? "border-blue-500 bg-blue-50 font-medium text-blue-700"
                   : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
@@ -318,7 +318,7 @@ export default function FilterContent({
         <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">お気に入り</p>
         <button
           onClick={() => onChange({ favorite: filters.favorite === true ? null : true })}
-          className={`flex items-center gap-1.5 rounded px-2 py-1 text-sm ${
+          className={`flex items-center gap-1.5 rounded px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
             filters.favorite === true
               ? "bg-yellow-50 font-medium text-yellow-700"
               : "text-zinc-700 hover:bg-zinc-100"
@@ -369,7 +369,7 @@ export default function FilterContent({
             <button
               key={s}
               onClick={() => onChange({ sort: s })}
-              className={`rounded px-2 py-1 text-left text-sm ${
+              className={`rounded px-2 py-1 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                 filters.sort === s
                   ? "bg-blue-50 font-medium text-blue-700"
                   : "text-zinc-700 hover:bg-zinc-100"
@@ -449,7 +449,7 @@ export default function FilterContent({
               hasSuggestions: false,
             })
           }
-          className="mt-auto rounded border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50"
+          className="mt-auto rounded border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           フィルタをリセット
         </button>

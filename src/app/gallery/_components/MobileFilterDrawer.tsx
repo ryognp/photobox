@@ -60,7 +60,11 @@ export default function MobileFilterDrawer({
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
           <span className="text-sm font-semibold text-zinc-800">フィルター</span>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700" aria-label="フィルターを閉じる">
+          <button
+            onClick={onClose}
+            className="text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+            aria-label="フィルターを閉じる"
+          >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -81,7 +85,7 @@ export default function MobileFilterDrawer({
         <div className="flex-shrink-0 border-t border-zinc-200 p-3">
           <button
             onClick={onClose}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-zinc-600"
+            className="w-full rounded-md bg-zinc-800 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
             完了
           </button>
