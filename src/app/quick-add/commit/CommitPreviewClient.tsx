@@ -229,7 +229,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
 
   const commitButtonDisabled = !readiness.canCommit || committing || sessionCommitted
   const commitButtonText = committing
-    ? "保存中..."
+    ? "保存中…"
     : sessionCommitted
       ? "保存済み"
       : "確定保存"
@@ -240,19 +240,19 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
       <header className="flex flex-wrap items-center gap-4 border-b border-zinc-200 bg-white px-6 py-3">
         <button
           onClick={handleGoBack}
-          className="text-sm text-zinc-600 hover:text-zinc-900"
+          className="text-sm text-zinc-600 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           ← Quick Add へ戻る
         </button>
         <h1 className="text-base font-semibold text-zinc-900">CommitPreview</h1>
-        <span className="text-sm text-zinc-500">{sessionId.slice(0, 8)}...</span>
+        <span className="text-sm text-zinc-500">{sessionId.slice(0, 8)}…</span>
         <div className="ml-auto flex flex-wrap items-center gap-3">
           {/* Phase 10-19A: セッション全体キャンセル */}
           {cancelPhase === "view" && (
             <button
               onClick={() => setCancelPhase("confirm")}
               disabled={committing || sessionCommitted}
-              className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             >
               セッションをキャンセル
             </button>
@@ -264,27 +264,27 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
               </span>
               <button
                 onClick={() => void handleCancelSession()}
-                className="rounded-md bg-red-600 px-2.5 py-1 text-xs text-white hover:bg-red-700"
+                className="rounded-md bg-red-600 px-2.5 py-1 text-xs text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
                 キャンセルする
               </button>
               <button
                 onClick={() => setCancelPhase("view")}
-                className="text-xs text-zinc-400 hover:text-zinc-700"
+                className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
                 戻る
               </button>
             </div>
           )}
           {cancelPhase === "cancelling" && (
-            <span className="text-xs text-zinc-400">キャンセル中...</span>
+            <span className="text-xs text-zinc-400">キャンセル中…</span>
           )}
           {cancelPhase === "error" && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-red-500">{cancelError}</span>
               <button
                 onClick={() => setCancelPhase("view")}
-                className="text-xs text-zinc-400 hover:text-zinc-700"
+                className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
                 閉じる
               </button>
@@ -293,18 +293,19 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
           <button
             onClick={() => void handleCheckDuplicates()}
             disabled={checkingDuplicates || committing}
-            className="rounded-md bg-zinc-800 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-50"
+            className="rounded-md bg-zinc-800 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
-            {checkingDuplicates ? "チェック中..." : "重複チェック実行"}
+            {checkingDuplicates ? "チェック中…" : "重複チェック実行"}
           </button>
           <button
             onClick={() => void handleCommit()}
             disabled={commitButtonDisabled}
-            className={
+            className={[
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
               commitButtonDisabled
                 ? "cursor-not-allowed rounded-md bg-zinc-400 px-3 py-1.5 text-sm text-white opacity-60"
-                : "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
-            }
+                : "rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700",
+            ].join(" ")}
           >
             {commitButtonText}
           </button>
@@ -316,7 +317,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
         {/* Left: summary + filter + list */}
         <div className="flex flex-1 flex-col gap-4 overflow-hidden p-4">
           {error && <p className="text-sm text-red-600">{error}</p>}
-          {loading && <p className="text-sm text-zinc-500">読み込み中...</p>}
+          {loading && <p className="text-sm text-zinc-500">読み込み中…</p>}
           {!loading && items.length > 0 && (
             <>
               <CommitSummary summary={readiness.summary} sessionId={sessionId} />

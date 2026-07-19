@@ -227,7 +227,7 @@ export default function CommitItemCard({ item, reasons, onDelete, deleteDisabled
               <button
                 onClick={() => setDeletePhase("confirm")}
                 disabled={deleteDisabled}
-                className="text-xs text-red-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className="text-xs text-red-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
                 削除
               </button>
@@ -239,27 +239,27 @@ export default function CommitItemCard({ item, reasons, onDelete, deleteDisabled
                 </span>
                 <button
                   onClick={() => void handleDelete()}
-                  className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700"
+                  className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
                   削除する
                 </button>
                 <button
                   onClick={() => setDeletePhase("view")}
-                  className="text-xs text-zinc-400 hover:text-zinc-700"
+                  className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
                   キャンセル
                 </button>
               </div>
             )}
             {deletePhase === "deleting" && (
-              <span className="text-xs text-zinc-400">削除中...</span>
+              <span className="text-xs text-zinc-400">削除中…</span>
             )}
             {deletePhase === "error" && (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-red-500">{deleteErrorMsg}</span>
                 <button
                   onClick={() => setDeletePhase("view")}
-                  className="text-xs text-zinc-400 hover:text-zinc-700"
+                  className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
                   閉じる
                 </button>

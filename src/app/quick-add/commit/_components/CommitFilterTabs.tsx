@@ -35,6 +35,7 @@ export function CommitFilterTabs({ activeTab, onTabChange, counts }: Props) {
             onClick={() => onTabChange(key)}
             className={`
               flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1
               ${isActive
                 ? "bg-gray-900 text-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
