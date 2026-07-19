@@ -80,7 +80,11 @@ export default function MobileDetailDrawer({
           </div>
           <div className="flex items-center justify-between px-4 py-2.5">
             <span className="text-sm font-semibold text-zinc-800">詳細</span>
-            <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-700" aria-label="閉じる">
+            <button
+              onClick={onClose}
+              className="p-1.5 text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+              aria-label="閉じる"
+            >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
