@@ -58,7 +58,7 @@ export default function BulkPromptPanel({ sessionId, checkedClientIds, items, on
         rows={6}
         value={promptDraft}
         onChange={(e) => { setPromptDraft(e.target.value); setError(null); setSuccessMsg(null); }}
-        placeholder="ここに共通プロンプトを入力..."
+        placeholder="ここに共通プロンプトを入力…"
         disabled={saving}
         className="resize-none rounded-md border border-zinc-200 px-3 py-2 text-xs text-zinc-800 placeholder-zinc-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
       />
@@ -66,9 +66,9 @@ export default function BulkPromptPanel({ sessionId, checkedClientIds, items, on
         type="button"
         onClick={() => void handleApply()}
         disabled={saving || eligibleItems.length === 0}
-        className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
-        {saving ? "適用中..." : `${eligibleItems.length}枚に適用`}
+        {saving ? "適用中…" : `${eligibleItems.length}枚に適用`}
       </button>
       {error && <p className="text-xs text-red-500">{error}</p>}
       {successMsg && <p className="text-xs text-green-600">{successMsg}</p>}

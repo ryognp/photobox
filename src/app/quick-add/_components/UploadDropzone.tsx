@@ -23,7 +23,7 @@ export default function UploadDropzone({ onFiles, disabled }: Props) {
     <div
       {...getRootProps()}
       className={[
-        "flex h-20 cursor-pointer flex-col items-center justify-center border-2 border-dashed m-2 rounded-lg text-xs transition-colors",
+        "flex h-20 cursor-pointer flex-col items-center justify-center border-2 border-dashed m-2 rounded-lg text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
         isDragActive
           ? "border-blue-400 bg-blue-50 text-blue-600"
           : "border-zinc-200 bg-zinc-50 text-zinc-400 hover:border-zinc-300 hover:text-zinc-500",

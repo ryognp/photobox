@@ -510,7 +510,7 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
           </ul>
           <button
             onClick={() => { setGlobalErrors([]); setMasterError(null); }}
-            className="text-xs text-red-500 hover:text-red-700"
+            className="text-xs text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             ✕
           </button>
@@ -520,7 +520,7 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
         <button
           onClick={() => void handleGoToPreview()}
           disabled={!sessionId || items.length === 0}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           プレビューへ →
         </button>
@@ -548,7 +548,7 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
         >
           {masterLoading ? (
             <div className="flex flex-1 items-center justify-center">
-              <span className="text-xs text-zinc-400">読み込み中...</span>
+              <span className="text-xs text-zinc-400">読み込み中…</span>
             </div>
           ) : (
             <InputPane

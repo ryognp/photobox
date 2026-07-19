@@ -52,7 +52,7 @@ export default function UploadItemCard({ item, isSelected, onClick, isChecked, o
     <button
       onClick={onClick}
       className={[
-        "flex w-full items-center gap-2 p-2 text-left hover:bg-zinc-50 transition-colors",
+        "flex w-full items-center gap-2 p-2 text-left hover:bg-zinc-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
         isSelected ? "ring-2 ring-inset ring-blue-500 bg-blue-50" : "",
       ].join(" ")}
     >
@@ -61,7 +61,7 @@ export default function UploadItemCard({ item, isSelected, onClick, isChecked, o
         checked={isChecked}
         onChange={onToggleCheck}
         onClick={(e) => e.stopPropagation()}
-        className="flex-shrink-0"
+        className="flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       />
       <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-zinc-100">
         {thumbSrc ? (
