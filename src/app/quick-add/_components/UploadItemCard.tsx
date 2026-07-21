@@ -49,40 +49,42 @@ export default function UploadItemCard({ item, isSelected, onClick, isChecked, o
     null;
 
   return (
-    <button
-      onClick={onClick}
-      className={[
-        "flex w-full items-center gap-2 p-2 text-left hover:bg-zinc-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
-        isSelected ? "ring-2 ring-inset ring-blue-500 bg-blue-50" : "",
-      ].join(" ")}
-    >
+    <div className="relative">
       <input
         type="checkbox"
         checked={isChecked}
         onChange={onToggleCheck}
-        onClick={(e) => e.stopPropagation()}
-        className="flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+        aria-label={`${name} を選択`}
+        className="absolute left-2 top-1/2 z-10 -translate-y-1/2 flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       />
-      <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-zinc-100">
-        {thumbSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumbSrc} alt={name} className="h-full w-full object-cover" />
-        ) : (
-          <div className="h-full w-full bg-zinc-200" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-zinc-800">{name}</p>
-        {size !== undefined && (
-          <p className="text-xs text-zinc-400">{formatBytes(size)}</p>
-        )}
-        <div className="mt-0.5">
-          <StatusBadge item={item} />
+      <button
+        onClick={onClick}
+        className={[
+          "flex w-full items-center gap-2 py-2 pr-2 pl-9 text-left hover:bg-zinc-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
+          isSelected ? "ring-2 ring-inset ring-blue-500 bg-blue-50" : "",
+        ].join(" ")}
+      >
+        <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-zinc-100">
+          {thumbSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumbSrc} alt={name} className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-full w-full bg-zinc-200" />
+          )}
         </div>
-        {item.error && (
-          <p className="truncate text-xs text-red-500">{item.error}</p>
-        )}
-      </div>
-    </button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium text-zinc-800">{name}</p>
+          {size !== undefined && (
+            <p className="text-xs text-zinc-400">{formatBytes(size)}</p>
+          )}
+          <div className="mt-0.5">
+            <StatusBadge item={item} />
+          </div>
+          {item.error && (
+            <p className="truncate text-xs text-red-500">{item.error}</p>
+          )}
+        </div>
+      </button>
+    </div>
   );
 }

@@ -6,6 +6,7 @@ import type { MutableRefObject } from "react";
 import type { LocalItem } from "./types";
 import type { SignedUrls } from "@/lib/upload/uploadClient";
 import { uploadFile } from "@/lib/upload/uploadClient";
+import { shouldIgnoreArrowNav } from "@/lib/quick-add/keyboardNav";
 import {
   loadStoredSession,
   saveSession,
@@ -154,8 +155,8 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
-      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-      const isInput = tag === "textarea" || tag === "input";
+      const target = e.target as HTMLElement | null;
+      const isInput = shouldIgnoreArrowNav(target?.tagName, target?.isContentEditable);
 
       if (meta && e.key === "s") {
         e.preventDefault();
