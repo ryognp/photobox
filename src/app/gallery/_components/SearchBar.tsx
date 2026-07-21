@@ -39,7 +39,7 @@ export default function SearchBar({ value, onChange }: SearchBarProps) {
             onChange("")
             inputRef.current?.focus()
           }}
-          className="absolute right-2 text-zinc-400 hover:text-zinc-600"
+          className="absolute right-2 text-zinc-400 hover:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label="クリア"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

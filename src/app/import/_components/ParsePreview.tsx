@@ -78,10 +78,10 @@ export default function ParsePreview({ result, onNext, onBack }: ParsePreviewPro
 
       {/* Actions */}
       <div className="flex gap-3">
-        <button onClick={onBack} className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+        <button onClick={onBack} className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           ← ファイル選択に戻る
         </button>
-        <button onClick={onNext} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
+        <button onClick={onNext} className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           列マッピングへ →
         </button>
       </div>

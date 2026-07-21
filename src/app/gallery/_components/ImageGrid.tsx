@@ -210,7 +210,7 @@ export default function ImageGrid({
         <p className="text-sm text-red-500">{error}</p>
         <button
           onClick={onRetry}
-          className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+          className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           再読み込み
         </button>
@@ -232,7 +232,7 @@ export default function ImageGrid({
         <p className="text-sm">まだ画像がありません</p>
         <button
           onClick={() => router.push("/quick-add")}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           Quick Add で画像を追加する
         </button>
@@ -271,7 +271,7 @@ export default function ImageGrid({
           <button
             onClick={onLoadMore}
             disabled={loadingMore}
-            className="rounded-md border border-zinc-300 px-5 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            className="rounded-md border border-zinc-300 px-5 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             {loadingMore ? "読み込み中…" : "もっと見る"}
           </button>
