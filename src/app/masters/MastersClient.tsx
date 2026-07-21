@@ -54,7 +54,7 @@ function EditableRow({
         </span>
         <button
           onClick={() => { setDraft(value ?? ""); setEditing(true); setError(null); }}
-          className="shrink-0 text-xs text-zinc-400 hover:text-zinc-700"
+          className="shrink-0 text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           編集
         </button>
@@ -68,7 +68,7 @@ function EditableRow({
         <span className="text-xs text-zinc-500 w-28 shrink-0">{label}</span>
         {multiline ? (
           <textarea
-            className="flex-1 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800 focus:border-blue-400 focus:outline-none"
+            className="flex-1 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             rows={3}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -76,7 +76,7 @@ function EditableRow({
         ) : (
           <input
             type="text"
-            className="flex-1 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800 focus:border-blue-400 focus:outline-none"
+            className="flex-1 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
           />
@@ -87,14 +87,14 @@ function EditableRow({
         <button
           onClick={() => void handleSave()}
           disabled={saving}
-          className="text-xs rounded bg-zinc-800 px-2 py-1 text-white hover:bg-zinc-600 disabled:opacity-50"
+          className="text-xs rounded bg-zinc-800 px-2 py-1 text-white hover:bg-zinc-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
-          {saving ? "保存中..." : "保存"}
+          {saving ? "保存中…" : "保存"}
         </button>
         <button
           onClick={() => setEditing(false)}
           disabled={saving}
-          className="text-xs text-zinc-400 hover:text-zinc-700"
+          className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           キャンセル
         </button>
@@ -130,7 +130,7 @@ function DeleteButton({
     return (
       <button
         onClick={() => setPhase("confirm")}
-        className="text-xs text-red-500 hover:text-red-700"
+        className="text-xs text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
         削除
       </button>
@@ -155,13 +155,13 @@ function DeleteButton({
                 setPhase("error");
               }
             }}
-            className="text-xs rounded bg-red-600 px-2 py-1 text-white hover:bg-red-700"
+            className="text-xs rounded bg-red-600 px-2 py-1 text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             削除する
           </button>
           <button
             onClick={() => setPhase("idle")}
-            className="text-xs text-zinc-400 hover:text-zinc-700"
+            className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             キャンセル
           </button>
@@ -171,7 +171,7 @@ function DeleteButton({
   }
 
   if (phase === "deleting") {
-    return <p className="text-xs text-zinc-400">削除中...</p>;
+    return <p className="text-xs text-zinc-400">削除中…</p>;
   }
 
   return <p className="text-xs text-red-500">{errorMsg ?? "削除に失敗しました"}</p>;
@@ -215,9 +215,9 @@ function MergePanel<T extends { id: string; name: string }>({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="text-xs text-amber-600 hover:text-amber-800"
+        className="text-xs text-amber-600 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
-        統合...
+        統合…
       </button>
     );
   }
@@ -271,17 +271,17 @@ function MergePanel<T extends { id: string; name: string }>({
     <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-3 flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-amber-800">統合 ({sourceName})</p>
-        <button onClick={() => { setOpen(false); setPhase("idle"); setCounts(null); }} className="text-xs text-zinc-400 hover:text-zinc-700">閉じる</button>
+        <button onClick={() => { setOpen(false); setPhase("idle"); setCounts(null); }} className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">閉じる</button>
       </div>
 
       <div className="flex gap-2 items-center">
         <select
           value={targetId}
           onChange={(e) => { setTargetId(e.target.value); setCounts(null); setPhase("idle"); }}
-          className="flex-1 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800 focus:border-amber-400 focus:outline-none"
+          className="flex-1 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
           disabled={phase === "previewing" || phase === "merging"}
         >
-          <option value="">統合先を選択...</option>
+          <option value="">統合先を選択…</option>
           {candidates.map((it) => (
             <option key={it.id} value={it.id}>{it.name}</option>
           ))}
@@ -289,9 +289,9 @@ function MergePanel<T extends { id: string; name: string }>({
         <button
           onClick={() => void doPreview()}
           disabled={!targetId || phase === "previewing" || phase === "merging"}
-          className="text-xs rounded bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50"
+          className="text-xs rounded bg-amber-600 px-2 py-1 text-white hover:bg-amber-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
-          {phase === "previewing" ? "確認中..." : "プレビュー"}
+          {phase === "previewing" ? "確認中…" : "プレビュー"}
         </button>
       </div>
 
@@ -314,14 +314,14 @@ function MergePanel<T extends { id: string; name: string }>({
           <button
             onClick={() => void doMerge()}
             disabled={!confirmed}
-            className="mt-1 rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50"
+            className="mt-1 rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             統合する
           </button>
         </div>
       )}
 
-      {phase === "merging" && <p className="text-xs text-zinc-500">統合中...</p>}
+      {phase === "merging" && <p className="text-xs text-zinc-500">統合中…</p>}
       {phase === "done" && <p className="text-xs text-green-600">統合しました ✓</p>}
       {phase === "error" && <p className="text-xs text-red-500">{errorMsg}</p>}
     </div>
@@ -374,7 +374,7 @@ function PersonCard({
       <EditableRow label="メモ" value={person.notes} onSave={(v) => patch({ notes: v })} multiline />
       <EditableRow label="プロンプトヒント" value={person.defaultPromptHint} onSave={(v) => patch({ defaultPromptHint: v })} multiline />
       <div className="flex items-center gap-3 mt-1 flex-wrap">
-        <Link href={`/gallery?personId=${person.id}`} className="text-xs text-blue-600 hover:underline">
+        <Link href={`/gallery?personId=${person.id}`} className="text-xs text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           Gallery で絞り込む →
         </Link>
         <DeleteButton imageCount={person.imageCount} itemLabel="人物" onDelete={doDelete} />
@@ -435,7 +435,7 @@ function SceneCard({
       <EditableRow label="名前" value={scene.name} onSave={(v) => patch({ name: v ?? scene.name })} />
       <EditableRow label="説明" value={scene.description} onSave={(v) => patch({ description: v })} multiline />
       <div className="flex items-center gap-3 mt-1 flex-wrap">
-        <Link href={`/gallery?sceneId=${scene.id}`} className="text-xs text-blue-600 hover:underline">
+        <Link href={`/gallery?sceneId=${scene.id}`} className="text-xs text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           Gallery で絞り込む →
         </Link>
         <DeleteButton imageCount={scene.imageCount} itemLabel="シーン" onDelete={doDelete} />
@@ -505,14 +505,14 @@ function AddTagForm({ onAdded }: { onAdded: (tag: Tag) => void }) {
           }}
           disabled={isAdding}
           placeholder="タグ名を入力"
-          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm focus:border-blue-400 focus:outline-none disabled:opacity-50"
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
         />
         <button
           onClick={() => void submit()}
           disabled={isAdding || draft.trim() === ""}
-          className="rounded-md bg-zinc-800 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-50"
+          className="rounded-md bg-zinc-800 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
-          {isAdding ? "追加中..." : "タグを追加"}
+          {isAdding ? "追加中…" : "タグを追加"}
         </button>
       </div>
       {phase === "error" && errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
@@ -581,7 +581,7 @@ function TagCard({
       </div>
       <EditableRow label="名前" value={tag.name} onSave={(v) => patch(v ?? tag.name)} />
       <div className="flex items-center gap-3 mt-1 flex-wrap">
-        <Link href={`/gallery?tagId=${tag.id}`} className="text-xs text-blue-600 hover:underline">
+        <Link href={`/gallery?tagId=${tag.id}`} className="text-xs text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           Gallery で絞り込む →
         </Link>
         <DeleteButton imageCount={tag.imageCount} itemLabel="タグ" onDelete={doDelete} />
@@ -639,7 +639,7 @@ function TagForceDeleteControl({
     return (
       <button
         onClick={() => setPhase("confirm")}
-        className="self-start text-xs text-red-500 hover:text-red-700"
+        className="self-start text-xs text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
         画像との紐づけを解除して削除する
       </button>
@@ -666,7 +666,7 @@ function TagForceDeleteControl({
           value={confirmNameInput}
           onChange={(e) => setConfirmNameInput(e.target.value)}
           placeholder="タグ名を入力して確認"
-          className="rounded border border-red-300 px-2 py-1 text-xs focus:border-red-500 focus:outline-none"
+          className="rounded border border-red-300 px-2 py-1 text-xs focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200"
         />
         <div className="flex gap-2">
           <button
@@ -681,13 +681,13 @@ function TagForceDeleteControl({
               }
             }}
             disabled={!agreed || !nameMatches}
-            className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             紐づけを解除して削除する
           </button>
           <button
             onClick={resetConfirmState}
-            className="text-xs text-zinc-400 hover:text-zinc-700"
+            className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             キャンセル
           </button>
@@ -697,7 +697,7 @@ function TagForceDeleteControl({
   }
 
   if (phase === "deleting") {
-    return <p className="text-xs text-zinc-400">削除中...</p>;
+    return <p className="text-xs text-zinc-400">削除中…</p>;
   }
 
   return (
@@ -705,7 +705,7 @@ function TagForceDeleteControl({
       <p className="text-xs text-red-500">{errorMsg ?? "削除に失敗しました"}</p>
       <button
         onClick={resetConfirmState}
-        className="text-xs text-zinc-400 hover:text-zinc-700"
+        className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
         閉じる
       </button>
@@ -819,17 +819,17 @@ function MastersInner() {
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-50">
       {/* Header */}
       <header className="flex items-center gap-4 border-b border-zinc-200 bg-white px-5 py-3">
-        <Link href="/gallery" className="text-sm text-zinc-500 hover:text-zinc-900">Gallery</Link>
-        <Link href="/quick-add" className="text-sm text-zinc-500 hover:text-zinc-900">Quick Add</Link>
-        <Link href="/import" className="text-sm text-zinc-500 hover:text-zinc-900">Import</Link>
+        <Link href="/gallery" className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Gallery</Link>
+        <Link href="/quick-add" className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Quick Add</Link>
+        <Link href="/import" className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Import</Link>
         <h1 className="text-base font-semibold text-zinc-900">Masters</h1>
         <div className="ml-auto w-56">
           <input
             type="text"
-            placeholder="名前で絞り込み..."
+            placeholder="名前で絞り込み…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           />
         </div>
       </header>
@@ -840,7 +840,7 @@ function MastersInner() {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+            className={`px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
               tab === t.id
                 ? "border-b-2 border-blue-500 text-blue-600"
                 : "text-zinc-500 hover:text-zinc-800"
@@ -943,7 +943,7 @@ function ListPanel<T>({
   children: (items: T[]) => React.ReactNode;
 }) {
   if (state.phase === "loading") {
-    return <div className="text-sm text-zinc-400">読み込み中...</div>;
+    return <div className="text-sm text-zinc-400">読み込み中…</div>;
   }
   if (state.phase === "error") {
     return <div className="text-sm text-red-500">{state.message}</div>;
