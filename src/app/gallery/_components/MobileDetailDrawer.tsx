@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import type { ImageDetail, PersonSummary, TagSuggestion, TagSummary, TranslatePromptResult } from "@/lib/gallery/imagesClient"
+import { useDialogA11y } from "@/lib/gallery/useDialogA11y"
 import DetailPanel, { type SuggestionResolvedPayload } from "./DetailPanel"
 
 interface MobileDetailDrawerProps {
@@ -54,6 +55,9 @@ export default function MobileDetailDrawer({
     }
   }, [imageId])
 
+  const panelRef = useRef<HTMLDivElement>(null)
+  useDialogA11y({ open: imageId !== null, onClose, containerRef: panelRef })
+
   if (!imageId) return null
 
   return (
@@ -68,6 +72,11 @@ export default function MobileDetailDrawer({
 
       {/* Drawer panel */}
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-detail-drawer-title"
+        tabIndex={-1}
         className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl bg-white shadow-xl"
         style={{ maxHeight: "90dvh" }}
       >
@@ -79,7 +88,7 @@ export default function MobileDetailDrawer({
             <div className="h-1 w-10 rounded-full bg-zinc-300" />
           </div>
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-sm font-semibold text-zinc-800">詳細</span>
+            <span id="mobile-detail-drawer-title" className="text-sm font-semibold text-zinc-800">詳細</span>
             <button
               onClick={onClose}
               className="p-1.5 text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
