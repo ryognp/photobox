@@ -74,7 +74,7 @@ export default function PromptVariationModal({
           <span className="text-sm font-semibold text-zinc-800">生成されたプロンプト</span>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-700"
+            className="text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             aria-label="閉じる"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -97,14 +97,14 @@ export default function PromptVariationModal({
         <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-t border-zinc-100 px-4 py-3">
           <button
             onClick={() => void handleCopy()}
-            className="rounded-md bg-zinc-800 px-3 py-2 text-sm text-white hover:bg-zinc-600"
+            className="rounded-md bg-zinc-800 px-3 py-2 text-sm text-white hover:bg-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             コピー
           </button>
           {canSaveFavorite && (
             <button
               onClick={handleFavoriteSave}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             >
               お気に入りに保存
             </button>
@@ -116,7 +116,7 @@ export default function PromptVariationModal({
           )}
           <button
             onClick={onClose}
-            className="ml-auto rounded-md border border-zinc-200 px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50"
+            className="ml-auto rounded-md border border-zinc-200 px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             閉じる
           </button>

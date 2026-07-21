@@ -267,7 +267,7 @@ function GalleryInner() {
   // Read via a lazy useState initializer (not a mount effect + setState,
   // which react-hooks/set-state-in-effect flags) — safe here because the
   // grid itself never appears in server-rendered HTML anyway (state.loading
-  // starts true, so ImageGrid renders "読み込み中..." until the client-side
+  // starts true, so ImageGrid renders "読み込み中…" until the client-side
   // fetch effect resolves), so there is no SSR/hydration mismatch risk.
   const [density, setDensity] = useState<GalleryDensity>(() => {
     if (typeof window === "undefined") return "standard"
@@ -453,19 +453,19 @@ function GalleryInner() {
         <div className="flex items-center gap-3 sm:gap-4">
           <button
             onClick={() => router.push("/quick-add")}
-            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
+            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             Quick Add
           </button>
           <button
             onClick={() => router.push("/masters")}
-            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
+            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             Masters
           </button>
           <button
             onClick={() => router.push("/import")}
-            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline"
+            className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             Import
           </button>
@@ -479,7 +479,7 @@ function GalleryInner() {
               <button
                 key={d}
                 onClick={() => setDensity(d)}
-                className={`min-h-10 rounded-md border px-2.5 py-1.5 text-xs ${
+                className={`min-h-10 rounded-md border px-2.5 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                   density === d
                     ? "border-blue-500 bg-blue-50 font-medium text-blue-700"
                     : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
@@ -491,7 +491,7 @@ function GalleryInner() {
           </div>
           <button
             onClick={() => router.push("/quick-add")}
-            className="ml-auto min-h-10 shrink-0 rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 md:hidden"
+            className="ml-auto min-h-10 shrink-0 rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 md:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             ＋ 追加
           </button>
@@ -501,7 +501,7 @@ function GalleryInner() {
               dispatch({ type: "select", id: null })
               setFilterDrawerOpen(true)
             }}
-            className="min-h-10 shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 md:hidden"
+            className="min-h-10 shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 md:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
             aria-label="フィルターを開く"
           >
             フィルター
