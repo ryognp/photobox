@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import type { GalleryFilters } from "@/lib/gallery/imagesClient"
 import type { GalleryDensity } from "@/lib/gallery/galleryDensity"
+import { useDialogA11y } from "@/lib/gallery/useDialogA11y"
 import FilterContent, { useFilterOptions } from "./FilterContent"
 
 interface MobileFilterDrawerProps {
@@ -44,6 +45,9 @@ export default function MobileFilterDrawer({
     }
   }, [open])
 
+  const panelRef = useRef<HTMLDivElement>(null)
+  useDialogA11y({ open, onClose, containerRef: panelRef })
+
   if (!open) return null
 
   return (
@@ -54,12 +58,17 @@ export default function MobileFilterDrawer({
 
       {/* Drawer panel */}
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-filter-drawer-title"
+        tabIndex={-1}
         className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl bg-white shadow-xl"
         style={{ maxHeight: "85dvh" }}
       >
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
-          <span className="text-sm font-semibold text-zinc-800">フィルター</span>
+          <span id="mobile-filter-drawer-title" className="text-sm font-semibold text-zinc-800">フィルター</span>
           <button
             onClick={onClose}
             className="text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"

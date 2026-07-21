@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { makeFavoritePromptItem, type FavoritePromptItem } from "@/lib/gallery/favoritePrompts"
 import type { VariationChange } from "@/lib/gallery/imagesClient"
+import { useDialogA11y } from "@/lib/gallery/useDialogA11y"
 
 interface PromptVariationModalProps {
   text: string
@@ -35,6 +36,19 @@ export default function PromptVariationModal({
 }: PromptVariationModalProps) {
   const [copyMsg, setCopyMsg] = useState<string | null>(null)
   const [favoriteMsg, setFavoriteMsg] = useState<string | null>(null)
+
+  // Phase 10-37-C-B: body scroll lock, matching MobileDetailDrawer/
+  // MobileFilterDrawer's existing pattern. This modal has no `open` prop —
+  // it's only ever mounted while shown, so mount/unmount is the lock signal.
+  useEffect(() => {
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = ""
+    }
+  }, [])
+
+  const panelRef = useRef<HTMLDivElement>(null)
+  useDialogA11y({ open: true, onClose, containerRef: panelRef })
 
   const handleCopy = async () => {
     try {
@@ -69,9 +83,16 @@ export default function PromptVariationModal({
       <div className="fixed inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
 
       {/* Panel */}
-      <div className="relative flex max-h-[85dvh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prompt-variation-modal-title"
+        tabIndex={-1}
+        className="relative flex max-h-[85dvh] w-full max-w-lg flex-col rounded-lg bg-white shadow-xl"
+      >
         <div className="flex flex-shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
-          <span className="text-sm font-semibold text-zinc-800">生成されたプロンプト</span>
+          <span id="prompt-variation-modal-title" className="text-sm font-semibold text-zinc-800">生成されたプロンプト</span>
           <button
             onClick={onClose}
             className="text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
