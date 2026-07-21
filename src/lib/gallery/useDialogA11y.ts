@@ -28,6 +28,26 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
   )
 }
 
+// Phase 10-37-C-B review fix: nested-dialog ownership. A parent overlay (e.g.
+// MobileDetailDrawer) and a child overlay opened inside it (e.g.
+// PromptVariationModal) both register capture-phase keydown listeners on
+// `document`. stopPropagation() does NOT stop sibling listeners on the same
+// node, so without this guard both hooks would react to one Escape/Tab and the
+// parent would close (or fight the trap) alongside the child. We resolve the
+// event's nearest ancestor dialog and only act when it IS this hook's
+// container, so only the innermost (front-most) dialog responds.
+//
+// Kept inline rather than extracted to dialogFocusTrap.ts: its substance is a
+// DOM ancestor walk (Element.closest). The only pure residue is a trivial
+// `===`, which is not worth a unit test and would otherwise require building a
+// jsdom DOM tree — the DOM-integration testing this project deliberately avoids.
+function isEventForCurrentDialog(e: KeyboardEvent, container: HTMLElement): boolean {
+  const target = e.target
+  if (!(target instanceof Element)) return false
+  const nearestDialog = target.closest('[role="dialog"][aria-modal="true"]')
+  return nearestDialog === container
+}
+
 interface UseDialogA11yOptions {
   open: boolean
   onClose: () => void
@@ -59,15 +79,18 @@ export function useDialogA11y({ open, onClose, containerRef }: UseDialogA11yOpti
     if (!open) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const container = containerRef.current
+      if (!container) return
+      // Only the innermost dialog the event originated from should react —
+      // otherwise a parent dialog would also close/trap on a child's keydown.
+      if (!isEventForCurrentDialog(e, container)) return
+
       if (e.key === "Escape") {
         e.stopPropagation()
         onClose()
         return
       }
       if (e.key !== "Tab") return
-
-      const container = containerRef.current
-      if (!container) return
 
       const focusables = getFocusableElements(container)
       const target = getFocusTrapFocusTarget(focusables, document.activeElement, e.shiftKey)
