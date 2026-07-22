@@ -15,7 +15,7 @@ export default function RatingInput({ value, onChange, disabled }: Props) {
           type="button"
           disabled={disabled}
           onClick={() => onChange(value === star ? null : star)}
-          aria-pressed={(value ?? 0) >= star}
+          aria-pressed={value === star}
           className={[
             "text-xl leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
             disabled ? "cursor-not-allowed opacity-40" : "hover:text-yellow-400",
