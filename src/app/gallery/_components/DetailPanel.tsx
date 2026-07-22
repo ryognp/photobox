@@ -989,6 +989,16 @@ function TagChip({
   const [phase, setPhase] = useState<TagChipPhase>("view")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
+  // Phase 10-37-E-D-C: same focus-management pattern as image delete
+  // (E-D-B) — safe action on confirm, and back to the "×" trigger on
+  // return to view. The trigger is the same JSX in both "view" and
+  // "error" (see the shared fallback branch below), so it also gets
+  // focus when an error appears rather than adding a new "閉じる" button.
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const confirmCancelRef = useRef<HTMLButtonElement>(null)
+  useFocusOnActivate(phase === "view" || phase === "error", triggerRef)
+  useFocusOnActivate(phase === "confirm", confirmCancelRef)
+
   const remove = async () => {
     setPhase("removing")
     setErrorMsg(null)
@@ -1004,7 +1014,7 @@ function TagChip({
 
   if (phase === "confirm") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 py-1 pl-2.5 pr-1 text-xs text-zinc-700">
+      <span aria-live="polite" className="inline-flex items-center gap-1 rounded-full bg-zinc-100 py-1 pl-2.5 pr-1 text-xs text-zinc-700">
         <span>{tag.name}</span>
         <button
           onClick={() => void remove()}
@@ -1014,6 +1024,7 @@ function TagChip({
           外す
         </button>
         <button
+          ref={confirmCancelRef}
           onClick={() => setPhase("view")}
           className="rounded px-1.5 py-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label="キャンセル"
@@ -1026,7 +1037,7 @@ function TagChip({
 
   if (phase === "removing") {
     return (
-      <span className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-400">
+      <span role="status" className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-400">
         {tag.name} …
       </span>
     )
@@ -1037,6 +1048,7 @@ function TagChip({
       <span className="inline-flex items-center gap-0.5 rounded-full bg-zinc-100 py-1 pl-2.5 pr-1 text-xs text-zinc-700">
         <span>{tag.name}</span>
         <button
+          ref={triggerRef}
           onClick={() => setPhase("confirm")}
           className="rounded px-1.5 py-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label={`タグ「${tag.name}」を外す`}
@@ -1044,7 +1056,7 @@ function TagChip({
           ×
         </button>
       </span>
-      {phase === "error" && errorMsg && <span className="mt-0.5 text-xs text-red-500">{errorMsg}</span>}
+      {phase === "error" && errorMsg && <span role="alert" className="mt-0.5 text-xs text-red-500">{errorMsg}</span>}
     </span>
   )
 }
@@ -1158,6 +1170,15 @@ function PersonChip({
   const [phase, setPhase] = useState<PersonChipPhase>("view")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
+  // Phase 10-37-E-D-C: same focus-management pattern as TagChip — safe
+  // action on confirm, and back to the "×" trigger on return to view
+  // (the same trigger JSX also renders in "error", so it gets focus there
+  // too rather than adding a new "閉じる" button).
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const confirmCancelRef = useRef<HTMLButtonElement>(null)
+  useFocusOnActivate(phase === "view" || phase === "error", triggerRef)
+  useFocusOnActivate(phase === "confirm", confirmCancelRef)
+
   const remove = async () => {
     setPhase("removing")
     setErrorMsg(null)
@@ -1174,7 +1195,7 @@ function PersonChip({
 
   if (phase === "confirm") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 py-1 pl-2.5 pr-1 text-xs text-blue-700">
+      <span aria-live="polite" className="inline-flex items-center gap-1 rounded-full bg-blue-50 py-1 pl-2.5 pr-1 text-xs text-blue-700">
         <span>{person.name}</span>
         <button
           onClick={() => void remove()}
@@ -1184,6 +1205,7 @@ function PersonChip({
           外す
         </button>
         <button
+          ref={confirmCancelRef}
           onClick={() => setPhase("view")}
           className="rounded px-1.5 py-1 text-blue-400 hover:bg-blue-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label="キャンセル"
@@ -1196,7 +1218,7 @@ function PersonChip({
 
   if (phase === "removing") {
     return (
-      <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-300">
+      <span role="status" className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-300">
         {person.name} …
       </span>
     )
@@ -1207,6 +1229,7 @@ function PersonChip({
       <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-50 py-1 pl-2.5 pr-1 text-xs text-blue-700">
         <span>{person.name}</span>
         <button
+          ref={triggerRef}
           onClick={() => setPhase("confirm")}
           className="rounded px-1.5 py-1 text-blue-400 hover:bg-blue-200 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-label={`人物「${person.name}」を外す`}
@@ -1214,7 +1237,7 @@ function PersonChip({
           ×
         </button>
       </span>
-      {phase === "error" && errorMsg && <span className="mt-0.5 text-xs text-red-500">{errorMsg}</span>}
+      {phase === "error" && errorMsg && <span role="alert" className="mt-0.5 text-xs text-red-500">{errorMsg}</span>}
     </span>
   )
 }
