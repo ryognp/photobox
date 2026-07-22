@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { checkCommitReadiness } from "@/lib/quick-add/commitReadiness"
 import { deleteUploadItem } from "@/lib/quick-add/itemClient"
 import { clearStoredSession } from "@/lib/upload/sessionStore"
+import { useFocusOnActivate } from "@/lib/a11y/useFocusOnActivate"
 import { CommitSummary } from "./_components/CommitSummary"
 import { CommitBlockedReasons } from "./_components/CommitBlockedReasons"
 import { CommitFilterTabs, FilterTab } from "./_components/CommitFilterTabs"
@@ -48,6 +49,15 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
   // Phase 10-19A: セッション全体キャンセル(view→confirm→cancelling→error)
   const [cancelPhase, setCancelPhase] = useState<"view" | "confirm" | "cancelling" | "error">("view")
   const [cancelError, setCancelError] = useState<string | null>(null)
+
+  // Phase 10-37-E-B: 各phaseの安全な操作(トリガー/戻る/閉じる)へfocusを戻す。
+  // CommitItemCardと同じ理由でrefベース(activeElementキャプチャ方式は使えない)。
+  const cancelTriggerRef = useRef<HTMLButtonElement>(null)
+  const cancelConfirmBackRef = useRef<HTMLButtonElement>(null)
+  const cancelErrorCloseRef = useRef<HTMLButtonElement>(null)
+  useFocusOnActivate(cancelPhase === "view", cancelTriggerRef)
+  useFocusOnActivate(cancelPhase === "confirm", cancelConfirmBackRef)
+  useFocusOnActivate(cancelPhase === "error", cancelErrorCloseRef)
 
   useEffect(() => {
     let cancelled = false
@@ -250,6 +260,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
           {/* Phase 10-19A: セッション全体キャンセル */}
           {cancelPhase === "view" && (
             <button
+              ref={cancelTriggerRef}
               onClick={() => setCancelPhase("confirm")}
               disabled={committing || sessionCommitted}
               className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
@@ -259,7 +270,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
           )}
           {cancelPhase === "confirm" && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-red-600">
+              <span aria-live="polite" className="text-xs text-red-600">
                 このプレビューをキャンセルします。アップロード済みの一時画像は後続のcleanup対象になります。よろしいですか？
               </span>
               <button
@@ -269,6 +280,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
                 キャンセルする
               </button>
               <button
+                ref={cancelConfirmBackRef}
                 onClick={() => setCancelPhase("view")}
                 className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
@@ -277,12 +289,13 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
             </div>
           )}
           {cancelPhase === "cancelling" && (
-            <span className="text-xs text-zinc-400">キャンセル中…</span>
+            <span role="status" className="text-xs text-zinc-400">キャンセル中…</span>
           )}
           {cancelPhase === "error" && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-red-500">{cancelError}</span>
+              <span role="alert" className="text-xs text-red-500">{cancelError}</span>
               <button
+                ref={cancelErrorCloseRef}
                 onClick={() => setCancelPhase("view")}
                 className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               >
@@ -348,7 +361,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
 
           {/* Commit feedback */}
           {commitError && (
-            <p className="text-sm text-red-600">エラー: {commitError}</p>
+            <p role="alert" className="text-sm text-red-600">エラー: {commitError}</p>
           )}
 
           {commitResult && (

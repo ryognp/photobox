@@ -71,6 +71,7 @@ export function CommitResultPanel({
 
   return (
     <div
+      role="status"
       className={`rounded-lg border p-4 flex flex-col gap-4 ${
         nothingCommitted && !sessionCommitted
           ? "border-amber-300 bg-amber-50"
