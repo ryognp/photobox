@@ -1,7 +1,7 @@
 "use client"
 
 import { useReducer } from "react"
-import { useRouter } from "next/navigation"
+import Link from "next/link"
 import type { ParseResult, ColumnMapping, ImportStep } from "@/lib/import/importTypes"
 import FileDropzone from "./_components/FileDropzone"
 import ParsePreview from "./_components/ParsePreview"
@@ -77,7 +77,6 @@ const STEP_LABELS: Record<ImportStep, string> = {
 }
 
 export default function ImportClient() {
-  const router = useRouter()
   const [state, dispatch] = useReducer(reducer, INITIAL)
 
   const handleFile = async (file: File) => {
@@ -110,9 +109,9 @@ export default function ImportClient() {
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-50">
       {/* Header */}
       <header className="flex items-center gap-4 border-b border-zinc-200 bg-white px-5 py-3">
-        <button onClick={() => router.push("/gallery")} className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Gallery</button>
-        <button onClick={() => router.push("/quick-add")} className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Quick Add</button>
-        <button onClick={() => router.push("/masters")} className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Masters</button>
+        <Link href="/gallery" className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Gallery</Link>
+        <Link href="/quick-add" className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Quick Add</Link>
+        <Link href="/masters" className="text-sm text-zinc-500 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">Masters</Link>
         <h1 className="text-base font-semibold text-zinc-900">Import</h1>
       </header>
 

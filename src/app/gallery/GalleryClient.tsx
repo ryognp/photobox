@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useReducer, useRef, useState, Suspense } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   fetchImages,
@@ -451,24 +452,24 @@ function GalleryInner() {
           since 追加/フィルター are both md:hidden there anyway. */}
       <header className="flex flex-col gap-2 border-b border-zinc-200 bg-white px-4 py-3 sm:gap-3 sm:px-5 md:flex-row md:items-center md:gap-4">
         <div className="flex items-center gap-3 sm:gap-4">
-          <button
-            onClick={() => router.push("/quick-add")}
+          <Link
+            href="/quick-add"
             className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             Quick Add
-          </button>
-          <button
-            onClick={() => router.push("/masters")}
+          </Link>
+          <Link
+            href="/masters"
             className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             Masters
-          </button>
-          <button
-            onClick={() => router.push("/import")}
+          </Link>
+          <Link
+            href="/import"
             className="hidden text-sm text-zinc-500 hover:text-zinc-900 md:inline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             Import
-          </button>
+          </Link>
           <h1 className="shrink-0 text-base font-semibold text-zinc-900">Gallery</h1>
           <span className="hidden shrink-0 text-sm text-zinc-400 sm:inline">
             {state.loading ? "…" : `${state.images.length} 枚`}
@@ -490,12 +491,12 @@ function GalleryInner() {
               </button>
             ))}
           </div>
-          <button
-            onClick={() => router.push("/quick-add")}
+          <Link
+            href="/quick-add"
             className="ml-auto min-h-10 shrink-0 rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 md:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
             ＋ 追加
-          </button>
+          </Link>
           {/* md以上はFilterSidebarが常時表示のため不要 */}
           <button
             onClick={() => {

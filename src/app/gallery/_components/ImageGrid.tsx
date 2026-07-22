@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { useRouter, usePathname, useSearchParams } from "next/navigation"
+import Link from "next/link"
+import { usePathname, useSearchParams } from "next/navigation"
 import type { GalleryImage, GalleryFilters } from "@/lib/gallery/imagesClient"
 import {
   buildGalleryScrollStorageKey,
@@ -55,7 +56,6 @@ export default function ImageGrid({
   onFilterChange,
 }: ImageGridProps) {
   const bulkSelectedSet = new Set(bulkSelectedIds)
-  const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
@@ -230,12 +230,12 @@ export default function ImageGrid({
           />
         </svg>
         <p className="text-sm">まだ画像がありません</p>
-        <button
-          onClick={() => router.push("/quick-add")}
+        <Link
+          href="/quick-add"
           className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           Quick Add で画像を追加する
-        </button>
+        </Link>
       </div>
     )
   }
