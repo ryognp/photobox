@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useReducer, useState } from "react";
+import { Suspense, useEffect, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { filterTagsForMasters } from "@/lib/masters/tagFilters";
 import { formatTagForceDeleteConfirmMessage } from "@/lib/masters/tagDeleteMessage";
+import { useFocusOnActivate } from "@/lib/a11y/useFocusOnActivate";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -82,7 +83,7 @@ function EditableRow({
           />
         )}
       </div>
-      {error && <p className="text-xs text-red-500 ml-[7.5rem]">{error}</p>}
+      {error && <p role="alert" className="text-xs text-red-500 ml-[7.5rem]">{error}</p>}
       <div className="flex gap-2 ml-[7.5rem]">
         <button
           onClick={() => void handleSave()}
@@ -118,6 +119,15 @@ function DeleteButton({
   const [phase, setPhase] = useState<"idle" | "confirm" | "deleting" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Phase 10-37-E-C: move focus to the safe action on each phase transition,
+  // and back to the re-mounted trigger button when returning to idle.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const confirmCancelRef = useRef<HTMLButtonElement>(null);
+  const errorCloseRef = useRef<HTMLButtonElement>(null);
+  useFocusOnActivate(phase === "idle", triggerRef);
+  useFocusOnActivate(phase === "confirm", confirmCancelRef);
+  useFocusOnActivate(phase === "error", errorCloseRef);
+
   if (imageCount > 0) {
     return (
       <p className="text-xs text-zinc-400">
@@ -129,6 +139,7 @@ function DeleteButton({
   if (phase === "idle") {
     return (
       <button
+        ref={triggerRef}
         onClick={() => setPhase("confirm")}
         className="text-xs text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
@@ -140,7 +151,7 @@ function DeleteButton({
   if (phase === "confirm") {
     return (
       <div className="flex flex-col gap-1">
-        <p className="text-xs text-red-600">
+        <p aria-live="polite" className="text-xs text-red-600">
           この{itemLabel}を削除します。画像には紐づいていない{itemLabel}のみ削除できます。元に戻せません。
         </p>
         <div className="flex gap-2">
@@ -160,6 +171,7 @@ function DeleteButton({
             削除する
           </button>
           <button
+            ref={confirmCancelRef}
             onClick={() => setPhase("idle")}
             className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
@@ -171,10 +183,27 @@ function DeleteButton({
   }
 
   if (phase === "deleting") {
-    return <p className="text-xs text-zinc-400">削除中…</p>;
+    return <p role="status" className="text-xs text-zinc-400">削除中…</p>;
   }
 
-  return <p className="text-xs text-red-500">{errorMsg ?? "削除に失敗しました"}</p>;
+  // Phase 10-37-E-C: this branch previously had no way back to "idle" at all
+  // (unlike TagForceDeleteControl/CommitItemCard's sibling error phases),
+  // which made the focus-return requirement unreachable here. Added a
+  // minimal "閉じる" button that calls the already-valid setPhase("idle")
+  // transition (the same one "confirm"'s キャンセル already uses) — no new
+  // phase or condition, just an existing transition exposed via the UI.
+  return (
+    <div className="flex items-center gap-2">
+      <p role="alert" className="text-xs text-red-500">{errorMsg ?? "削除に失敗しました"}</p>
+      <button
+        ref={errorCloseRef}
+        onClick={() => setPhase("idle")}
+        className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+      >
+        閉じる
+      </button>
+    </div>
+  );
 }
 
 // ---- MergePanel -------------------------------------------------------------
@@ -209,11 +238,20 @@ function MergePanel<T extends { id: string; name: string }>({
   const [confirmed, setConfirmed] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Phase 10-37-E-C: on open, focus the safe "閉じる" action (not the
+  // select/preview/merge controls); on close, focus returns to the
+  // re-mounted "統合…" trigger.
+  const openTriggerRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useFocusOnActivate(!open, openTriggerRef);
+  useFocusOnActivate(open, closeButtonRef);
+
   const candidates = allItems.filter((it) => it.id !== sourceId);
 
   if (!open) {
     return (
       <button
+        ref={openTriggerRef}
         onClick={() => setOpen(true)}
         className="text-xs text-amber-600 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
@@ -271,7 +309,7 @@ function MergePanel<T extends { id: string; name: string }>({
     <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-3 flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-amber-800">統合 ({sourceName})</p>
-        <button onClick={() => { setOpen(false); setPhase("idle"); setCounts(null); }} className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">閉じる</button>
+        <button ref={closeButtonRef} onClick={() => { setOpen(false); setPhase("idle"); setCounts(null); }} className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">閉じる</button>
       </div>
 
       <div className="flex gap-2 items-center">
@@ -321,9 +359,9 @@ function MergePanel<T extends { id: string; name: string }>({
         </div>
       )}
 
-      {phase === "merging" && <p className="text-xs text-zinc-500">統合中…</p>}
-      {phase === "done" && <p className="text-xs text-green-600">統合しました ✓</p>}
-      {phase === "error" && <p className="text-xs text-red-500">{errorMsg}</p>}
+      {phase === "merging" && <p role="status" className="text-xs text-zinc-500">統合中…</p>}
+      {phase === "done" && <p role="status" className="text-xs text-green-600">統合しました ✓</p>}
+      {phase === "error" && <p role="alert" className="text-xs text-red-500">{errorMsg}</p>}
     </div>
   );
 }
@@ -515,7 +553,7 @@ function AddTagForm({ onAdded }: { onAdded: (tag: Tag) => void }) {
           {isAdding ? "追加中…" : "タグを追加"}
         </button>
       </div>
-      {phase === "error" && errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+      {phase === "error" && errorMsg && <p role="alert" className="text-xs text-red-500">{errorMsg}</p>}
     </div>
   );
 }
@@ -629,6 +667,16 @@ function TagForceDeleteControl({
   const [confirmNameInput, setConfirmNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Phase 10-37-E-C: same focus-management pattern as DeleteButton — safe
+  // action on each transition, trigger on return to idle. Never autofocus
+  // the confirm-name input or the destructive execute button.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const confirmCancelRef = useRef<HTMLButtonElement>(null);
+  const errorCloseRef = useRef<HTMLButtonElement>(null);
+  useFocusOnActivate(phase === "idle", triggerRef);
+  useFocusOnActivate(phase === "confirm", confirmCancelRef);
+  useFocusOnActivate(phase === "error", errorCloseRef);
+
   const resetConfirmState = () => {
     setPhase("idle");
     setAgreed(false);
@@ -638,6 +686,7 @@ function TagForceDeleteControl({
   if (phase === "idle") {
     return (
       <button
+        ref={triggerRef}
         onClick={() => setPhase("confirm")}
         className="self-start text-xs text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
@@ -650,7 +699,7 @@ function TagForceDeleteControl({
     const nameMatches = confirmNameInput === tagName;
     return (
       <div className="flex flex-col gap-1.5 rounded border border-red-200 bg-red-50 p-2">
-        <p className="text-xs text-red-700">
+        <p aria-live="polite" className="text-xs text-red-700">
           {formatTagForceDeleteConfirmMessage(tagName, imageCount)}
         </p>
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-red-700">
@@ -686,6 +735,7 @@ function TagForceDeleteControl({
             紐づけを解除して削除する
           </button>
           <button
+            ref={confirmCancelRef}
             onClick={resetConfirmState}
             className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           >
@@ -697,13 +747,14 @@ function TagForceDeleteControl({
   }
 
   if (phase === "deleting") {
-    return <p className="text-xs text-zinc-400">削除中…</p>;
+    return <p role="status" className="text-xs text-zinc-400">削除中…</p>;
   }
 
   return (
     <div className="flex items-center gap-2">
-      <p className="text-xs text-red-500">{errorMsg ?? "削除に失敗しました"}</p>
+      <p role="alert" className="text-xs text-red-500">{errorMsg ?? "削除に失敗しました"}</p>
       <button
+        ref={errorCloseRef}
         onClick={resetConfirmState}
         className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
       >
