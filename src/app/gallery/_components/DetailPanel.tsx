@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useReducer, useState } from "react"
+import { useEffect, useReducer, useRef, useState } from "react"
 import {
   addManualImageTag,
   analyzeImage,
@@ -23,6 +23,7 @@ import {
   type VariationChange,
 } from "@/lib/gallery/imagesClient"
 import { applyPromptEditToDetailPrompt } from "@/lib/gallery/translationState"
+import { useFocusOnActivate } from "@/lib/a11y/useFocusOnActivate"
 import { describeTranslationResult, type TranslationDisplayMessage } from "@/lib/translation/translationResultDisplay"
 import { VARIATION_CHANGE_OPTIONS, toggleVariationChange } from "@/lib/gallery/variationChangeOptions"
 import {
@@ -1469,6 +1470,15 @@ export default function DetailPanel({
   const [state, dispatch] = useReducer(reducer, { phase: "idle" })
   const [deletePhase, setDeletePhase] = useState<DeletePhase>("view")
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // Phase 10-37-E-D-B: move focus to the safe action on each delete-confirm
+  // phase transition, and back to the re-mounted trigger when returning to
+  // "view" (same pattern as quick-add/Masters — E-B/E-C).
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null)
+  const deleteConfirmCancelRef = useRef<HTMLButtonElement>(null)
+  const deleteErrorCancelRef = useRef<HTMLButtonElement>(null)
+  useFocusOnActivate(deletePhase === "view", deleteTriggerRef)
+  useFocusOnActivate(deletePhase === "confirm", deleteConfirmCancelRef)
+  useFocusOnActivate(deletePhase === "error", deleteErrorCancelRef)
   // Phase 10-12C: favorites are GLOBAL (one localStorage key, not per-image),
   // so a lazy one-time read on mount is enough — no per-imageId re-read needed
   // (unlike prompt-variation history, which is scoped per image).
@@ -1779,6 +1789,7 @@ export default function DetailPanel({
           <div className="mt-2 border-t border-zinc-100 pt-3">
             {deletePhase === "view" && (
               <button
+                ref={deleteTriggerRef}
                 onClick={() => setDeletePhase("confirm")}
                 className="w-full rounded-md border border-red-200 px-3 py-2 text-center text-xs text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
@@ -1788,7 +1799,7 @@ export default function DetailPanel({
 
             {deletePhase === "confirm" && (
               <div className="flex flex-col gap-2">
-                <p className="text-xs text-red-600">この画像を削除しますか？</p>
+                <p aria-live="polite" className="text-xs text-red-600">この画像を削除しますか？</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDelete(state.detail.id)}
@@ -1797,6 +1808,7 @@ export default function DetailPanel({
                     削除する
                   </button>
                   <button
+                    ref={deleteConfirmCancelRef}
                     onClick={() => setDeletePhase("view")}
                     className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
@@ -1817,7 +1829,7 @@ export default function DetailPanel({
 
             {deletePhase === "error" && (
               <div className="flex flex-col gap-2">
-                <p className="text-xs text-red-600">{deleteError ?? "削除に失敗しました"}</p>
+                <p role="alert" className="text-xs text-red-600">{deleteError ?? "削除に失敗しました"}</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDelete(state.detail.id)}
@@ -1826,6 +1838,7 @@ export default function DetailPanel({
                     再試行
                   </button>
                   <button
+                    ref={deleteErrorCancelRef}
                     onClick={() => setDeletePhase("view")}
                     className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-center text-xs text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
