@@ -26,13 +26,14 @@ const TAB_CONFIG: { key: FilterTab; label: string }[] = [
 
 export function CommitFilterTabs({ activeTab, onTabChange, counts }: Props) {
   return (
-    <div className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-lg">
+    <div role="group" aria-label="表示フィルター" className="flex flex-wrap gap-1 p-1 bg-gray-100 rounded-lg">
       {TAB_CONFIG.map(({ key, label }) => {
         const isActive = activeTab === key;
         return (
           <button
             key={key}
             onClick={() => onTabChange(key)}
+            aria-pressed={isActive}
             className={`
               flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1

@@ -304,12 +304,12 @@ export default function InputPane({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Mode tabs */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-2">
-        <button type="button" onClick={() => setMode("A")}
+      <div role="group" aria-label="入力モード" className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-2">
+        <button type="button" onClick={() => setMode("A")} aria-pressed={mode === "A"}
           className={["rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1", mode === "A" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
           単体入力 (A)
         </button>
-        <button type="button" onClick={() => setMode("B")}
+        <button type="button" onClick={() => setMode("B")} aria-pressed={mode === "B"}
           className={["rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1", mode === "B" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
           一括適用 (B)
         </button>
