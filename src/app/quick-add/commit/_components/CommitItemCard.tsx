@@ -35,6 +35,7 @@ function Thumbnail({ signedUrl, alt }: { signedUrl: string | null; alt: string }
         />
       ) : (
         <svg
+          aria-hidden="true"
           xmlns="http://www.w3.org/2000/svg"
           className="h-6 w-6"
           fill="none"

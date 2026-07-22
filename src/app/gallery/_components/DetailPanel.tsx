@@ -1586,6 +1586,7 @@ export default function DetailPanel({
 
   return (
     <aside
+      aria-label="画像詳細"
       className={
         fullWidth
           ? "flex w-full flex-1 flex-col overflow-y-auto bg-white"

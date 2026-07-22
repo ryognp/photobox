@@ -221,7 +221,7 @@ export default function ImageGrid({
   if (images.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-zinc-400">
-        <svg className="h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg aria-hidden="true" className="h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"

@@ -13,6 +13,7 @@ export default function SearchBar({ value, onChange }: SearchBarProps) {
   return (
     <div className="relative flex items-center">
       <svg
+        aria-hidden="true"
         className="pointer-events-none absolute left-3 h-4 w-4 text-zinc-400"
         fill="none"
         stroke="currentColor"
