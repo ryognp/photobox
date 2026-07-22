@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useFocusOnActivate } from "@/lib/a11y/useFocusOnActivate";
 
 type Props = {
   item: Record<string, unknown>;
@@ -105,6 +106,18 @@ function MetaRow({ label, value }: { label: string; value: string }) {
 export default function CommitItemCard({ item, reasons, onDelete, deleteDisabled }: Props) {
   const [deletePhase, setDeletePhase] = useState<DeletePhase>("view");
   const [deleteErrorMsg, setDeleteErrorMsg] = useState<string | null>(null);
+
+  // Phase 10-37-E-B: move focus to the safe (non-destructive) action whenever
+  // a phase becomes active, and back to the trigger button when returning to
+  // "view" — each phase re-renders a different DOM node in the same slot, so
+  // focus must be re-applied by ref rather than restored from a captured
+  // document.activeElement.
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const deleteConfirmCancelRef = useRef<HTMLButtonElement>(null);
+  const deleteErrorCloseRef = useRef<HTMLButtonElement>(null);
+  useFocusOnActivate(deletePhase === "view", deleteTriggerRef);
+  useFocusOnActivate(deletePhase === "confirm", deleteConfirmCancelRef);
+  useFocusOnActivate(deletePhase === "error", deleteErrorCloseRef);
 
   const itemId = item.id as string;
   const isCommitted = item.commitStatus === "COMMITTED";
@@ -225,6 +238,7 @@ export default function CommitItemCard({ item, reasons, onDelete, deleteDisabled
           <div className="mt-0.5">
             {deletePhase === "view" && (
               <button
+                ref={deleteTriggerRef}
                 onClick={() => setDeletePhase("confirm")}
                 disabled={deleteDisabled}
                 className="text-xs text-red-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
@@ -234,7 +248,7 @@ export default function CommitItemCard({ item, reasons, onDelete, deleteDisabled
             )}
             {deletePhase === "confirm" && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-red-600 dark:text-red-400">
+                <span aria-live="polite" className="text-xs text-red-600 dark:text-red-400">
                   この画像をプレビューから削除します。よろしいですか？
                 </span>
                 <button
@@ -244,6 +258,7 @@ export default function CommitItemCard({ item, reasons, onDelete, deleteDisabled
                   削除する
                 </button>
                 <button
+                  ref={deleteConfirmCancelRef}
                   onClick={() => setDeletePhase("view")}
                   className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
@@ -252,12 +267,13 @@ export default function CommitItemCard({ item, reasons, onDelete, deleteDisabled
               </div>
             )}
             {deletePhase === "deleting" && (
-              <span className="text-xs text-zinc-400">削除中…</span>
+              <span role="status" className="text-xs text-zinc-400">削除中…</span>
             )}
             {deletePhase === "error" && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-red-500">{deleteErrorMsg}</span>
+                <span role="alert" className="text-xs text-red-500">{deleteErrorMsg}</span>
                 <button
+                  ref={deleteErrorCloseRef}
                   onClick={() => setDeletePhase("view")}
                   className="text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                 >
