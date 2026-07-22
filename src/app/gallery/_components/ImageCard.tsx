@@ -31,7 +31,7 @@ interface ImageCardProps {
 function ImagePlaceholder() {
   return (
     <div className="flex h-full w-full items-center justify-center text-zinc-400">
-      <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg aria-hidden="true" className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -102,6 +102,7 @@ export default function ImageCard({
     <div
       role="button"
       tabIndex={0}
+      aria-label={image.originalName}
       data-image-id={image.id}
       onClick={onClick}
       onKeyDown={(e) => {
