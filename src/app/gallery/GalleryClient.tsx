@@ -474,11 +474,12 @@ function GalleryInner() {
             {state.loading ? "…" : `${state.images.length} 枚`}
           </span>
           {/* Phase 10-27B: PC専用の表示密度切替(モバイルはFilter drawer内)。 */}
-          <div className="hidden shrink-0 items-center gap-1 md:flex">
+          <div role="group" aria-label="表示密度" className="hidden shrink-0 items-center gap-1 md:flex">
             {(["comfortable", "standard", "compact"] as const).map((d) => (
               <button
                 key={d}
                 onClick={() => setDensity(d)}
+                aria-pressed={density === d}
                 className={`min-h-10 rounded-md border px-2.5 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
                   density === d
                     ? "border-blue-500 bg-blue-50 font-medium text-blue-700"

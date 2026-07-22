@@ -886,11 +886,12 @@ function MastersInner() {
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-0 border-b border-zinc-200 bg-white px-5">
+      <div role="group" aria-label="マスター種別" className="flex gap-0 border-b border-zinc-200 bg-white px-5">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
+            aria-pressed={tab === t.id}
             className={`px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
               tab === t.id
                 ? "border-b-2 border-blue-500 text-blue-600"

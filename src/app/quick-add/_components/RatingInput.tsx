@@ -8,19 +8,20 @@ type Props = {
 
 export default function RatingInput({ value, onChange, disabled }: Props) {
   return (
-    <div className="flex items-center gap-1">
+    <div role="group" aria-label="評価" className="flex items-center gap-1">
       {[1, 2, 3, 4, 5].map((star) => (
         <button
           key={star}
           type="button"
           disabled={disabled}
           onClick={() => onChange(value === star ? null : star)}
+          aria-pressed={(value ?? 0) >= star}
           className={[
             "text-xl leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
             disabled ? "cursor-not-allowed opacity-40" : "hover:text-yellow-400",
             (value ?? 0) >= star ? "text-yellow-400" : "text-zinc-300",
           ].join(" ")}
-          aria-label={`${star}星`}
+          aria-label={`${star}つ星にする`}
         >
           ★
         </button>
