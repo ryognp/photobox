@@ -240,7 +240,7 @@ function PromptEditor({
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">プロンプト</p>
           <div className="flex items-center gap-2">
             {phase === "saved" && (
-              <span className="text-xs text-green-600">保存しました ✓</span>
+              <span role="status" className="text-xs text-green-600">保存しました ✓</span>
             )}
             <CopyButton text={prompt.currentBody} label="コピー" />
             <button
@@ -288,7 +288,7 @@ function PromptEditor({
         className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
       />
       {errorMsg && (
-        <p className="mt-1 text-xs text-red-500">{errorMsg}</p>
+        <p role="alert" className="mt-1 text-xs text-red-500">{errorMsg}</p>
       )}
       <div className="mt-2 flex gap-2">
         <button
@@ -407,6 +407,7 @@ function TranslationSection({
 
       {message && (
         <p
+          role={message.tone === "error" ? "alert" : "status"}
           className={`mt-1 text-xs ${
             message.tone === "error"
               ? "text-red-500"
@@ -540,7 +541,7 @@ function PromptVariationSection({
         生成結果はこのブラウザに一時保存されます。既存promptには反映されません。必要に応じてコピーして編集してください。
       </p>
       {message && (
-        <p className={`mt-1 text-xs ${message.tone === "error" ? "text-red-500" : "text-zinc-500"}`}>
+        <p role={message.tone === "error" ? "alert" : "status"} className={`mt-1 text-xs ${message.tone === "error" ? "text-red-500" : "text-zinc-500"}`}>
           {message.text}
         </p>
       )}
@@ -749,7 +750,7 @@ function CopyPackSection({
         </button>
       </div>
       {message && (
-        <p className={`mt-1 text-xs ${message.tone === "error" ? "text-red-500" : "text-green-600"}`}>
+        <p role={message.tone === "error" ? "alert" : "status"} className={`mt-1 text-xs ${message.tone === "error" ? "text-red-500" : "text-green-600"}`}>
           {message.text}
         </p>
       )}
@@ -782,7 +783,7 @@ function CopyButton({ text, label = "コピー" }: { text: string; label?: strin
         {label}
       </button>
       {msg && (
-        <span className={`text-xs ${msg.includes("失敗") ? "text-red-500" : "text-green-600"}`}>
+        <span role={msg.includes("失敗") ? "alert" : "status"} className={`text-xs ${msg.includes("失敗") ? "text-red-500" : "text-green-600"}`}>
           {msg}
         </span>
       )}
@@ -939,7 +940,7 @@ function SuggestionCard({
 
   if (phase === "submitting") {
     return (
-      <div className="rounded-md border border-emerald-100 bg-emerald-50 p-2.5 text-sm text-emerald-400">
+      <div role="status" className="rounded-md border border-emerald-100 bg-emerald-50 p-2.5 text-sm text-emerald-400">
         {suggestion.label} …
       </div>
     )
@@ -968,7 +969,7 @@ function SuggestionCard({
           却下
         </button>
       </div>
-      {phase === "error" && errorMsg && <p className="mt-1.5 text-xs text-red-500">{errorMsg}</p>}
+      {phase === "error" && errorMsg && <p role="alert" className="mt-1.5 text-xs text-red-500">{errorMsg}</p>}
     </div>
   )
 }
@@ -1145,7 +1146,7 @@ function TagAddForm({
           {isAdding ? "追加中…" : "追加"}
         </button>
       </div>
-      {phase === "error" && errorMsg && <p className="text-xs text-red-500">{errorMsg}</p>}
+      {phase === "error" && errorMsg && <p role="alert" className="text-xs text-red-500">{errorMsg}</p>}
     </div>
   )
 }
@@ -1323,12 +1324,12 @@ function PersonSection({
       )}
 
       {addPhase === "loading" && (
-        <p className="mt-1.5 text-xs text-zinc-400">読み込み中…</p>
+        <p role="status" className="mt-1.5 text-xs text-zinc-400">読み込み中…</p>
       )}
 
       {addPhase === "error" && (
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <p className="text-xs text-red-500">{loadError}</p>
+          <p role="alert" className="text-xs text-red-500">{loadError}</p>
           <button
             onClick={() => void openAdd()}
             className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
@@ -1360,7 +1361,7 @@ function PersonSection({
               ))}
             </div>
           )}
-          {assignError && <p className="text-xs text-red-500">{assignError}</p>}
+          {assignError && <p role="alert" className="text-xs text-red-500">{assignError}</p>}
           <button
             onClick={() => setAddPhase("closed")}
             className="self-start text-xs text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
@@ -1452,6 +1453,7 @@ function AnalyzeSection({
       </div>
       {message && (
         <p
+          role={message.tone === "error" ? "alert" : "status"}
           className={`mt-1 text-xs ${
             message.tone === "error"
               ? "text-red-500"
