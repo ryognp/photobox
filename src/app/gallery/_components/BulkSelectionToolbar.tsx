@@ -1,10 +1,12 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react"
 import Link from "next/link"
 import { fetchPersons, fetchTags, type PersonSummary, type TagSummary } from "@/lib/gallery/imagesClient"
 import { filterPersonsForBulkSelect } from "@/lib/gallery/personSelectFilter"
 import { filterTagsForBulkSelect } from "@/lib/gallery/tagSelectFilter"
+import { useDialogA11y } from "@/lib/gallery/useDialogA11y"
+import { useIsMobileViewport } from "@/lib/gallery/useIsMobileViewport"
 
 // Phase 10-18C: selection count, "select all visible", "clear selection".
 // Phase 10-18D: "タグを一括追加" / "人物を一括追加" inline action panels wired
@@ -368,13 +370,27 @@ function MobileBulkPanelSheet({
   title,
   onClose,
   children,
+  containerRef,
+  titleId,
+  isMobileDialog,
 }: {
   title: string
   onClose: () => void
   children: ReactNode
+  containerRef: RefObject<HTMLDivElement | null>
+  titleId: string
+  /** Phase 10-37-C-C-B: dialog semantics apply ONLY on mobile. On desktop the
+   *  same DOM is an inline expand-in-place panel, so role/aria-modal/tabIndex
+   *  must be omitted to avoid falsely marking the background inert. */
+  isMobileDialog: boolean
 }) {
   return (
     <div
+      ref={containerRef}
+      role={isMobileDialog ? "dialog" : undefined}
+      aria-modal={isMobileDialog ? true : undefined}
+      aria-labelledby={isMobileDialog ? titleId : undefined}
+      tabIndex={isMobileDialog ? -1 : undefined}
       className="
         fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl bg-white shadow-xl
         pb-[env(safe-area-inset-bottom)]
@@ -389,7 +405,7 @@ function MobileBulkPanelSheet({
           <div className="h-1 w-10 rounded-full bg-zinc-300" />
         </div>
         <div className="flex items-center justify-between px-4 py-2.5">
-          <span className="text-sm font-semibold text-zinc-800">{title}</span>
+          <span id={titleId} className="text-sm font-semibold text-zinc-800">{title}</span>
           <button
             onClick={onClose}
             className="min-h-10 px-2 text-zinc-400 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
@@ -417,6 +433,19 @@ export default function BulkSelectionToolbar({
   onBulkAssignPerson,
 }: BulkSelectionToolbarProps) {
   const [openPanel, setOpenPanel] = useState<PanelKind>(null)
+  const isMobile = useIsMobileViewport()
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const sheetTitleId = useId()
+  const closePanel = () => setOpenPanel(null)
+  // Phase 10-37-C-C-B: dialog a11y (Escape / focus trap / initial focus /
+  // focus return) applies only when the sheet is an actual modal — i.e. on
+  // mobile with a panel open. On desktop `open` is false, so the hook is inert
+  // and the panel keeps its inline expand-in-place behavior.
+  useDialogA11y({
+    open: isMobile && openPanel !== null,
+    onClose: closePanel,
+    containerRef: sheetRef,
+  })
 
   // レビュー修正: パネルを開いたまま「選択解除」等でselectedCountが0に
   // なると、Toolbar自体はreturn nullするがopenPanelはtag/personのまま
@@ -435,9 +464,10 @@ export default function BulkSelectionToolbar({
 
   // Phase 10-25E-B: mobile sheet表示中は背後のGalleryスクロールをロックする
   // (既存のMobileFilterDrawer/MobileDetailDrawerと同じパターン)。
-  // selectedCount===0(Toolbar非表示中)はlockしない — panelActiveで両条件
-  // を明示的にORではなくANDで判定する。
-  const panelActive = selectedCount > 0 && openPanel !== null
+  // selectedCount===0(Toolbar非表示中)はlockしない。
+  // Phase 10-37-C-C-B: desktopではインライン展開UIのためscroll lockは不要。
+  // isMobileを条件に加え、mobile sheet表示時のみロックする。
+  const panelActive = isMobile && selectedCount > 0 && openPanel !== null
   useEffect(() => {
     if (panelActive) {
       const previousOverflow = document.body.style.overflow
@@ -515,18 +545,30 @@ export default function BulkSelectionToolbar({
       )}
 
       {openPanel === "tag" && (
-        <MobileBulkPanelSheet title="タグを一括追加" onClose={() => setOpenPanel(null)}>
+        <MobileBulkPanelSheet
+          title="タグを一括追加"
+          onClose={closePanel}
+          containerRef={sheetRef}
+          titleId={sheetTitleId}
+          isMobileDialog={isMobile}
+        >
           <TagSelectPanel
             onSubmit={onBulkAddTag}
-            onClose={() => setOpenPanel(null)}
+            onClose={closePanel}
           />
         </MobileBulkPanelSheet>
       )}
       {openPanel === "person" && (
-        <MobileBulkPanelSheet title="人物を一括追加" onClose={() => setOpenPanel(null)}>
+        <MobileBulkPanelSheet
+          title="人物を一括追加"
+          onClose={closePanel}
+          containerRef={sheetRef}
+          titleId={sheetTitleId}
+          isMobileDialog={isMobile}
+        >
           <PersonSelectPanel
             onSubmit={onBulkAssignPerson}
-            onClose={() => setOpenPanel(null)}
+            onClose={closePanel}
           />
         </MobileBulkPanelSheet>
       )}
