@@ -904,7 +904,7 @@ function MastersInner() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-5">
+      <main id="main-content" className="flex-1 overflow-y-auto p-5">
         {tab === "persons" && (
           <ListPanel state={persons.state}>
             {(items: Person[]) =>
@@ -972,7 +972,7 @@ function MastersInner() {
             </ListPanel>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }

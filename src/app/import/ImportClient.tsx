@@ -141,7 +141,7 @@ export default function ImportClient() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <main id="main-content" className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-3xl">
           {/* CLI運用注意バナー */}
           <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -187,7 +187,7 @@ export default function ImportClient() {
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   )
 }

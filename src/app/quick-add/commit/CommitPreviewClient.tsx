@@ -326,7 +326,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
       </header>
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
+      <main id="main-content" className="flex flex-1 overflow-hidden">
         {/* Left: summary + filter + list */}
         <div className="flex flex-1 flex-col gap-4 overflow-hidden p-4">
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -387,7 +387,7 @@ export default function CommitPreviewClient({ sessionId }: CommitPreviewClientPr
             />
           </div>
         )}
-      </div>
+      </main>
     </div>
   )
 }
