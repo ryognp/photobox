@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useId } from "react";
 import type { LocalItem } from "../types";
 import type { Scene, Tag, Person } from "@/lib/quick-add/masterClient";
 import { saveItemPrompt, updateItemMetadata } from "@/lib/quick-add/itemClient";
+import type { SaveMode } from "@/lib/quick-add/itemClient";
 import MetaForm from "./MetaForm";
 import BulkPromptPanel from "./BulkPromptPanel";
 
@@ -131,55 +132,10 @@ function ItemForm({
   const isDone = item.status === "done";
   const isEditable = isDone && isReady && !isCommitted;
 
-  async function handleSaveDraft() {
-    if (!item.serverId) return;
-    setPromptSaveState("saving");
-    setPromptSaveError(null);
-    try {
-      const updated = await saveItemPrompt(item.serverId, localPromptDraft, "draft");
-      onItemUpdated(updated);
-      setPromptSaveState("saved");
-    } catch (e) {
-      setPromptSaveError(e instanceof Error ? e.message : "保存に失敗しました");
-      setPromptSaveState("error");
-    }
-  }
-
-  async function handleSaveFilled() {
-    if (!item.serverId) return;
-    const draft = localPromptDraft.trim();
-    if (!draft) { setPromptSaveError("プロンプトを入力してください"); setPromptSaveState("error"); return; }
-    setPromptSaveState("saving");
-    setPromptSaveError(null);
-    try {
-      const updated = await saveItemPrompt(item.serverId, draft, "filled");
-      onItemUpdated(updated);
-      setPromptSaveState("saved");
-    } catch (e) {
-      setPromptSaveError(e instanceof Error ? e.message : "保存に失敗しました");
-      setPromptSaveState("error");
-    }
-  }
-
-  async function handleSaveAndNext() {
-    if (!item.serverId) return;
-    const draft = localPromptDraft.trim();
-    if (!draft) { setPromptSaveError("プロンプトを入力してください"); setPromptSaveState("error"); return; }
-    setPromptSaveState("saving");
-    setPromptSaveError(null);
-    try {
-      const updated = await saveItemPrompt(item.serverId, draft, "filled");
-      onItemUpdated(updated);
-      setPromptSaveState("saved");
-      onSelectNext();
-    } catch (e) {
-      setPromptSaveError(e instanceof Error ? e.message : "保存に失敗しました");
-      setPromptSaveState("error");
-    }
-  }
-
-  async function handleSaveMeta() {
-    if (!item.serverId) return;
+  // メタデータ(シーン/タグ/人物/評価/お気に入り/メモ)を保存する。
+  // handleSaveMeta と saveCurrentItem の両方から共通で呼ばれる。
+  async function saveCurrentMetadata(): Promise<boolean> {
+    if (!item.serverId) return false;
     setMetaSaveState("saving");
     setMetaSaveError(null);
     try {
@@ -193,10 +149,67 @@ function ItemForm({
       });
       onItemUpdated(updated);
       setMetaSaveState("saved");
+      return true;
     } catch (e) {
       setMetaSaveError(e instanceof Error ? e.message : "メタデータ保存に失敗しました");
       setMetaSaveState("error");
+      return false;
     }
+  }
+
+  // プロンプト本文を保存する。draft/filled いずれのモードも共通で呼ばれる。
+  async function saveCurrentPrompt(draft: string, mode: SaveMode): Promise<boolean> {
+    if (!item.serverId) return false;
+    setPromptSaveState("saving");
+    setPromptSaveError(null);
+    try {
+      const updated = await saveItemPrompt(item.serverId, draft, mode);
+      onItemUpdated(updated);
+      setPromptSaveState("saved");
+      return true;
+    } catch (e) {
+      setPromptSaveError(e instanceof Error ? e.message : "保存に失敗しました");
+      setPromptSaveState("error");
+      return false;
+    }
+  }
+
+  // 下書き保存/入力済みにする/保存して次へ、共通の保存フロー。
+  // メタデータ保存 → プロンプト保存 → (advance時のみ) 次のアイテムへ、の順で進め、
+  // いずれかが失敗したら後続(advance含む)を止める。
+  async function saveCurrentItem({ mode, advance }: { mode: SaveMode; advance: boolean }) {
+    if (!item.serverId) return;
+
+    const draft = mode === "filled" ? localPromptDraft.trim() : localPromptDraft;
+    if (mode === "filled" && !draft) {
+      setPromptSaveError("プロンプトを入力してください");
+      setPromptSaveState("error");
+      return;
+    }
+
+    const metaOk = await saveCurrentMetadata();
+    if (!metaOk) return;
+
+    const promptOk = await saveCurrentPrompt(draft, mode);
+    if (!promptOk) return;
+
+    if (advance) onSelectNext();
+  }
+
+  async function handleSaveDraft() {
+    await saveCurrentItem({ mode: "draft", advance: false });
+  }
+
+  async function handleSaveFilled() {
+    await saveCurrentItem({ mode: "filled", advance: false });
+  }
+
+  async function handleSaveAndNext() {
+    await saveCurrentItem({ mode: "filled", advance: true });
+  }
+
+  async function handleSaveMeta() {
+    await saveCurrentMetadata();
   }
 
   return (
@@ -230,15 +243,15 @@ function ItemForm({
           className="resize-none rounded-md border border-zinc-200 px-3 py-2 text-xs text-zinc-800 placeholder-zinc-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
         />
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void handleSaveDraft()} disabled={!isEditable || promptSaveState === "saving"}
+          <button type="button" onClick={() => void handleSaveDraft()} disabled={!isEditable || promptSaveState === "saving" || metaSaveState === "saving"}
             className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             下書き保存
           </button>
-          <button type="button" onClick={() => void handleSaveFilled()} disabled={!isEditable || promptSaveState === "saving"}
+          <button type="button" onClick={() => void handleSaveFilled()} disabled={!isEditable || promptSaveState === "saving" || metaSaveState === "saving"}
             className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             入力済みにする
           </button>
-          <button type="button" onClick={() => void handleSaveAndNext()} disabled={!isEditable || promptSaveState === "saving"}
+          <button type="button" onClick={() => void handleSaveAndNext()} disabled={!isEditable || promptSaveState === "saving" || metaSaveState === "saving"}
             className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             保存して次へ
           </button>

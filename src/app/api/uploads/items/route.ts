@@ -12,10 +12,9 @@ import { tempOriginalPath, tempThumbnailPath, tempPreviewPath } from "@/lib/uplo
 import { resolveSignedUrl } from "@/lib/signedUrl";
 import { createPerfLog } from "@/lib/perfLog";
 import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
+import { MAX_ORIGINAL_BYTES, MAX_TOTAL_BYTES, MAX_ORIGINAL_MB } from "@/lib/upload/uploadLimits";
 
 const BUCKET = "photobox-private";
-const MAX_ORIGINAL_BYTES = 3 * 1024 * 1024; // 3MB
-const MAX_TOTAL_BYTES = 4 * 1024 * 1024;    // 4MB
 
 type OptionalUploadResult = {
   ok: boolean;
@@ -106,7 +105,7 @@ export async function POST(request: NextRequest) {
 
   // 7. サイズチェック
   if (originalFile.size > MAX_ORIGINAL_BYTES) {
-    return err("PAYLOAD_TOO_LARGE", `original file exceeds ${MAX_ORIGINAL_BYTES / 1024 / 1024}MB limit`, 413);
+    return err("PAYLOAD_TOO_LARGE", `original file exceeds ${MAX_ORIGINAL_MB}MB limit`, 413);
   }
 
   const thumbnailFile = formData.get("thumbnail");

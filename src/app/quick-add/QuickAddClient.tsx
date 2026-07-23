@@ -7,6 +7,7 @@ import type { LocalItem } from "./types";
 import type { SignedUrls } from "@/lib/upload/uploadClient";
 import { uploadFile } from "@/lib/upload/uploadClient";
 import { shouldIgnoreArrowNav } from "@/lib/quick-add/keyboardNav";
+import { MAX_ORIGINAL_BYTES, MAX_ORIGINAL_MB } from "@/lib/upload/uploadLimits";
 import {
   loadStoredSession,
   saveSession,
@@ -42,7 +43,6 @@ type PendingRestore = StoredSession & {
   sessionItems: Record<string, unknown>[];
 };
 
-const MAX_FILE_SIZE = 3 * 1024 * 1024;
 const MAX_CONCURRENT = 2;
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -287,8 +287,8 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
         errors.push(`${f.name}: サポートされていないファイル形式です (JPEG/PNG/WebP のみ)`);
         continue;
       }
-      if (f.size > MAX_FILE_SIZE) {
-        errors.push(`${f.name}: ファイルサイズが 3MB を超えています`);
+      if (f.size > MAX_ORIGINAL_BYTES) {
+        errors.push(`${f.name}: ファイルサイズが ${MAX_ORIGINAL_MB}MB を超えています`);
         continue;
       }
       valid.push(f);
