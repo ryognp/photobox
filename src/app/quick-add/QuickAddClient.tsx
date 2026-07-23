@@ -526,7 +526,7 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
           プレビューへ →
         </button>
       </div>
-      <div className="flex flex-1 overflow-hidden">
+      <main id="main-content" className="flex flex-1 overflow-hidden">
         {/* Left pane */}
         <div className="flex w-64 flex-col overflow-hidden border-r border-zinc-200 bg-white">
           <UploadDropzone onFiles={handleFiles} />
@@ -573,7 +573,7 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
             />
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

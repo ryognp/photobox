@@ -526,7 +526,7 @@ function GalleryInner() {
       />
 
       {/* Body */}
-      <div className="flex flex-1 overflow-hidden">
+      <main id="main-content" className="flex flex-1 overflow-hidden">
         <FilterSidebar
           filters={filters}
           onChange={handleFilterChange}
@@ -574,7 +574,7 @@ function GalleryInner() {
             prefetchedError={state.detailError}
           />
         </div>
-      </div>
+      </main>
 
       {/* Mobile drawer (md未満でのみ表示) */}
       <MobileDetailDrawer
