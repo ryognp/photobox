@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef, useId } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useId, useCallback } from "react";
 import type { LocalItem } from "../types";
 import type { Scene, Tag, Person } from "@/lib/quick-add/masterClient";
 import { saveItemPrompt, updateItemMetadata } from "@/lib/quick-add/itemClient";
 import type { SaveMode } from "@/lib/quick-add/itemClient";
-import { isPromptDirty, isMetadataDirty, type PromptFields, type MetadataFields } from "@/lib/quick-add/itemDirty";
+import {
+  isPromptDirty,
+  isMetadataDirty,
+  canonicalizePrompt,
+  canonicalizeMetadata,
+  canAdvanceAfterSave,
+  type PromptFields,
+  type MetadataFields,
+} from "@/lib/quick-add/itemDirty";
 import MetaForm from "./MetaForm";
 import BulkPromptPanel from "./BulkPromptPanel";
 
@@ -116,20 +124,55 @@ function ItemForm({
 
   // 保存済み基準値(baseline)。key変更でItemFormごと再マウントされるため、
   // 初期値はローカルstateの初期値と同じ(=マウント直後はclean)。
-  // 保存成功時のみ、その保存処理が「リクエスト開始時に送信した値」で更新する
+  // baseline は常に canonical 値(サーバーが保存する意味上の値)で保持し、
+  // 保存成功時のみ「リクエスト開始時に実際へ送信した snapshot」で更新する
   // (通信完了時点の最新UI値ではない — 通信中の追加変更を dirty として残すため)。
   // render中に参照するため ref ではなく state で保持する(refをrender中に読むこと自体が禁止のため)。
-  const [promptBaseline, setPromptBaseline] = useState<PromptFields>({
-    promptDraft: (si?.promptDraft as string | null) ?? "",
+  const [promptBaseline, setPromptBaseline] = useState<PromptFields>(() =>
+    canonicalizePrompt({ promptDraft: (si?.promptDraft as string | null) ?? "" })
+  );
+  const [metaBaseline, setMetaBaseline] = useState<MetadataFields>(() =>
+    canonicalizeMetadata({
+      sceneId: (si?.sceneId as string | null) ?? null,
+      tagIds: (si?.tags as Array<{ tag: { id: string } }> | undefined)?.map((t) => t.tag.id) ?? [],
+      personIds: (si?.persons as Array<{ person: { id: string } }> | undefined)?.map((p) => p.person.id) ?? [],
+      rating: (si?.rating as number | null) ?? null,
+      isFavorite: (si?.isFavorite as boolean) ?? false,
+      notes: (si?.notes as string | null) ?? "",
+    })
+  );
+
+  // 最新UI値の同期ミラー。入力変更は必ず下の update* ラッパー経由で行い、
+  // state と同時にこの ref も更新する。async な保存処理の完了時点で
+  // 「保存開始時の closure が持つ古い state」ではなく最新UI値を確実に読むために使う。
+  const latestFieldsRef = useRef<{ prompt: PromptFields; meta: MetadataFields }>({
+    prompt: { promptDraft: (si?.promptDraft as string | null) ?? "" },
+    meta: {
+      sceneId: (si?.sceneId as string | null) ?? null,
+      tagIds: (si?.tags as Array<{ tag: { id: string } }> | undefined)?.map((t) => t.tag.id) ?? [],
+      personIds: (si?.persons as Array<{ person: { id: string } }> | undefined)?.map((p) => p.person.id) ?? [],
+      rating: (si?.rating as number | null) ?? null,
+      isFavorite: (si?.isFavorite as boolean) ?? false,
+      notes: (si?.notes as string | null) ?? "",
+    },
   });
-  const [metaBaseline, setMetaBaseline] = useState<MetadataFields>({
-    sceneId: (si?.sceneId as string | null) ?? null,
-    tagIds: (si?.tags as Array<{ tag: { id: string } }> | undefined)?.map((t) => t.tag.id) ?? [],
-    personIds: (si?.persons as Array<{ person: { id: string } }> | undefined)?.map((p) => p.person.id) ?? [],
-    rating: (si?.rating as number | null) ?? null,
-    isFavorite: (si?.isFavorite as boolean) ?? false,
-    notes: (si?.notes as string | null) ?? "",
-  });
+
+  function updateMetaFields(patch: Partial<MetadataFields>) {
+    latestFieldsRef.current = {
+      ...latestFieldsRef.current,
+      meta: { ...latestFieldsRef.current.meta, ...patch },
+    };
+  }
+  function updatePromptDraft(v: string) {
+    latestFieldsRef.current = { ...latestFieldsRef.current, prompt: { promptDraft: v } };
+    setLocalPromptDraft(v);
+  }
+  function updateSceneId(v: string | null) { updateMetaFields({ sceneId: v }); setLocalSceneId(v); }
+  function updateTagIds(ids: string[]) { updateMetaFields({ tagIds: ids }); setLocalTagIds(ids); }
+  function updatePersonIds(ids: string[]) { updateMetaFields({ personIds: ids }); setLocalPersonIds(ids); }
+  function updateRating(v: number | null) { updateMetaFields({ rating: v }); setLocalRating(v); }
+  function updateIsFavorite(v: boolean) { updateMetaFields({ isFavorite: v }); setLocalIsFavorite(v); }
+  function updateNotes(v: string) { updateMetaFields({ notes: v }); setLocalNotes(v); }
 
   // Register focus function
   useEffect(() => {
@@ -157,20 +200,32 @@ function ItemForm({
   const isDone = item.status === "done";
   const isEditable = isDone && isReady && !isCommitted;
 
-  // メタデータ(シーン/タグ/人物/評価/お気に入り/メモ)を保存する。
-  // handleSaveMeta と saveCurrentItem の両方から共通で呼ばれる。
-  async function saveCurrentMetadata(): Promise<boolean> {
+  // 保存操作全体(entry point)の同期的な排他ロック。state の disabled 表示は
+  // 表示用でしかないため、正本はこの ref。最初の await より前に取得し、
+  // finally で必ず解放する。ロック中の再入(連続クリック/連続ショートカット/
+  // 別の保存ボタン)は no-op。isSavingOp は同じ区間の表示用ミラー。
+  const saveLockRef = useRef(false);
+  const [isSavingOp, setIsSavingOp] = useState(false);
+
+  async function withSaveLock(fn: () => Promise<void>): Promise<void> {
+    if (saveLockRef.current) return;
+    saveLockRef.current = true;
+    setIsSavingOp(true);
+    // 親(InputPane → QuickAddClient)へは effect を挟まず、この場で同期通知する
+    onSavingChange(true);
+    try {
+      await fn();
+    } finally {
+      saveLockRef.current = false;
+      setIsSavingOp(false);
+      onSavingChange(false);
+    }
+  }
+
+  // snapshot(canonical化・配列コピー済み)をAPIへ送り、成功時はその snapshot を
+  // baseline にする。送信値と baseline 更新値は同じ snapshot から作る。
+  async function saveMetadataSnapshot(snapshot: MetadataFields): Promise<boolean> {
     if (!item.serverId) return false;
-    // リクエスト開始時点の値をスナップショットする。通信中にユーザーが値を
-    // 変更しても、baseline は「実際に送信した値」のまま更新しない。
-    const snapshot: MetadataFields = {
-      sceneId: localSceneId,
-      tagIds: localTagIds,
-      personIds: localPersonIds,
-      rating: localRating,
-      isFavorite: localIsFavorite,
-      notes: localNotes,
-    };
     setMetaSaveState("saving");
     setMetaSaveError(null);
     try {
@@ -180,7 +235,7 @@ function ItemForm({
         personIds: snapshot.personIds,
         rating: snapshot.rating,
         isFavorite: snapshot.isFavorite,
-        notes: snapshot.notes.trim() || null,
+        notes: snapshot.notes || null, // canonical(trim済み)なので "" → null
       });
       onItemUpdated(updated);
       setMetaBaseline(snapshot);
@@ -193,15 +248,12 @@ function ItemForm({
     }
   }
 
-  // プロンプト本文を保存する。draft/filled いずれのモードも共通で呼ばれる。
-  async function saveCurrentPrompt(draft: string, mode: SaveMode): Promise<boolean> {
+  async function savePromptSnapshot(snapshot: PromptFields, mode: SaveMode): Promise<boolean> {
     if (!item.serverId) return false;
-    // baseline は比較対象の localPromptDraft と同じ表現(トリム前)で揃える。
-    const snapshot: PromptFields = { promptDraft: localPromptDraft };
     setPromptSaveState("saving");
     setPromptSaveError(null);
     try {
-      const updated = await saveItemPrompt(item.serverId, draft, mode);
+      const updated = await saveItemPrompt(item.serverId, snapshot.promptDraft, mode);
       onItemUpdated(updated);
       setPromptBaseline(snapshot);
       setPromptSaveState("saved");
@@ -214,25 +266,42 @@ function ItemForm({
   }
 
   // 下書き保存/入力済みにする/保存して次へ、共通の保存フロー。
+  // 保存操作開始時点で両領域の snapshot を取り、APIへはその値だけを送る。
   // メタデータ保存 → プロンプト保存 → (advance時のみ) 次のアイテムへ、の順で進め、
   // いずれかが失敗したら後続(advance含む)を止める。
+  // advance は、両API成功後に「最新UI値(latestFieldsRef)」と「今回保存した snapshot」を
+  // 比較し、保存中に有効な変更が加えられていない場合のみ行う(保存中の追加編集を
+  // remount で破棄しないため)。
   async function saveCurrentItem({ mode, advance }: { mode: SaveMode; advance: boolean }) {
-    if (!item.serverId) return;
+    if (!item.serverId || saveLockRef.current) return;
 
-    const draft = mode === "filled" ? localPromptDraft.trim() : localPromptDraft;
-    if (mode === "filled" && !draft) {
+    const promptSnapshot = canonicalizePrompt(latestFieldsRef.current.prompt);
+    const metaSnapshot = canonicalizeMetadata(latestFieldsRef.current.meta);
+
+    if (mode === "filled" && !promptSnapshot.promptDraft) {
       setPromptSaveError("プロンプトを入力してください");
       setPromptSaveState("error");
       return;
     }
 
-    const metaOk = await saveCurrentMetadata();
-    if (!metaOk) return;
+    await withSaveLock(async () => {
+      const metaOk = await saveMetadataSnapshot(metaSnapshot);
+      if (!metaOk) return;
 
-    const promptOk = await saveCurrentPrompt(draft, mode);
-    if (!promptOk) return;
+      const promptOk = await savePromptSnapshot(promptSnapshot, mode);
+      if (!promptOk) return;
 
-    if (advance) onSelectNext();
+      if (!advance) return;
+      const ok = canAdvanceAfterSave({
+        currentPrompt: latestFieldsRef.current.prompt,
+        savedPrompt: promptSnapshot,
+        currentMetadata: latestFieldsRef.current.meta,
+        savedMetadata: metaSnapshot,
+      });
+      if (ok) onSelectNext();
+      // ok でない場合は現在の画像に留まる。追加変更は dirty として残り、
+      // baseline は snapshot のままなので遷移ガードが機能する。
+    });
   }
 
   async function handleSaveDraft() {
@@ -248,7 +317,11 @@ function ItemForm({
   }
 
   async function handleSaveMeta() {
-    await saveCurrentMetadata();
+    if (!item.serverId || saveLockRef.current) return;
+    const metaSnapshot = canonicalizeMetadata(latestFieldsRef.current.meta);
+    await withSaveLock(async () => {
+      await saveMetadataSnapshot(metaSnapshot);
+    });
   }
 
   // 未保存変更の判定。プロンプト領域・メタデータ領域を別々に比較し、
@@ -266,7 +339,6 @@ function ItemForm({
     metaBaseline,
   );
   const hasUnsavedChanges = promptDirty || metaDirty;
-  const isSavingNow = promptSaveState === "saving" || metaSaveState === "saving";
 
   useEffect(() => {
     onDirtyChange(hasUnsavedChanges);
@@ -275,16 +347,19 @@ function ItemForm({
     return () => onDirtyChange(false);
   }, [hasUnsavedChanges, onDirtyChange]);
 
+  // saving の親への通知は withSaveLock 内で同期的に行う(effectを挟まない)。
+  // ここでは保存中にunmountされた場合の後始末だけを行う。
   useEffect(() => {
-    onSavingChange(isSavingNow);
     return () => onSavingChange(false);
-  }, [isSavingNow, onSavingChange]);
+  }, [onSavingChange]);
 
   // Cmd/Ctrl+Enter からボタンと同じ保存処理を呼べるように公開する。
-  // ローカルstateに依存するクロージャを常に最新に保つため、depsを付けず
-  // 毎レンダー後に更新する(focusRefの登録パターンを踏襲しつつ、
-  // 頻繁に変化するローカル値を参照する必要があるための意図的な違い)。
-  useEffect(() => {
+  // useLayoutEffect(deps なし)で毎レンダーcommit と同期して登録し直すことで、
+  // 古い closure が残る隙間をなくす。アイテム切替(key変更による remount)時は
+  // 旧フォームの cleanup が新フォームの登録より前に同期実行されるため、
+  // 切替直後のショートカットが前アイテムの handler を呼ぶことはない。
+  // 編集不可時は null(ショートカット側で no-op)。unmount/Mode B 切替時も null に戻る。
+  useLayoutEffect(() => {
     if (!saveAndNextRef) return;
     saveAndNextRef.current = isEditable ? () => { void handleSaveAndNext(); } : null;
     return () => {
@@ -317,21 +392,21 @@ function ItemForm({
           aria-labelledby={promptLabelId}
           rows={7}
           value={localPromptDraft}
-          onChange={(e) => { setLocalPromptDraft(e.target.value); setPromptSaveError(null); }}
+          onChange={(e) => { updatePromptDraft(e.target.value); setPromptSaveError(null); }}
           disabled={!isEditable}
           placeholder={!isDone ? "アップロード完了後に入力できます" : isCommitted ? "コミット済みのため編集できません" : "プロンプトを入力…"}
           className="resize-none rounded-md border border-zinc-200 px-3 py-2 text-xs text-zinc-800 placeholder-zinc-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
         />
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void handleSaveDraft()} disabled={!isEditable || promptSaveState === "saving" || metaSaveState === "saving"}
+          <button type="button" onClick={() => void handleSaveDraft()} disabled={!isEditable || isSavingOp}
             className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             下書き保存
           </button>
-          <button type="button" onClick={() => void handleSaveFilled()} disabled={!isEditable || promptSaveState === "saving" || metaSaveState === "saving"}
+          <button type="button" onClick={() => void handleSaveFilled()} disabled={!isEditable || isSavingOp}
             className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             入力済みにする
           </button>
-          <button type="button" onClick={() => void handleSaveAndNext()} disabled={!isEditable || promptSaveState === "saving" || metaSaveState === "saving"}
+          <button type="button" onClick={() => void handleSaveAndNext()} disabled={!isEditable || isSavingOp}
             className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
             保存して次へ
           </button>
@@ -352,12 +427,12 @@ function ItemForm({
           sceneId={localSceneId} tagIds={localTagIds} personIds={localPersonIds}
           rating={localRating} isFavorite={localIsFavorite} notes={localNotes}
           scenes={scenes} tags={tags} persons={persons} disabled={!isEditable}
-          onSceneChange={setLocalSceneId} onTagsChange={setLocalTagIds} onPersonsChange={setLocalPersonIds}
-          onRatingChange={setLocalRating} onFavoriteChange={setLocalIsFavorite} onNotesChange={setLocalNotes}
+          onSceneChange={updateSceneId} onTagsChange={updateTagIds} onPersonsChange={updatePersonIds}
+          onRatingChange={updateRating} onFavoriteChange={updateIsFavorite} onNotesChange={updateNotes}
           onSceneCreated={onSceneCreated} onTagCreated={onTagCreated} onPersonCreated={onPersonCreated}
           createScene={createScene} createTag={createTag} createPerson={createPerson}
         />
-        <button type="button" onClick={() => void handleSaveMeta()} disabled={!isEditable || metaSaveState === "saving"}
+        <button type="button" onClick={() => void handleSaveMeta()} disabled={!isEditable || isSavingOp}
           className="self-start rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1">
           メタデータ保存
         </button>
@@ -398,16 +473,20 @@ export default function InputPane({
   const [mode, setMode] = useState<Mode>("A");
   // ItemForm(Mode A)の現在の未保存/保存中状態をミラーする。
   // Mode Aの切替ボタン自身のガードに使い、かつ親(QuickAddClient)へも転送する。
+  // 転送は useEffect を挟まず、ItemForm からの通知と同一の同期 callback 内で行う
+  // (保存ロック開始と同じタイミングで QuickAddClient 側の ref まで更新されるようにする)。
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    onDirtyChange(isDirty);
-  }, [isDirty, onDirtyChange]);
+  const handleItemDirtyChange = useCallback((dirty: boolean) => {
+    setIsDirty(dirty);
+    onDirtyChange(dirty);
+  }, [onDirtyChange]);
 
-  useEffect(() => {
-    onSavingChange(isSaving);
-  }, [isSaving, onSavingChange]);
+  const handleItemSavingChange = useCallback((saving: boolean) => {
+    setIsSaving(saving);
+    onSavingChange(saving);
+  }, [onSavingChange]);
 
   function handleModeChange(next: Mode) {
     if (next === mode) return;
@@ -450,7 +529,7 @@ export default function InputPane({
               onSceneCreated={onSceneCreated} onTagCreated={onTagCreated} onPersonCreated={onPersonCreated}
               createScene={createScene} createTag={createTag} createPerson={createPerson}
               focusRef={focusRef} onSelectNext={onSelectNext}
-              onDirtyChange={setIsDirty} onSavingChange={setIsSaving} saveAndNextRef={saveAndNextRef}
+              onDirtyChange={handleItemDirtyChange} onSavingChange={handleItemSavingChange} saveAndNextRef={saveAndNextRef}
             />
           ) : (
             <div className="flex h-full items-center justify-center">

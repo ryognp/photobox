@@ -77,11 +77,21 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
   const saveAndNextRef: MutableRefObject<(() => void) | null> = useRef(null);
 
   // 選択中アイテム(ItemForm)の未保存変更・保存中フラグ。
-  // 表示上のdisabled化にはstateを、キーボードハンドラ内の最新値参照にはrefを使う。
-  const [isSelectedItemDirty, setIsSelectedItemDirty] = useState(false);
+  // InputPane からの通知 callback 内で ref(キーボードハンドラ/遷移ガード用の最新値)と
+  // 表示用 state を同期的に同時更新する(effect を挟むと保存開始とガード有効化の間に
+  // 隙間ができるため)。dirty は表示に使わないので ref のみ。
   const [isSelectedItemSaving, setIsSelectedItemSaving] = useState(false);
   const isDirtyRef = useRef(false);
   const isSavingRef = useRef(false);
+
+  const handleSelectedItemDirtyChange = useCallback((dirty: boolean) => {
+    isDirtyRef.current = dirty;
+  }, []);
+
+  const handleSelectedItemSavingChange = useCallback((saving: boolean) => {
+    isSavingRef.current = saving;
+    setIsSelectedItemSaving(saving);
+  }, []);
 
   // Sync refs in effects (never during render per React Compiler rules)
   useEffect(() => {
@@ -95,14 +105,6 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
   useEffect(() => {
     selectedClientIdRef.current = selectedClientId;
   }, [selectedClientId]);
-
-  useEffect(() => {
-    isDirtyRef.current = isSelectedItemDirty;
-  }, [isSelectedItemDirty]);
-
-  useEffect(() => {
-    isSavingRef.current = isSelectedItemSaving;
-  }, [isSelectedItemSaving]);
 
   // 画像切替・モード切替・プレビュー遷移など「今の入力内容を捨てて進む」操作の
   // 共通ガード。保存中は何もしない(保存完了までブロック)。未保存変更があれば
@@ -195,10 +197,14 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
       }
 
       if (meta && e.key === "Enter") {
+        // IME変換中のEnterは preventDefault より前に判定して素通しする
+        // (変換操作を妨げず、保存もadvanceも行わない)
+        if (e.isComposing) return;
         e.preventDefault();
-        if (e.isComposing) return; // 日本語IME変換確定のEnterと衝突させない
-        if (isSavingRef.current) return; // 保存中の再実行は無視
+        if (e.repeat) return; // 押しっぱなしの自動リピートは補助的に無視
+        if (isSavingRef.current) return; // 保存中の再実行は無視(正本はInputPane側の保存ロック)
         // 「保存して次へ」ボタンと同じ処理(InputPane側で登録)を呼ぶ。
+        // 編集不可/Mode B/unmount時は null が登録されているため no-op。
         // 保存に成功した場合のみ、InputPane側が onSelectNext() で次へ進める。
         saveAndNextRef.current?.();
         return;
@@ -608,8 +614,8 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
               createPerson={handleCreatePerson}
               focusRef={focusPromptRef}
               onSelectNext={handleSelectNext}
-              onDirtyChange={setIsSelectedItemDirty}
-              onSavingChange={setIsSelectedItemSaving}
+              onDirtyChange={handleSelectedItemDirtyChange}
+              onSavingChange={handleSelectedItemSavingChange}
               saveAndNextRef={saveAndNextRef}
             />
           )}

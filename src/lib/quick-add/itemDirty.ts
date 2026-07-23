@@ -11,6 +11,29 @@ export type MetadataFields = {
   notes: string;
 };
 
+// サーバーが実際に保存する意味上の値(canonical)へ正規化する。
+// - promptDraft: サーバー側(PUT /api/uploads/items/[id]/prompt)で trim() されるため trim。
+//   空(null保存)は canonical 上 "" で表す。
+// - notes: 送信時に trim() || null とし、サーバーもそのまま保存するため trim。
+//   null 相当は canonical 上 "" で表す。
+// 前後空白だけの差はサーバー上で保存されない差なので、dirty 判定に含めない。
+export function canonicalizePrompt(fields: PromptFields): PromptFields {
+  return { promptDraft: fields.promptDraft.trim() };
+}
+
+// tagIds/personIds は配列をコピーして返す。呼び出し元がスナップショットとして
+// 保持したあとに元の配列が変更されても、スナップショットは影響を受けない。
+export function canonicalizeMetadata(fields: MetadataFields): MetadataFields {
+  return {
+    sceneId: fields.sceneId,
+    tagIds: [...fields.tagIds],
+    personIds: [...fields.personIds],
+    rating: fields.rating,
+    isFavorite: fields.isFavorite,
+    notes: fields.notes.trim(),
+  };
+}
+
 // tagIds/personIds は並び順に意味がないため、集合として比較する。
 function sameIdSet(a: string[], b: string[]): boolean {
   const setA = new Set(a);
@@ -22,16 +45,35 @@ function sameIdSet(a: string[], b: string[]): boolean {
   return true;
 }
 
+// 両引数とも内部で canonical 化してから比較する(生のUI値をそのまま渡してよい)。
 export function isPromptDirty(current: PromptFields, saved: PromptFields): boolean {
-  return current.promptDraft !== saved.promptDraft;
+  return canonicalizePrompt(current).promptDraft !== canonicalizePrompt(saved).promptDraft;
 }
 
 export function isMetadataDirty(current: MetadataFields, saved: MetadataFields): boolean {
-  if (current.sceneId !== saved.sceneId) return true;
-  if (current.rating !== saved.rating) return true;
-  if (current.isFavorite !== saved.isFavorite) return true;
-  if (current.notes !== saved.notes) return true;
-  if (!sameIdSet(current.tagIds, saved.tagIds)) return true;
-  if (!sameIdSet(current.personIds, saved.personIds)) return true;
+  const c = canonicalizeMetadata(current);
+  const s = canonicalizeMetadata(saved);
+  if (c.sceneId !== s.sceneId) return true;
+  if (c.rating !== s.rating) return true;
+  if (c.isFavorite !== s.isFavorite) return true;
+  if (c.notes !== s.notes) return true;
+  if (!sameIdSet(c.tagIds, s.tagIds)) return true;
+  if (!sameIdSet(c.personIds, s.personIds)) return true;
   return false;
+}
+
+// 「保存して次へ」系の保存が両方成功したあと、自動で次のアイテムへ進んでよいかの判定。
+// 保存中(リクエスト送信後)にユーザーが値を変更していた場合 — つまり最新UI値が
+// 今回実際に保存された snapshot と canonical 比較で異なる場合 — は進まない。
+// 保存中に変更しても、元の canonical 値へ戻されていれば進んでよい。
+export function canAdvanceAfterSave(args: {
+  currentPrompt: PromptFields;
+  savedPrompt: PromptFields;
+  currentMetadata: MetadataFields;
+  savedMetadata: MetadataFields;
+}): boolean {
+  return (
+    !isPromptDirty(args.currentPrompt, args.savedPrompt) &&
+    !isMetadataDirty(args.currentMetadata, args.savedMetadata)
+  );
 }

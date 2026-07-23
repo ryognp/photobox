@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { isPromptDirty, isMetadataDirty, type MetadataFields } from "@/lib/quick-add/itemDirty";
+import {
+  isPromptDirty,
+  isMetadataDirty,
+  canonicalizeMetadata,
+  canAdvanceAfterSave,
+  type MetadataFields,
+  type PromptFields,
+} from "@/lib/quick-add/itemDirty";
 
 const BASE_META: MetadataFields = {
   sceneId: "scene-1",
@@ -63,7 +70,119 @@ describe("isMetadataDirty", () => {
   });
 });
 
-describe("組み合わせシナリオ(メタデータ保存成功後の baseline 更新を想定)", () => {
+describe("canonical化 (サーバー保存値と同じ意味での比較)", () => {
+  it("プロンプトの前後空白だけが異なる場合はclean", () => {
+    expect(isPromptDirty({ promptDraft: "  hello  " }, { promptDraft: "hello" })).toBe(false);
+  });
+
+  it("プロンプトが空白のみの場合、空文字baselineとclean", () => {
+    expect(isPromptDirty({ promptDraft: "   " }, { promptDraft: "" })).toBe(false);
+  });
+
+  it("メモの前後空白だけが異なる場合はclean", () => {
+    expect(isMetadataDirty({ ...BASE_META, notes: "  memo  " }, BASE_META)).toBe(false);
+  });
+
+  it("メモが空白のみの場合、空文字baselineとclean", () => {
+    const base: MetadataFields = { ...BASE_META, notes: "" };
+    expect(isMetadataDirty({ ...base, notes: "   " }, base)).toBe(false);
+  });
+
+  it("canonical化後も実際の本文変更はdirty", () => {
+    expect(isPromptDirty({ promptDraft: "  hello world  " }, { promptDraft: "hello" })).toBe(true);
+    expect(isMetadataDirty({ ...BASE_META, notes: "  memo2  " }, BASE_META)).toBe(true);
+  });
+
+  it("canonical化してもタグ・人物の順序無視は維持される", () => {
+    const current: MetadataFields = {
+      ...BASE_META,
+      tagIds: ["tag-b", "tag-a"],
+      notes: "  memo  ",
+    };
+    expect(isMetadataDirty(current, BASE_META)).toBe(false);
+  });
+
+  it("canonicalizeMetadataのtagIds/personIdsは元配列の後続変更から独立している", () => {
+    const original: MetadataFields = { ...BASE_META, tagIds: ["tag-a"], personIds: ["person-1"] };
+    const snapshot = canonicalizeMetadata(original);
+    original.tagIds.push("tag-x");
+    original.personIds.push("person-x");
+    expect(snapshot.tagIds).toEqual(["tag-a"]);
+    expect(snapshot.personIds).toEqual(["person-1"]);
+  });
+});
+
+describe("canAdvanceAfterSave (保存中に編集された場合のadvance判定)", () => {
+  const savedPrompt: PromptFields = { promptDraft: "saved text" };
+  const savedMeta: MetadataFields = { ...BASE_META };
+
+  it("保存後の最新値がsnapshotと一致すればadvance可能", () => {
+    expect(
+      canAdvanceAfterSave({
+        currentPrompt: { promptDraft: "saved text" },
+        savedPrompt,
+        currentMetadata: { ...BASE_META },
+        savedMetadata: savedMeta,
+      }),
+    ).toBe(true);
+  });
+
+  it("保存中にプロンプトが変わればadvance不可", () => {
+    expect(
+      canAdvanceAfterSave({
+        currentPrompt: { promptDraft: "saved text + edited during save" },
+        savedPrompt,
+        currentMetadata: { ...BASE_META },
+        savedMetadata: savedMeta,
+      }),
+    ).toBe(false);
+  });
+
+  it("保存中にタグが変わればadvance不可", () => {
+    expect(
+      canAdvanceAfterSave({
+        currentPrompt: { promptDraft: "saved text" },
+        savedPrompt,
+        currentMetadata: { ...BASE_META, tagIds: ["tag-a", "tag-b", "tag-new"] },
+        savedMetadata: savedMeta,
+      }),
+    ).toBe(false);
+  });
+
+  it("保存中に人物・シーン・評価・お気に入り・メモのいずれかが変わればadvance不可", () => {
+    const cases: Array<Partial<MetadataFields>> = [
+      { personIds: ["person-1", "person-2"] },
+      { sceneId: "scene-2" },
+      { rating: 5 },
+      { isFavorite: true },
+      { notes: "edited during save" },
+    ];
+    for (const patch of cases) {
+      expect(
+        canAdvanceAfterSave({
+          currentPrompt: { promptDraft: "saved text" },
+          savedPrompt,
+          currentMetadata: { ...BASE_META, ...patch },
+          savedMetadata: savedMeta,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it("保存中に変更後、元のcanonical値へ戻した場合はadvance可能", () => {
+    // 前後空白の付与・タグの並び替えは canonical 上は同一値なので advance してよい
+    expect(
+      canAdvanceAfterSave({
+        currentPrompt: { promptDraft: "  saved text  " },
+        savedPrompt,
+        currentMetadata: { ...BASE_META, tagIds: ["tag-b", "tag-a"], notes: " memo " },
+        savedMetadata: savedMeta,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("組み合わせシナリオ(保存成功時のbaseline更新を想定)", () => {
   it("メタデータ保存成功後も、未保存プロンプトがあればdirty", () => {
     // メタデータは保存成功して baseline が更新された(=現在値と一致)想定
     const metaDirty = isMetadataDirty(BASE_META, BASE_META);
@@ -75,9 +194,9 @@ describe("組み合わせシナリオ(メタデータ保存成功後の baseline
   });
 
   it("メタデータ成功・プロンプト失敗時、プロンプトのdirtyが残る", () => {
-    // メタデータ保存成功 → baseline はメタデータの現在値と一致
+    // メタデータ保存成功 → baseline はメタデータの送信snapshotと一致
     const metaCurrent: MetadataFields = { ...BASE_META, tagIds: ["tag-a", "tag-b", "tag-c"] };
-    const metaBaselineAfterSuccess = metaCurrent; // 保存成功時、baselineはsnapshotそのもの
+    const metaBaselineAfterSuccess = canonicalizeMetadata(metaCurrent);
     // プロンプトは保存に失敗したため、baseline は更新されず古いまま
     const promptBaselineBeforeFailedSave = { promptDraft: "元の文章" };
     const promptCurrent = { promptDraft: "編集後の文章" };
@@ -89,7 +208,7 @@ describe("組み合わせシナリオ(メタデータ保存成功後の baseline
   it("リクエスト中に変更された値は、誤って保存済み扱いにならない", () => {
     // リクエスト開始時点のスナップショットが baseline になるべきで、
     // 通信完了時点の最新UI値を baseline にしてはいけない。
-    const snapshotAtRequestStart: MetadataFields = { ...BASE_META };
+    const snapshotAtRequestStart: MetadataFields = canonicalizeMetadata(BASE_META);
     // 通信中にユーザーがタグを追加した(最新UI値)
     const latestUiValueAtCompletion: MetadataFields = {
       ...BASE_META,
