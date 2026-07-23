@@ -12,17 +12,22 @@ interface ColumnMappingProps {
 type MappingField = {
   key: keyof ColumnMapping
   label: string
+  /** Phase 10-38-B: short Japanese name for the select's aria-label
+   *  (`${ariaLabel}に対応する列`) — kept separate from `label` so the
+   *  visible table-cell text (which includes the English field name in
+   *  parentheses) doesn't get read out verbatim by screen readers. */
+  ariaLabel: string
   required: boolean
 }
 
 const FIELDS: MappingField[] = [
-  { key: "imageUrlColumn", label: "画像URL (image_url)", required: true },
-  { key: "promptColumn",   label: "プロンプト (prompt)",  required: false },
-  { key: "personColumn",   label: "人物 (person)",        required: false },
-  { key: "sceneColumn",    label: "シーン (scene)",        required: false },
-  { key: "tagsColumn",     label: "タグ (tags)",           required: false },
-  { key: "ratingColumn",   label: "評価 (rating)",        required: false },
-  { key: "notesColumn",    label: "メモ (notes)",         required: false },
+  { key: "imageUrlColumn", label: "画像URL (image_url)", ariaLabel: "画像URL", required: true },
+  { key: "promptColumn",   label: "プロンプト (prompt)",  ariaLabel: "プロンプト", required: false },
+  { key: "personColumn",   label: "人物 (person)",        ariaLabel: "人物",   required: false },
+  { key: "sceneColumn",    label: "シーン (scene)",        ariaLabel: "シーン",  required: false },
+  { key: "tagsColumn",     label: "タグ (tags)",           ariaLabel: "タグ",   required: false },
+  { key: "ratingColumn",   label: "評価 (rating)",        ariaLabel: "評価",   required: false },
+  { key: "notesColumn",    label: "メモ (notes)",         ariaLabel: "メモ",   required: false },
 ]
 
 export default function ColumnMapping({ result, mapping, onChange, onBack }: ColumnMappingProps) {
@@ -44,7 +49,7 @@ export default function ColumnMapping({ result, mapping, onChange, onBack }: Col
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {FIELDS.map(({ key, label, required }) => (
+            {FIELDS.map(({ key, label, ariaLabel, required }) => (
               <tr key={key}>
                 <td className="px-4 py-2.5">
                   <span className="text-zinc-800">{label}</span>
@@ -54,6 +59,7 @@ export default function ColumnMapping({ result, mapping, onChange, onBack }: Col
                   <select
                     value={mapping[key] ?? ""}
                     onChange={(e) => onChange({ [key]: e.target.value || null })}
+                    aria-label={`${ariaLabel}に対応する列`}
                     className={`rounded-md border px-2 py-1 text-sm text-zinc-800 outline-none focus:ring-1 focus:ring-blue-500 ${
                       required && !mapping[key]
                         ? "border-red-300 focus:border-red-400"
