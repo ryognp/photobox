@@ -5,6 +5,7 @@ import type { LocalItem } from "../types";
 import type { Scene, Tag, Person } from "@/lib/quick-add/masterClient";
 import { saveItemPrompt, updateItemMetadata } from "@/lib/quick-add/itemClient";
 import type { SaveMode } from "@/lib/quick-add/itemClient";
+import { isPromptDirty, isMetadataDirty, type PromptFields, type MetadataFields } from "@/lib/quick-add/itemDirty";
 import MetaForm from "./MetaForm";
 import BulkPromptPanel from "./BulkPromptPanel";
 
@@ -26,6 +27,10 @@ type Props = {
   createPerson: (name: string) => Promise<Person>;
   focusRef?: React.MutableRefObject<(() => void) | null>;
   onSelectNext: () => void;
+  // Phase 10-41-A: 未保存変更ガード + Cmd/Ctrl+Enter共通化のため追加
+  onDirtyChange: (dirty: boolean) => void;
+  onSavingChange: (saving: boolean) => void;
+  saveAndNextRef?: React.MutableRefObject<(() => void) | null>;
 };
 
 type SaveState = "saving" | "saved" | "error" | null;
@@ -75,6 +80,9 @@ function ItemForm({
   createPerson,
   focusRef,
   onSelectNext,
+  onDirtyChange,
+  onSavingChange,
+  saveAndNextRef,
 }: ItemFormProps) {
   const si = item.serverItem;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -106,6 +114,23 @@ function ItemForm({
   const [metaSaveState, setMetaSaveState] = useState<SaveState>(null);
   const [metaSaveError, setMetaSaveError] = useState<string | null>(null);
 
+  // 保存済み基準値(baseline)。key変更でItemFormごと再マウントされるため、
+  // 初期値はローカルstateの初期値と同じ(=マウント直後はclean)。
+  // 保存成功時のみ、その保存処理が「リクエスト開始時に送信した値」で更新する
+  // (通信完了時点の最新UI値ではない — 通信中の追加変更を dirty として残すため)。
+  // render中に参照するため ref ではなく state で保持する(refをrender中に読むこと自体が禁止のため)。
+  const [promptBaseline, setPromptBaseline] = useState<PromptFields>({
+    promptDraft: (si?.promptDraft as string | null) ?? "",
+  });
+  const [metaBaseline, setMetaBaseline] = useState<MetadataFields>({
+    sceneId: (si?.sceneId as string | null) ?? null,
+    tagIds: (si?.tags as Array<{ tag: { id: string } }> | undefined)?.map((t) => t.tag.id) ?? [],
+    personIds: (si?.persons as Array<{ person: { id: string } }> | undefined)?.map((p) => p.person.id) ?? [],
+    rating: (si?.rating as number | null) ?? null,
+    isFavorite: (si?.isFavorite as boolean) ?? false,
+    notes: (si?.notes as string | null) ?? "",
+  });
+
   // Register focus function
   useEffect(() => {
     if (focusRef) {
@@ -136,18 +161,29 @@ function ItemForm({
   // handleSaveMeta と saveCurrentItem の両方から共通で呼ばれる。
   async function saveCurrentMetadata(): Promise<boolean> {
     if (!item.serverId) return false;
+    // リクエスト開始時点の値をスナップショットする。通信中にユーザーが値を
+    // 変更しても、baseline は「実際に送信した値」のまま更新しない。
+    const snapshot: MetadataFields = {
+      sceneId: localSceneId,
+      tagIds: localTagIds,
+      personIds: localPersonIds,
+      rating: localRating,
+      isFavorite: localIsFavorite,
+      notes: localNotes,
+    };
     setMetaSaveState("saving");
     setMetaSaveError(null);
     try {
       const updated = await updateItemMetadata(item.serverId, {
-        sceneId: localSceneId,
-        tagIds: localTagIds,
-        personIds: localPersonIds,
-        rating: localRating,
-        isFavorite: localIsFavorite,
-        notes: localNotes.trim() || null,
+        sceneId: snapshot.sceneId,
+        tagIds: snapshot.tagIds,
+        personIds: snapshot.personIds,
+        rating: snapshot.rating,
+        isFavorite: snapshot.isFavorite,
+        notes: snapshot.notes.trim() || null,
       });
       onItemUpdated(updated);
+      setMetaBaseline(snapshot);
       setMetaSaveState("saved");
       return true;
     } catch (e) {
@@ -160,11 +196,14 @@ function ItemForm({
   // プロンプト本文を保存する。draft/filled いずれのモードも共通で呼ばれる。
   async function saveCurrentPrompt(draft: string, mode: SaveMode): Promise<boolean> {
     if (!item.serverId) return false;
+    // baseline は比較対象の localPromptDraft と同じ表現(トリム前)で揃える。
+    const snapshot: PromptFields = { promptDraft: localPromptDraft };
     setPromptSaveState("saving");
     setPromptSaveError(null);
     try {
       const updated = await saveItemPrompt(item.serverId, draft, mode);
       onItemUpdated(updated);
+      setPromptBaseline(snapshot);
       setPromptSaveState("saved");
       return true;
     } catch (e) {
@@ -211,6 +250,47 @@ function ItemForm({
   async function handleSaveMeta() {
     await saveCurrentMetadata();
   }
+
+  // 未保存変更の判定。プロンプト領域・メタデータ領域を別々に比較し、
+  // 親へは論理和(いずれかがdirtyならtrue)で通知する。
+  const promptDirty = isPromptDirty({ promptDraft: localPromptDraft }, promptBaseline);
+  const metaDirty = isMetadataDirty(
+    {
+      sceneId: localSceneId,
+      tagIds: localTagIds,
+      personIds: localPersonIds,
+      rating: localRating,
+      isFavorite: localIsFavorite,
+      notes: localNotes,
+    },
+    metaBaseline,
+  );
+  const hasUnsavedChanges = promptDirty || metaDirty;
+  const isSavingNow = promptSaveState === "saving" || metaSaveState === "saving";
+
+  useEffect(() => {
+    onDirtyChange(hasUnsavedChanges);
+    // アンマウント時(アイテム切替/Mode切替)は、もうこのフォームの状態を
+    // 親が気にする必要がないため false に戻す。
+    return () => onDirtyChange(false);
+  }, [hasUnsavedChanges, onDirtyChange]);
+
+  useEffect(() => {
+    onSavingChange(isSavingNow);
+    return () => onSavingChange(false);
+  }, [isSavingNow, onSavingChange]);
+
+  // Cmd/Ctrl+Enter からボタンと同じ保存処理を呼べるように公開する。
+  // ローカルstateに依存するクロージャを常に最新に保つため、depsを付けず
+  // 毎レンダー後に更新する(focusRefの登録パターンを踏襲しつつ、
+  // 頻繁に変化するローカル値を参照する必要があるための意図的な違い)。
+  useEffect(() => {
+    if (!saveAndNextRef) return;
+    saveAndNextRef.current = isEditable ? () => { void handleSaveAndNext(); } : null;
+    return () => {
+      saveAndNextRef.current = null;
+    };
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -311,19 +391,43 @@ export default function InputPane({
   createPerson,
   focusRef,
   onSelectNext,
+  onDirtyChange,
+  onSavingChange,
+  saveAndNextRef,
 }: Props) {
   const [mode, setMode] = useState<Mode>("A");
+  // ItemForm(Mode A)の現在の未保存/保存中状態をミラーする。
+  // Mode Aの切替ボタン自身のガードに使い、かつ親(QuickAddClient)へも転送する。
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    onDirtyChange(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  useEffect(() => {
+    onSavingChange(isSaving);
+  }, [isSaving, onSavingChange]);
+
+  function handleModeChange(next: Mode) {
+    if (next === mode) return;
+    if (isSaving) return;
+    if (next === "B" && isDirty) {
+      if (!window.confirm("未保存の変更があります。保存せずに移動しますか？")) return;
+    }
+    setMode(next);
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Mode tabs */}
       <div role="group" aria-label="入力モード" className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-2">
-        <button type="button" onClick={() => setMode("A")} aria-pressed={mode === "A"}
-          className={["rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1", mode === "A" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
+        <button type="button" onClick={() => handleModeChange("A")} aria-pressed={mode === "A"} disabled={isSaving}
+          className={["rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 disabled:opacity-50", mode === "A" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
           単体入力 (A)
         </button>
-        <button type="button" onClick={() => setMode("B")} aria-pressed={mode === "B"}
-          className={["rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1", mode === "B" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
+        <button type="button" onClick={() => handleModeChange("B")} aria-pressed={mode === "B"} disabled={isSaving}
+          className={["rounded px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 disabled:opacity-50", mode === "B" ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"].join(" ")}>
           一括適用 (B)
         </button>
         {checkedClientIds.length > 0 && (
@@ -346,6 +450,7 @@ export default function InputPane({
               onSceneCreated={onSceneCreated} onTagCreated={onTagCreated} onPersonCreated={onPersonCreated}
               createScene={createScene} createTag={createTag} createPerson={createPerson}
               focusRef={focusRef} onSelectNext={onSelectNext}
+              onDirtyChange={setIsDirty} onSavingChange={setIsSaving} saveAndNextRef={saveAndNextRef}
             />
           ) : (
             <div className="flex h-full items-center justify-center">
