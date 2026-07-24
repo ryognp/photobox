@@ -27,6 +27,9 @@ export default function QuickAddHeader({ workspaceName, userEmail, itemCount, se
   // 通常クリック/Enter(guard) → preventDefaultしてonNavigateへ委譲(defaultとrouter.pushが
   // 両方走らないよう1回だけ遷移させる)。修飾キー/中クリック(bypass) → ブラウザ標準動作に
   // 任せる(preventDefaultしない)。保存中(block) → preventDefaultして何もしない。
+  // 右クリック(button=2)・戻る/進むボタン・defaultPrevented済み(ignore)は
+  // Quick Add側では一切処理しない — preventDefaultせず、onNavigateも呼ばず、
+  // ブラウザ標準のコンテキストメニュー/リンクURLコピー等にそのまま委譲する。
   function handleActivate(e: MouseEvent<HTMLAnchorElement>, href: string) {
     const activation = classifyNavigationActivation(
       {
@@ -49,7 +52,12 @@ export default function QuickAddHeader({ workspaceName, userEmail, itemCount, se
       e.preventDefault();
       return;
     }
-    // bypass: 何もしない(新規タブ等のブラウザ標準動作、または既にdefaultPrevented済み)
+    if (activation === "bypass") {
+      // 新規タブ等のブラウザ標準動作に任せる(preventDefaultしない)
+      return;
+    }
+    // ignore: 右クリック等の対象外操作、または既にdefaultPrevented済み。
+    // 何もしない — ブラウザ/OSの標準動作(コンテキストメニュー等)に完全に委ねる。
   }
 
   return (
