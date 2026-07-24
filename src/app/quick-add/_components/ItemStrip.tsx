@@ -10,6 +10,8 @@ type Props = {
   // NEW: multi-select for Mode B
   checkedClientIds: string[];
   onToggleCheck: (clientId: string) => void;
+  // Phase 10-41-A: 保存中は選択を無効化(視覚的にも表現する)
+  disabled?: boolean;
 };
 
 export default function ItemStrip({
@@ -18,6 +20,7 @@ export default function ItemStrip({
   onSelect,
   checkedClientIds,
   onToggleCheck,
+  disabled = false,
 }: Props) {
   if (items.length === 0) {
     return (
@@ -42,6 +45,7 @@ export default function ItemStrip({
           onClick={() => onSelect(item.clientId)}
           isChecked={checkedClientIds.includes(item.clientId)}
           onToggleCheck={() => onToggleCheck(item.clientId)}
+          disabled={disabled}
         />
       ))}
     </div>

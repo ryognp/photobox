@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MutableRefObject } from "react";
 import type { LocalItem } from "./types";
@@ -73,6 +73,25 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
 
   // focusPromptRef: passed to InputPane so it can register its focus function
   const focusPromptRef: MutableRefObject<(() => void) | null> = useRef(null);
+  // saveAndNextRef: Cmd/Ctrl+Enter が「保存して次へ」ボタンと同じ処理を呼ぶための窓口
+  const saveAndNextRef: MutableRefObject<(() => void) | null> = useRef(null);
+
+  // 選択中アイテム(ItemForm)の未保存変更・保存中フラグ。
+  // InputPane からの通知 callback 内で ref(キーボードハンドラ/遷移ガード用の最新値)と
+  // 表示用 state を同期的に同時更新する(effect を挟むと保存開始とガード有効化の間に
+  // 隙間ができるため)。dirty は表示に使わないので ref のみ。
+  const [isSelectedItemSaving, setIsSelectedItemSaving] = useState(false);
+  const isDirtyRef = useRef(false);
+  const isSavingRef = useRef(false);
+
+  const handleSelectedItemDirtyChange = useCallback((dirty: boolean) => {
+    isDirtyRef.current = dirty;
+  }, []);
+
+  const handleSelectedItemSavingChange = useCallback((saving: boolean) => {
+    isSavingRef.current = saving;
+    setIsSelectedItemSaving(saving);
+  }, []);
 
   // Sync refs in effects (never during render per React Compiler rules)
   useEffect(() => {
@@ -86,6 +105,17 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
   useEffect(() => {
     selectedClientIdRef.current = selectedClientId;
   }, [selectedClientId]);
+
+  // 画像切替・モード切替・プレビュー遷移など「今の入力内容を捨てて進む」操作の
+  // 共通ガード。保存中は何もしない(保存完了までブロック)。未保存変更があれば
+  // ネイティブ確認ダイアログを挟み、キャンセルなら何もしない。
+  const requestTransition = useCallback((action: () => void) => {
+    if (isSavingRef.current) return;
+    if (isDirtyRef.current) {
+      if (!window.confirm("未保存の変更があります。保存せずに移動しますか？")) return;
+    }
+    action();
+  }, []);
 
   // Revoke object URLs on unmount
   useEffect(() => {
@@ -167,15 +197,16 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
       }
 
       if (meta && e.key === "Enter") {
+        // IME変換中のEnterは preventDefault より前に判定して素通しする
+        // (変換操作を妨げず、保存もadvanceも行わない)
+        if (e.isComposing) return;
         e.preventDefault();
-        // Cmd+Enter: save as filled + next — delegated to InputPane via focusRef convention
-        // Navigate to next after action
-        const currentItems = itemsRef.current;
-        const currentId = selectedClientIdRef.current;
-        const idx = currentItems.findIndex((i) => i.clientId === currentId);
-        if (idx >= 0 && idx < currentItems.length - 1) {
-          setSelectedClientId(currentItems[idx + 1].clientId);
-        }
+        if (e.repeat) return; // 押しっぱなしの自動リピートは補助的に無視
+        if (isSavingRef.current) return; // 保存中の再実行は無視(正本はInputPane側の保存ロック)
+        // 「保存して次へ」ボタンと同じ処理(InputPane側で登録)を呼ぶ。
+        // 編集不可/Mode B/unmount時は null が登録されているため no-op。
+        // 保存に成功した場合のみ、InputPane側が onSelectNext() で次へ進める。
+        saveAndNextRef.current?.();
         return;
       }
 
@@ -185,7 +216,10 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
           const currentItems = itemsRef.current;
           const currentId = selectedClientIdRef.current;
           const idx = currentItems.findIndex((i) => i.clientId === currentId);
-          if (idx > 0) setSelectedClientId(currentItems[idx - 1].clientId);
+          if (idx > 0) {
+            const targetId = currentItems[idx - 1].clientId;
+            requestTransition(() => setSelectedClientId(targetId));
+          }
           return;
         }
         if (e.key === "ArrowRight") {
@@ -194,7 +228,8 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
           const currentId = selectedClientIdRef.current;
           const idx = currentItems.findIndex((i) => i.clientId === currentId);
           if (idx >= 0 && idx < currentItems.length - 1) {
-            setSelectedClientId(currentItems[idx + 1].clientId);
+            const targetId = currentItems[idx + 1].clientId;
+            requestTransition(() => setSelectedClientId(targetId));
           }
           return;
         }
@@ -203,7 +238,7 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [requestTransition]);
 
   function updateItem(clientId: string, patch: Partial<LocalItem>) {
     setItems((prev) =>
@@ -519,8 +554,8 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
       )}
       <div className="flex shrink-0 items-center justify-end border-b border-zinc-200 bg-white px-4 py-1.5">
         <button
-          onClick={() => void handleGoToPreview()}
-          disabled={!sessionId || items.length === 0}
+          onClick={() => requestTransition(() => void handleGoToPreview())}
+          disabled={!sessionId || items.length === 0 || isSelectedItemSaving}
           className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           プレビューへ →
@@ -533,14 +568,23 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
           <ItemStrip
             items={items}
             selectedClientId={selectedClientId}
-            onSelect={setSelectedClientId}
+            onSelect={(clientId) => {
+              if (clientId === selectedClientId) return;
+              requestTransition(() => setSelectedClientId(clientId));
+            }}
             checkedClientIds={checkedClientIds}
             onToggleCheck={handleToggleCheck}
+            disabled={isSelectedItemSaving}
           />
         </div>
         {/* Center pane */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <PreviewPane selectedItem={selectedItem} items={items} onNavigate={handleNavigate} />
+          <PreviewPane
+            selectedItem={selectedItem}
+            items={items}
+            onNavigate={(direction) => requestTransition(() => handleNavigate(direction))}
+            disabled={isSelectedItemSaving}
+          />
         </div>
         {/* Right pane */}
         <div
@@ -570,6 +614,9 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
               createPerson={handleCreatePerson}
               focusRef={focusPromptRef}
               onSelectNext={handleSelectNext}
+              onDirtyChange={handleSelectedItemDirtyChange}
+              onSavingChange={handleSelectedItemSavingChange}
+              saveAndNextRef={saveAndNextRef}
             />
           )}
         </div>

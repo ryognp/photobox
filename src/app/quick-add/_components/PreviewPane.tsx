@@ -6,6 +6,8 @@ type Props = {
   selectedItem: LocalItem | null;
   items: LocalItem[];
   onNavigate: (direction: "prev" | "next") => void;
+  // Phase 10-41-A: 保存中は前へ/次へを無効化する
+  disabled?: boolean;
 };
 
 function formatBytes(bytes: number): string {
@@ -23,7 +25,7 @@ function getPreviewSrc(item: LocalItem): string | null {
   );
 }
 
-export default function PreviewPane({ selectedItem, items, onNavigate }: Props) {
+export default function PreviewPane({ selectedItem, items, onNavigate, disabled = false }: Props) {
   if (!selectedItem) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
@@ -84,7 +86,7 @@ export default function PreviewPane({ selectedItem, items, onNavigate }: Props) 
       <div className="flex items-center justify-between border-t border-zinc-200 bg-white px-4 py-2">
         <button
           onClick={() => onNavigate("prev")}
-          disabled={!hasPrev}
+          disabled={!hasPrev || disabled}
           className="rounded px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           ← 前へ
@@ -94,7 +96,7 @@ export default function PreviewPane({ selectedItem, items, onNavigate }: Props) 
         </span>
         <button
           onClick={() => onNavigate("next")}
-          disabled={!hasNext}
+          disabled={!hasNext || disabled}
           className="rounded px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
         >
           次へ →

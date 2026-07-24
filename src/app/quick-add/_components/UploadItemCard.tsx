@@ -9,6 +9,8 @@ type Props = {
   // NEW
   isChecked: boolean;
   onToggleCheck: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  // Phase 10-41-A: 保存中は選択ボタンを無効化する(チェックボックスは対象外)
+  disabled?: boolean;
 };
 
 function StatusBadge({ item }: { item: LocalItem }) {
@@ -39,7 +41,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function UploadItemCard({ item, isSelected, onClick, isChecked, onToggleCheck }: Props) {
+export default function UploadItemCard({ item, isSelected, onClick, isChecked, onToggleCheck, disabled = false }: Props) {
   const name = item.file?.name ?? (item.serverItem?.originalName as string | undefined) ?? "unknown";
   const size = item.file?.size;
 
@@ -59,8 +61,9 @@ export default function UploadItemCard({ item, isSelected, onClick, isChecked, o
       />
       <button
         onClick={onClick}
+        disabled={disabled}
         className={[
-          "flex w-full items-center gap-2 py-2 pr-2 pl-9 text-left hover:bg-zinc-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
+          "flex w-full items-center gap-2 py-2 pr-2 pl-9 text-left hover:bg-zinc-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
           isSelected ? "ring-2 ring-inset ring-blue-500 bg-blue-50" : "",
         ].join(" ")}
       >
