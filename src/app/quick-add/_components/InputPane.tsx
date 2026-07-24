@@ -11,8 +11,11 @@ import {
   canonicalizePrompt,
   canonicalizeMetadata,
   canAdvanceAfterSave,
+  derivePromptStatus,
+  parsePromptStatus,
   type PromptFields,
   type MetadataFields,
+  type PromptStatusValue,
 } from "@/lib/quick-add/itemDirty";
 import MetaForm from "./MetaForm";
 import BulkPromptPanel from "./BulkPromptPanel";
@@ -100,6 +103,12 @@ function ItemForm({
   const [localPromptDraft, setLocalPromptDraft] = useState(
     (si?.promptDraft as string | null) ?? ""
   );
+  // 「ユーザーが最後に要求した保存status」(intent)。初期値はサーバー保存値。
+  // 保存操作開始時に derivePromptStatus の結果へ更新し、失敗しても要求値のまま残す
+  // (本文が同じでも DRAFT→FILLED 等の未完了の保存意図を dirty として検知するため)。
+  const [localPromptStatus, setLocalPromptStatus] = useState<PromptStatusValue>(() =>
+    parsePromptStatus(si?.promptStatus)
+  );
   const [localSceneId, setLocalSceneId] = useState<string | null>(
     (si?.sceneId as string | null) ?? null
   );
@@ -129,7 +138,10 @@ function ItemForm({
   // (通信完了時点の最新UI値ではない — 通信中の追加変更を dirty として残すため)。
   // render中に参照するため ref ではなく state で保持する(refをrender中に読むこと自体が禁止のため)。
   const [promptBaseline, setPromptBaseline] = useState<PromptFields>(() =>
-    canonicalizePrompt({ promptDraft: (si?.promptDraft as string | null) ?? "" })
+    canonicalizePrompt({
+      promptDraft: (si?.promptDraft as string | null) ?? "",
+      promptStatus: parsePromptStatus(si?.promptStatus),
+    })
   );
   const [metaBaseline, setMetaBaseline] = useState<MetadataFields>(() =>
     canonicalizeMetadata({
@@ -146,7 +158,10 @@ function ItemForm({
   // state と同時にこの ref も更新する。async な保存処理の完了時点で
   // 「保存開始時の closure が持つ古い state」ではなく最新UI値を確実に読むために使う。
   const latestFieldsRef = useRef<{ prompt: PromptFields; meta: MetadataFields }>({
-    prompt: { promptDraft: (si?.promptDraft as string | null) ?? "" },
+    prompt: {
+      promptDraft: (si?.promptDraft as string | null) ?? "",
+      promptStatus: parsePromptStatus(si?.promptStatus),
+    },
     meta: {
       sceneId: (si?.sceneId as string | null) ?? null,
       tagIds: (si?.tags as Array<{ tag: { id: string } }> | undefined)?.map((t) => t.tag.id) ?? [],
@@ -164,8 +179,19 @@ function ItemForm({
     };
   }
   function updatePromptDraft(v: string) {
-    latestFieldsRef.current = { ...latestFieldsRef.current, prompt: { promptDraft: v } };
+    latestFieldsRef.current = {
+      ...latestFieldsRef.current,
+      prompt: { ...latestFieldsRef.current.prompt, promptDraft: v },
+    };
     setLocalPromptDraft(v);
+  }
+  // 保存操作開始時に「今回要求するstatus」を現在値へ反映する(ref/state同時・同期)。
+  function updatePromptStatusIntent(status: PromptStatusValue) {
+    latestFieldsRef.current = {
+      ...latestFieldsRef.current,
+      prompt: { ...latestFieldsRef.current.prompt, promptStatus: status },
+    };
+    setLocalPromptStatus(status);
   }
   function updateSceneId(v: string | null) { updateMetaFields({ sceneId: v }); setLocalSceneId(v); }
   function updateTagIds(ids: string[]) { updateMetaFields({ tagIds: ids }); setLocalTagIds(ids); }
@@ -255,10 +281,17 @@ function ItemForm({
     try {
       const updated = await saveItemPrompt(item.serverId, snapshot.promptDraft, mode);
       onItemUpdated(updated);
-      setPromptBaseline(snapshot);
+      // baseline の status は API レスポンスの promptStatus を正本とする。
+      // 欠落時はサーバーと同じ規則で導出済みの snapshot 側の値へフォールバック。
+      setPromptBaseline({
+        promptDraft: snapshot.promptDraft,
+        promptStatus: parsePromptStatus(updated.promptStatus, snapshot.promptStatus),
+      });
       setPromptSaveState("saved");
       return true;
     } catch (e) {
+      // 失敗時: baseline は更新しない。status intent も要求値のまま残る
+      // (本文が同じでも intent ≠ baseline なら dirty が維持される)。
       setPromptSaveError(e instanceof Error ? e.message : "保存に失敗しました");
       setPromptSaveState("error");
       return false;
@@ -275,16 +308,28 @@ function ItemForm({
   async function saveCurrentItem({ mode, advance }: { mode: SaveMode; advance: boolean }) {
     if (!item.serverId || saveLockRef.current) return;
 
-    const promptSnapshot = canonicalizePrompt(latestFieldsRef.current.prompt);
+    const draftCanonical = latestFieldsRef.current.prompt.promptDraft.trim();
     const metaSnapshot = canonicalizeMetadata(latestFieldsRef.current.meta);
 
-    if (mode === "filled" && !promptSnapshot.promptDraft) {
+    // filled の空文字 validation を通過した後にのみ FILLED intent を設定する
+    if (mode === "filled" && !draftCanonical) {
       setPromptSaveError("プロンプトを入力してください");
       setPromptSaveState("error");
       return;
     }
 
+    // 今回の保存が要求する promptStatus(サーバーの normalizePromptStatus と同規則)
+    const requestedStatus = derivePromptStatus(draftCanonical, mode);
+    const promptSnapshot: PromptFields = {
+      promptDraft: draftCanonical,
+      promptStatus: requestedStatus,
+    };
+
     await withSaveLock(async () => {
+      // ロック取得後・最初の await より前に、要求 status を現在値(ref/state)へ同期反映。
+      // 保存が失敗しても intent は残り、baseline と異なれば dirty が維持される。
+      updatePromptStatusIntent(requestedStatus);
+
       const metaOk = await saveMetadataSnapshot(metaSnapshot);
       if (!metaOk) return;
 
@@ -326,7 +371,10 @@ function ItemForm({
 
   // 未保存変更の判定。プロンプト領域・メタデータ領域を別々に比較し、
   // 親へは論理和(いずれかがdirtyならtrue)で通知する。
-  const promptDirty = isPromptDirty({ promptDraft: localPromptDraft }, promptBaseline);
+  const promptDirty = isPromptDirty(
+    { promptDraft: localPromptDraft, promptStatus: localPromptStatus },
+    promptBaseline,
+  );
   const metaDirty = isMetadataDirty(
     {
       sceneId: localSceneId,
