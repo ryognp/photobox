@@ -499,6 +499,12 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
 
   const router = useRouter();
 
+  // QuickAddHeader の Gallery/Masters/Import 共通の遷移窓口(Phase 10-41-B)。
+  // dirty/saving判定を複製せず requestTransition() をそのまま再利用する。
+  const handleHeaderNavigate = useCallback((href: string) => {
+    requestTransition(() => router.push(href));
+  }, [requestTransition, router]);
+
   async function handleGoToPreview() {
     if (!sessionId || items.length === 0) return;
     try {
@@ -526,6 +532,8 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
         userEmail={userEmail}
         itemCount={items.length}
         sessionId={sessionId}
+        isSaving={isSelectedItemSaving}
+        onNavigate={handleHeaderNavigate}
       />
       {pendingRestore && (
         <RestoreSessionBanner
