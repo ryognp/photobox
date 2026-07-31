@@ -17,37 +17,57 @@ datasource db {
 // ================================================================
 
 enum UploadStatus {
-  PENDING    // DB INSERT 直後（Storage アップロード前）
-  UPLOADING  // API Route で Storage PUT 中
-  READY      // Storage PUT 完了
-  ERROR      // Storage PUT 失敗
+  PENDING // DB INSERT 直後（Storage アップロード前）
+  UPLOADING // API Route で Storage PUT 中
+  READY // Storage PUT 完了
+  ERROR // Storage PUT 失敗
 }
 
 enum PromptStatus {
-  EMPTY   // 未入力
-  DRAFT   // 入力中（確定前）
-  FILLED  // 入力済み（保存済み）
+  EMPTY // 未入力
+  DRAFT // 入力中（確定前）
+  FILLED // 入力済み（保存済み）
 }
 
 enum DuplicateStatus {
-  UNCHECKED  // チェック未実施
-  CLEAN      // 重複なし
-  DUPLICATE  // 重複あり（ユーザーの skip 選択待ち）
-  SKIPPED    // ユーザーが skip を選択済み
+  UNCHECKED // チェック未実施
+  CLEAN // 重複なし
+  DUPLICATE // 重複あり（ユーザーの skip 選択待ち）
+  SKIPPED // ユーザーが skip を選択済み
 }
 
 enum CommitStatus {
-  PENDING      // 未コミット
-  IN_PROGRESS  // コミット処理中（クラッシュ検出用）
-  COMMITTED    // 正式保存済み（skip 完了も含む）
-  FAILED       // コミット失敗（リトライ可能）
+  PENDING // 未コミット
+  IN_PROGRESS // コミット処理中（クラッシュ検出用）
+  COMMITTED // 正式保存済み（skip 完了も含む）
+  FAILED // コミット失敗（リトライ可能）
 }
 
 enum SessionStatus {
-  ACTIVE      // 入力中
-  PREVIEWING  // CommitPreview 表示中
-  COMMITTED   // 全アイテムがコミット済み
-  ABANDONED   // 破棄済み
+  ACTIVE // 入力中
+  PREVIEWING // CommitPreview 表示中
+  COMMITTED // 全アイテムがコミット済み
+  ABANDONED // 破棄済み
+}
+
+// Phase 10-43 (Direct Upload): UploadIntent の状態。
+// UPLOADING / UPLOADED は「サーバーが直接観測できない状態」なので DB には持たない
+// （direct upload の完了はサーバーが Storage object を実測して初めて確定する）。
+enum UploadIntentStatus {
+  PREPARED // signed upload URL 発行済み（client の upload 完了は未確認）
+  FINALIZING // finalize lease 取得済み（検証〜UploadItem 作成の途中）
+  FINALIZED // 検証成功し UploadItem を作成済み
+  FAILED // 検証 fatal または finalize 放棄
+  EXPIRED // intentFinalizeDeadlineAt を超過
+  CANCELLED // 明示的な取り消し
+}
+
+// staging / canonical / variant object の物理削除進捗。
+// storage-first invariant: 削除成功前に intent 行を消さない。
+enum IntentStorageCleanupStatus {
+  PENDING
+  DONE
+  FAILED
 }
 
 enum ImageStatus {
@@ -57,9 +77,9 @@ enum ImageStatus {
 }
 
 enum ImagePurgeStatus {
-  NONE    // 未purge（初期状態）
-  PURGED  // storage 物理削除済み
-  FAILED  // purge 試行が失敗（次回再試行対象）
+  NONE // 未purge（初期状態）
+  PURGED // storage 物理削除済み
+  FAILED // purge 試行が失敗（次回再試行対象）
 }
 
 enum PromptVersionType {
@@ -274,13 +294,13 @@ model Image {
   storagePurgedAt    DateTime?        @map("storage_purged_at")
   storagePurgeError  String?          @map("storage_purge_error")
 
-  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  scene        Scene?       @relation(fields: [sceneId], references: [id], onDelete: SetNull)
-  importBatch  ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
-  prompt       Prompt?
-  imageTags    ImageTag[]
-  imagePersons ImagePerson[]
-  analyses     ImageAnalysis[]
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scene          Scene?          @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  importBatch    ImportBatch?    @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  prompt         Prompt?
+  imageTags      ImageTag[]
+  imagePersons   ImagePerson[]
+  analyses       ImageAnalysis[]
   tagSuggestions TagSuggestion[]
 
   // Uniqueness of (workspaceId, fileHash) is enforced by a PARTIAL unique index
@@ -357,9 +377,9 @@ model Prompt {
   translationStartedAt   DateTime?         @map("translation_started_at")
   translationError       String?           @map("translation_error")
 
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  image       Image         @relation(fields: [imageId], references: [id], onDelete: Cascade)
-  promptGroup PromptGroup?  @relation(fields: [promptGroupId], references: [id], onDelete: SetNull)
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  image       Image           @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  promptGroup PromptGroup?    @relation(fields: [promptGroupId], references: [id], onDelete: SetNull)
   versions    PromptVersion[]
 
   @@index([workspaceId])
@@ -402,8 +422,21 @@ model UploadSession {
   updatedAt   DateTime      @updatedAt @map("updated_at")
   committedAt DateTime?     @map("committed_at")
 
-  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  items     UploadItem[]
+  // Phase 10-43-B1: sortOrder の予約カウンタ。
+  // 従来の MAX(sort_order)+1 は並行 upload (MAX_CONCURRENT=2) で同値を返し得るため、
+  // DB の atomic increment を唯一の発番元にする。旧 multipart route が直接 INSERT
+  // している移行期間中は trigger がこのカウンタを追従させる（後退はしない）。
+  nextUploadSortOrder Int @default(0) @map("next_upload_sort_order")
+
+  // Phase 10-43-B1: session 単位の cleanup claim。
+  // 有効な claim 中は prepare / finalize を開始させない（intent 単位 claim だけでは
+  // session 物理削除との競合を閉じられないため）。
+  cleanupLeaseUntil   DateTime? @map("cleanup_lease_until")
+  cleanupAttemptToken String?   @map("cleanup_attempt_token") @db.VarChar(36)
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  items         UploadItem[]
+  uploadIntents UploadIntent[]
 
   // composite FK の参照先として必須
   // UploadItem が [sessionId, workspaceId] → [id, workspaceId] で参照する
@@ -412,6 +445,100 @@ model UploadSession {
   @@index([workspaceId, createdAt])
   @@index([userId])
   @@map("upload_sessions")
+}
+
+// Phase 10-43 (Direct Upload): prepare → direct upload → finalize の予約レコード。
+// UploadItem は finalize がサーバー側で全検証に成功したときにのみ作られる（G-1）。
+// そのため UploadItem 側の「サーバー確定値のみ保存」という契約は変更しない。
+//
+// client 申告値（declared*）は事前拒否と暫定 ext 決定のためだけに使い、正本にしない。
+// clientFileHash は prepare 時に固定（hash commitment）し、finalize では Storage 実測
+// hash と照合する。finalize request は intentId だけを受け取る。
+//
+// uploadItemId は FK を張らない — 既存の duplicateImageId / committedImageId と同じ方針。
+// FK を張ると UploadItem の DELETE 意味論（storage-first で行削除する既存処理）が
+// 変わってしまうため、参照整合はアプリ側で扱う。
+model UploadIntent {
+  id          String @id @default(cuid())
+  workspaceId String @map("workspace_id")
+  sessionId   String @map("session_id")
+  userId      String @map("user_id") // Supabase Auth uid（既存 UploadSession と同様に冗長保持）
+
+  // finalize 成功時に UploadItem.id として採用する予約 ID。staging path 生成にも使う。
+  reservedUploadItemId String @unique @map("reserved_upload_item_id")
+  // client が LocalItem 作成時に 1 度だけ発行する idempotency key。
+  clientUploadId       String @map("client_upload_id")
+  // prepare payload の canonical fingerprint (sha256 hex)。同一 clientUploadId で
+  // payload が違う場合は再応答せず IDEMPOTENCY_CONFLICT にする。
+  requestFingerprint   String @map("request_fingerprint") @db.VarChar(64)
+
+  status UploadIntentStatus @default(PREPARED)
+
+  // client 申告（immutable。hint であり正本ではない）
+  declaredOriginalName String @map("declared_original_name") @db.VarChar(255)
+  declaredMimeType     String @map("declared_mime_type") @db.VarChar(32)
+  declaredSizeBytes    Int    @map("declared_size_bytes")
+  clientFileHash       String @map("client_file_hash") @db.VarChar(64)
+
+  // staging: client token が書ける唯一の path。canonical: server のみが書く path。
+  stagingOriginalPath   String  @map("staging_original_path")
+  canonicalOriginalPath String? @map("canonical_original_path")
+
+  // 予約済み sortOrder（UploadSession.nextUploadSortOrder の atomic increment 結果）
+  reservedSortOrder     Int    @map("reserved_sort_order")
+  // variant 生成プロファイルを prepare 時に固定し、deploy 世代をまたぐ retry でも
+  // 内容の異なる variant を作らない。
+  variantProfileVersion String @map("variant_profile_version") @db.VarChar(16)
+
+  // 期限の三分割。issued token expiry <= intentFinalizeDeadlineAt < storageCleanupNotBefore
+  // を常に満たすため、token 再発行は tokenIssueDeadlineAt までに限る。
+  tokenIssueDeadlineAt     DateTime @map("token_issue_deadline_at")
+  intentFinalizeDeadlineAt DateTime @map("intent_finalize_deadline_at")
+  storageCleanupNotBefore  DateTime @map("storage_cleanup_not_before")
+
+  // 最新の signed upload token の発行時刻／期限（DB create → URL 発行の順のため nullable）
+  signedUploadIssuedAt  DateTime? @map("signed_upload_issued_at")
+  signedUploadExpiresAt DateTime? @map("signed_upload_expires_at")
+
+  // finalize lease（stale worker の DB 書き込みは attemptToken 条件で排除する）
+  finalizeStartedAt    DateTime? @map("finalize_started_at")
+  finalizeLeaseUntil   DateTime? @map("finalize_lease_until")
+  finalizeAttemptCount Int       @default(0) @map("finalize_attempt_count")
+  finalizeAttemptToken String?   @map("finalize_attempt_token") @db.VarChar(36)
+
+  // cleanup claim（finalize lease と相互排他）
+  cleanupLeaseUntil   DateTime? @map("cleanup_lease_until")
+  cleanupAttemptToken String?   @map("cleanup_attempt_token") @db.VarChar(36)
+
+  // Storage 物理削除の進捗。DONE は storageCleanupNotBefore 以降の削除成功時のみ。
+  storageCleanupStatus        IntentStorageCleanupStatus @default(PENDING) @map("storage_cleanup_status")
+  storageCleanupAttemptCount  Int                        @default(0) @map("storage_cleanup_attempt_count")
+  storageCleanedAt            DateTime?                  @map("storage_cleaned_at")
+  storageCleanupLastErrorCode String?                    @map("storage_cleanup_last_error_code") @db.VarChar(64)
+
+  finalizedAt DateTime? @map("finalized_at")
+  failedAt    DateTime? @map("failed_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  // 分類コードと短い定型文だけ。ファイル名・provider の生 response・token は保存しない。
+  lastErrorCode   String? @map("last_error_code") @db.VarChar(64)
+  lastErrorDetail String? @map("last_error_detail") @db.VarChar(256)
+
+  // finalize 成功時のみ設定。FK は張らない（上のコメント参照）。
+  uploadItemId String? @unique @map("upload_item_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  session UploadSession @relation(fields: [sessionId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  @@unique([sessionId, clientUploadId])
+  @@index([sessionId, status])
+  @@index([status, intentFinalizeDeadlineAt])
+  @@index([status, finalizeLeaseUntil])
+  @@index([storageCleanupStatus, storageCleanupNotBefore])
+  @@index([workspaceId, userId])
+  @@map("upload_intents")
 }
 
 model UploadItem {
@@ -449,9 +576,9 @@ model UploadItem {
   promptDraft String? @map("prompt_draft")
 
   // メタデータ入力
-  sceneId    String?  @map("scene_id")
+  sceneId    String? @map("scene_id")
   rating     Int?
-  isFavorite Boolean  @default(false) @map("is_favorite")
+  isFavorite Boolean @default(false) @map("is_favorite")
   notes      String?
 
   // commit retry 対応
@@ -472,8 +599,8 @@ model UploadItem {
 
   // composite FK: [sessionId, workspaceId] → UploadSession[id, workspaceId]
   // DB 層で「アイテムのセッションが同じ workspace に属すること」を保証
-  session UploadSession    @relation(fields: [sessionId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
-  scene   Scene?           @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  session UploadSession      @relation(fields: [sessionId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  scene   Scene?             @relation(fields: [sceneId], references: [id], onDelete: SetNull)
   tags    UploadItemTag[]
   persons UploadItemPerson[]
 
