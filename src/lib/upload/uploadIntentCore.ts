@@ -61,6 +61,11 @@ export const STORAGE_CLEANUP_NOT_BEFORE_HOURS = 25;
 // Supabase の signed upload token は固定 2 時間（P0 で TTL 7,200 秒を実測）。
 export const SIGNED_UPLOAD_TOKEN_TTL_MS = 2 * HOUR_MS;
 
+// variant 生成プロファイルの固定 version。prepare 時に intent へ焼き込み、
+// deploy 世代をまたぐ retry でも内容の異なる variant を作らないための単一の定義。
+// 文字列を route などへ散在させず、必ずこの constant を参照する。
+export const CURRENT_VARIANT_PROFILE_VERSION = "v1";
+
 export type IntentDeadlines = {
   tokenIssueDeadlineAt: Date;
   intentFinalizeDeadlineAt: Date;
