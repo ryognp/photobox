@@ -1,5 +1,7 @@
 import "server-only";
 
+import { Prisma } from "@/generated/prisma/client";
+
 // Phase 10-43-B1: sortOrder の唯一の発番元。
 //
 // 従来の `aggregate({ _max: { sortOrder } }) + 1`（POST /api/uploads/items）は
@@ -12,12 +14,12 @@ import "server-only";
 //
 // B1 ではまだ route へ接続しない（prepare API で使用する）。
 
-// tx / prisma のどちらでも渡せる最小インターフェース。
-// raw を使うのは「UPDATE ... RETURNING」を 1 往復で行うため
-// （Prisma の update は increment 後の値を返せるが、行が無い場合の分岐と
-// 条件付き更新を同じ形で扱いたいので raw に寄せる）。
+// reserveTranslationTargets と同じ DI 契約 — 呼び出し元は Prisma の
+// transaction client（`prisma.$transaction(tx => ...)` の tx）をそのまま渡せる。
+// table/column 名は固定の tagged template（Prisma.sql）でのみ組み立て、
+// session id は必ず bind parameter として渡す（文字列補間はしない）。
 export type SortOrderReservationClient = {
-  $queryRaw<T = unknown>(query: TemplateStringsArray | { sql: string }, ...values: unknown[]): Promise<T>;
+  $queryRaw<T = unknown>(query: Prisma.Sql): Promise<T>;
 };
 
 export type ReserveSortOrderResult =
@@ -31,18 +33,18 @@ type CounterRow = { next_upload_sort_order: number };
  *
  * 予約値は「increment 前の値」= 返却された次の空き番号。
  * 同一 session に対する同時呼び出しは行ロックで直列化されるため重複しない。
+ * transaction 内で呼び、transaction が rollback されれば increment も戻る。
  */
 export async function reserveSortOrder(
-  client: { $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T> },
+  client: SortOrderReservationClient,
   sessionId: string,
 ): Promise<ReserveSortOrderResult> {
-  const rows = await client.$queryRawUnsafe<CounterRow[]>(
-    `UPDATE "upload_sessions"
-        SET "next_upload_sort_order" = "next_upload_sort_order" + 1
-      WHERE "id" = $1
-      RETURNING "next_upload_sort_order" - 1 AS "next_upload_sort_order"`,
-    sessionId,
-  );
+  const rows = await client.$queryRaw<CounterRow[]>(Prisma.sql`
+    UPDATE "upload_sessions"
+       SET "next_upload_sort_order" = "next_upload_sort_order" + 1
+     WHERE "id" = ${sessionId}
+    RETURNING "next_upload_sort_order" - 1 AS "next_upload_sort_order"
+  `);
 
   const row = rows[0];
   if (!row) return { ok: false, reason: "SESSION_NOT_FOUND" };
