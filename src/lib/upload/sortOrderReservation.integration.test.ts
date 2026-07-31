@@ -63,9 +63,25 @@ describe.skipIf(!TEST_DATABASE_URL)("reserveSortOrder (isolated Postgres integra
   });
 
   afterAll(async () => {
-    const remaining = await cleanupAndCount(RUN_NS);
-    expect(remaining).toBe(0);
-    await prisma.$disconnect();
+    // Always disconnect, even if cleanup or the residual-count assertion
+    // below throws — otherwise a failed run leaks the pool connection. A
+    // disconnect failure must not mask the original cleanup/assertion error,
+    // so it's caught separately and only surfaced when there was no prior
+    // error to report.
+    let pendingError: unknown;
+    try {
+      const remaining = await cleanupAndCount(RUN_NS);
+      expect(remaining).toBe(0);
+    } catch (e) {
+      pendingError = e;
+    } finally {
+      try {
+        await prisma.$disconnect();
+      } catch (disconnectError) {
+        if (!pendingError) pendingError = disconnectError;
+      }
+    }
+    if (pendingError) throw pendingError;
   });
 
   async function cleanupAndCount(prefix: string) {
@@ -91,10 +107,11 @@ describe.skipIf(!TEST_DATABASE_URL)("reserveSortOrder (isolated Postgres integra
   async function makeWorkspaceAndSession(caseLabel: string): Promise<{ workspaceId: string; sessionId: string }> {
     const workspaceId = `${RUN_NS}w_${caseLabel}_`;
     const sessionId = `${workspaceId}s`;
+    const userId = `${workspaceId}user`; // namespaced — no fixed cross-case/cross-file userId
     currentCaseWorkspaceId = workspaceId; // scoped strictly to this case (still under RUN_NS)
     await prisma.workspace.create({ data: { id: workspaceId, name: "t", slug: workspaceId } });
     await prisma.uploadSession.create({
-      data: { id: sessionId, workspaceId, userId: "u1", status: "ACTIVE" },
+      data: { id: sessionId, workspaceId, userId, status: "ACTIVE" },
     });
     return { workspaceId, sessionId };
   }

@@ -35,11 +35,15 @@ function assertLocalOnly(url: string) {
   }
 }
 
-const TEST_USER = { id: "test-user-1", email: "test@example.com" };
+// The user id is namespaced per test case (set by makeSession() below), not
+// a fixed cross-case/cross-file value. The auth mock reads this mutable
+// binding so `getCurrentUser()` returns the current case's namespaced user
+// for every request the route makes during that test.
+let currentUserId = `${RUN_NS}unset-user`;
 const uploadCalls: Array<{ path: string }> = [];
 
 vi.mock("@/lib/auth", () => ({
-  getCurrentUser: async () => TEST_USER,
+  getCurrentUser: async () => ({ id: currentUserId, email: "test@example.com" }),
 }));
 
 // Storage must never be touched for real in this test — every call succeeds
@@ -133,10 +137,26 @@ describe.skipIf(!TEST_DATABASE_URL)("POST /api/uploads/items — sortOrder reser
   });
 
   afterAll(async () => {
-    await cleanupNamespace(RUN_NS);
-    const remaining = await countNamespace(RUN_NS);
-    expect(remaining).toBe(0);
-    await prisma.$disconnect();
+    // Always disconnect, even if cleanup or the residual-count assertion
+    // below throws — otherwise a failed run leaks the pool connection. A
+    // disconnect failure must not mask the original cleanup/assertion error,
+    // so it's caught separately and only surfaced when there was no prior
+    // error to report.
+    let pendingError: unknown;
+    try {
+      await cleanupNamespace(RUN_NS);
+      const remaining = await countNamespace(RUN_NS);
+      expect(remaining).toBe(0);
+    } catch (e) {
+      pendingError = e;
+    } finally {
+      try {
+        await prisma.$disconnect();
+      } catch (disconnectError) {
+        if (!pendingError) pendingError = disconnectError;
+      }
+    }
+    if (pendingError) throw pendingError;
   });
 
   afterEach(async () => {
@@ -153,10 +173,12 @@ describe.skipIf(!TEST_DATABASE_URL)("POST /api/uploads/items — sortOrder reser
   async function makeSession(caseLabel: string): Promise<{ workspaceId: string; sessionId: string }> {
     const workspaceId = `${RUN_NS}w_${caseLabel}_`;
     const sessionId = `${workspaceId}s`;
+    const userId = `${workspaceId}user`; // namespaced — no fixed cross-case/cross-file userId
     currentCaseWorkspaceId = workspaceId; // scoped strictly to this case (still under RUN_NS)
+    currentUserId = userId; // the @/lib/auth mock returns this for the route's getCurrentUser() calls
     await prisma.workspace.create({ data: { id: workspaceId, name: "t", slug: workspaceId } });
-    await prisma.workspaceMember.create({ data: { workspaceId, userId: TEST_USER.id, role: "owner" } });
-    await prisma.uploadSession.create({ data: { id: sessionId, workspaceId, userId: TEST_USER.id, status: "ACTIVE" } });
+    await prisma.workspaceMember.create({ data: { workspaceId, userId, role: "owner" } });
+    await prisma.uploadSession.create({ data: { id: sessionId, workspaceId, userId, status: "ACTIVE" } });
     return { workspaceId, sessionId };
   }
 
