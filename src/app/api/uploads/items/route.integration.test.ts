@@ -9,12 +9,24 @@
 // consistent with sortOrderReservation.integration.test.ts.
 //
 // To run: PHOTOBOX_TEST_DATABASE_URL="postgresql://...@127.0.0.1:PORT/db" npx vitest run src/app/api/uploads/items/route.integration.test.ts
+//
+// Fixture isolation (review fix): this file shares its DB with
+// sortOrderReservation.integration.test.ts. Under Vitest's default file
+// parallelism both files' `beforeEach` used to run `deleteMany({})` on the
+// whole table, wiping each other's fixtures mid-run. Every row this file
+// creates is now namespaced under a per-process, per-file-load random prefix
+// (RUN_NS), and every cleanup query is scoped to that prefix — never an
+// unscoped table-wide delete.
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 const TEST_DATABASE_URL = process.env.PHOTOBOX_TEST_DATABASE_URL;
+
+// Unique per test-process + per file load, so concurrent Vitest file workers
+// (and even repeated invocations against the same DB) never collide.
+const RUN_NS = `b11_route_${process.pid}_${crypto.randomUUID()}_`;
 
 function assertLocalOnly(url: string) {
   const parsed = new URL(url);
@@ -89,32 +101,63 @@ describe.skipIf(!TEST_DATABASE_URL)("POST /api/uploads/items — sortOrder reser
   let prisma: import("@/generated/prisma/client").PrismaClient;
   let POST: (typeof import("./route"))["POST"];
   let sortOrderReservationModule: typeof import("@/lib/upload/sortOrderReservation");
+  let currentCaseWorkspaceId: string | null = null;
 
-  const WORKSPACE_ID = "w1";
+  // Namespace-scoped cleanup only — never an unscoped deleteMany({}). FK
+  // order: UploadItem -> UploadSession -> WorkspaceMember -> Workspace.
+  async function cleanupNamespace(prefix: string) {
+    await prisma.uploadItem.deleteMany({ where: { workspaceId: { startsWith: prefix } } });
+    await prisma.uploadSession.deleteMany({ where: { workspaceId: { startsWith: prefix } } });
+    await prisma.workspaceMember.deleteMany({ where: { workspaceId: { startsWith: prefix } } });
+    await prisma.workspace.deleteMany({ where: { id: { startsWith: prefix } } });
+  }
+
+  async function countNamespace(prefix: string) {
+    const [items, sessions, members, workspaces] = await Promise.all([
+      prisma.uploadItem.count({ where: { workspaceId: { startsWith: prefix } } }),
+      prisma.uploadSession.count({ where: { workspaceId: { startsWith: prefix } } }),
+      prisma.workspaceMember.count({ where: { workspaceId: { startsWith: prefix } } }),
+      prisma.workspace.count({ where: { id: { startsWith: prefix } } }),
+    ]);
+    return items + sessions + members + workspaces;
+  }
 
   beforeAll(async () => {
     assertLocalOnly(TEST_DATABASE_URL!);
     ({ prisma } = await import("@/lib/prisma"));
     ({ POST } = await import("./route"));
     sortOrderReservationModule = await import("@/lib/upload/sortOrderReservation");
+    // Defensive cleanup for this run's own namespace only (should already be
+    // empty given the random UUID, but costs nothing to be sure).
+    await cleanupNamespace(RUN_NS);
   });
 
   afterAll(async () => {
+    await cleanupNamespace(RUN_NS);
+    const remaining = await countNamespace(RUN_NS);
+    expect(remaining).toBe(0);
     await prisma.$disconnect();
   });
 
-  beforeEach(async () => {
+  afterEach(async () => {
+    // Cleans up exactly the rows this test case created. If the test failed
+    // before reaching this point, afterAll's namespace-wide sweep still
+    // catches it.
+    if (currentCaseWorkspaceId) {
+      await cleanupNamespace(currentCaseWorkspaceId);
+      currentCaseWorkspaceId = null;
+    }
     uploadCalls.length = 0;
-    await prisma.uploadItem.deleteMany({});
-    await prisma.uploadSession.deleteMany({});
-    await prisma.workspaceMember.deleteMany({});
-    await prisma.workspace.deleteMany({});
-    await prisma.workspace.create({ data: { id: WORKSPACE_ID, name: "t", slug: WORKSPACE_ID } });
-    await prisma.workspaceMember.create({ data: { workspaceId: WORKSPACE_ID, userId: TEST_USER.id, role: "owner" } });
   });
 
-  async function makeSession(sessionId: string) {
-    await prisma.uploadSession.create({ data: { id: sessionId, workspaceId: WORKSPACE_ID, userId: TEST_USER.id, status: "ACTIVE" } });
+  async function makeSession(caseLabel: string): Promise<{ workspaceId: string; sessionId: string }> {
+    const workspaceId = `${RUN_NS}w_${caseLabel}_`;
+    const sessionId = `${workspaceId}s`;
+    currentCaseWorkspaceId = workspaceId; // scoped strictly to this case (still under RUN_NS)
+    await prisma.workspace.create({ data: { id: workspaceId, name: "t", slug: workspaceId } });
+    await prisma.workspaceMember.create({ data: { workspaceId, userId: TEST_USER.id, role: "owner" } });
+    await prisma.uploadSession.create({ data: { id: sessionId, workspaceId, userId: TEST_USER.id, status: "ACTIVE" } });
+    return { workspaceId, sessionId };
   }
 
   // Minimal valid JPEG per validateImage.ts's magic-byte check (FF D8 FF …).
@@ -139,112 +182,112 @@ describe.skipIf(!TEST_DATABASE_URL)("POST /api/uploads/items — sortOrder reser
   }
 
   it("1) counter 0 のsessionへupload → item.sortOrder=0、counter=1", async () => {
-    await makeSession("s1");
-    const res = await postUpload("s1");
+    const { sessionId } = await makeSession("c1");
+    const res = await postUpload(sessionId);
     expect(res.status).toBe(201);
     const json = await res.json();
     expect(json.data.item.sortOrder).toBe(0);
 
-    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: "s1" } });
+    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: sessionId } });
     expect(session.nextUploadSortOrder).toBe(1); // counter+1のみ(trigger二重incrementなし)
   });
 
   it("2) counter 10 のsessionへupload → item.sortOrder=10、counter=11", async () => {
-    await makeSession("s2");
-    await prisma.uploadSession.update({ where: { id: "s2" }, data: { nextUploadSortOrder: 10 } });
+    const { sessionId } = await makeSession("c2");
+    await prisma.uploadSession.update({ where: { id: sessionId }, data: { nextUploadSortOrder: 10 } });
 
-    const res = await postUpload("s2");
+    const res = await postUpload(sessionId);
     expect(res.status).toBe(201);
     const json = await res.json();
     expect(json.data.item.sortOrder).toBe(10);
 
-    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: "s2" } });
+    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: sessionId } });
     expect(session.nextUploadSortOrder).toBe(11);
   });
 
   it("3) 同一sessionへの並行uploadはsortOrder重複なし・連続値になる", async () => {
-    await makeSession("s3");
+    const { sessionId } = await makeSession("c3");
 
     const CONCURRENCY = 5;
     const responses = await Promise.all(
-      Array.from({ length: CONCURRENCY }, (_, i) => postUpload("s3", jpegBytes(`payload-${i}`))),
+      Array.from({ length: CONCURRENCY }, (_, i) => postUpload(sessionId, jpegBytes(`payload-${i}`))),
     );
     for (const r of responses) expect(r.status).toBe(201);
     const jsons = await Promise.all(responses.map((r) => r.json()));
     const sortOrders = jsons.map((j) => j.data.item.sortOrder).sort((a: number, b: number) => a - b);
     expect(sortOrders).toEqual(Array.from({ length: CONCURRENCY }, (_, i) => i));
 
-    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: "s3" } });
+    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: sessionId } });
     expect(session.nextUploadSortOrder).toBe(CONCURRENCY);
 
-    const items = await prisma.uploadItem.findMany({ where: { sessionId: "s3" } });
+    const items = await prisma.uploadItem.findMany({ where: { sessionId } });
     expect(items).toHaveLength(CONCURRENCY);
     expect(new Set(items.map((i) => i.sortOrder)).size).toBe(CONCURRENCY); // 重複なし
   });
 
   it("4) UploadItem create失敗時はtransaction全体がrollbackされ、counterも不変、Storage PUTは未実行", async () => {
-    await makeSession("s4");
+    const { sessionId } = await makeSession("c4");
     __forceNextUploadItemCreateFailure();
 
-    await expect(postUpload("s4")).rejects.toThrow();
+    await expect(postUpload(sessionId)).rejects.toThrow();
 
-    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: "s4" } });
+    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: sessionId } });
     expect(session.nextUploadSortOrder).toBe(0); // reservationごとrollback
-    const items = await prisma.uploadItem.count({ where: { sessionId: "s4" } });
+    const items = await prisma.uploadItem.count({ where: { sessionId } });
     expect(items).toBe(0);
     expect(uploadCalls).toHaveLength(0); // Storage PUTに到達していない
   });
 
   it("5) reservation失敗(session不存在相当)時はUploadItem未作成・Storage PUT未実行", async () => {
-    await makeSession("s5");
+    const { sessionId } = await makeSession("c5");
     const spy = vi
       .spyOn(sortOrderReservationModule, "reserveSortOrder")
       .mockResolvedValueOnce({ ok: false, reason: "SESSION_NOT_FOUND" });
 
-    const res = await postUpload("s5");
+    const res = await postUpload(sessionId);
     spy.mockRestore();
 
     expect(res.status).toBe(404); // 既存のsession不存在時と同じcontract
-    const items = await prisma.uploadItem.count({ where: { sessionId: "s5" } });
+    const items = await prisma.uploadItem.count({ where: { sessionId } });
     expect(items).toBe(0);
     expect(uploadCalls).toHaveLength(0);
   });
 
   it("6) 旧方式相当の直接INSERT(sortOrder飛び値)後もtriggerがcounterを必要値まで進める", async () => {
-    await makeSession("s6");
-    await postUpload("s6"); // counter: 0 -> 1, item sortOrder=0
+    const { workspaceId, sessionId } = await makeSession("c6");
+    await postUpload(sessionId); // counter: 0 -> 1, item sortOrder=0
 
     // 旧 multipart route と同じ経路を模した直接 INSERT(reserveSortOrderを経由しない)
     await prisma.uploadItem.create({
       data: {
-        id: "legacy-item",
-        workspaceId: WORKSPACE_ID,
-        sessionId: "s6",
+        id: `${workspaceId}legacy-item`,
+        workspaceId,
+        sessionId,
         sortOrder: 7,
         originalName: "legacy.jpg",
         originalExt: "jpg",
         mimeType: "image/jpeg",
         fileSizeBytes: 10,
         fileHash: "legacyhash",
-        tempStoragePath: `${WORKSPACE_ID}/uploads/s6/legacy-item/original.jpg`,
+        tempStoragePath: `${workspaceId}/uploads/${sessionId}/legacy-item/original.jpg`,
       },
     });
 
-    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: "s6" } });
+    const session = await prisma.uploadSession.findUniqueOrThrow({ where: { id: sessionId } });
     expect(session.nextUploadSortOrder).toBe(8); // trigger が 7+1 まで進める
 
     // 以後のhelper呼出しは8から継続する(重複しない)
-    const res = await postUpload("s6");
+    const res = await postUpload(sessionId);
     const json = await res.json();
     expect(json.data.item.sortOrder).toBe(8);
   });
 
   it("7) response shape / status は既存契約のまま(201・item・signedUrls)", async () => {
-    await makeSession("s7");
-    const res = await postUpload("s7");
+    const { workspaceId, sessionId } = await makeSession("c7");
+    const res = await postUpload(sessionId);
     expect(res.status).toBe(201);
     const json = await res.json();
-    expect(json.data.item).toMatchObject({ sessionId: "s7", workspaceId: WORKSPACE_ID, uploadStatus: "READY" });
+    expect(json.data.item).toMatchObject({ sessionId, workspaceId, uploadStatus: "READY" });
     expect(json.data.signedUrls).toHaveProperty("thumbnail");
     expect(json.data.signedUrls).toHaveProperty("preview");
     expect(json.data.signedUrls).toHaveProperty("original");
