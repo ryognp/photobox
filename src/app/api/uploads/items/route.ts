@@ -13,6 +13,7 @@ import { resolveSignedUrl } from "@/lib/signedUrl";
 import { createPerfLog } from "@/lib/perfLog";
 import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 import { MAX_ORIGINAL_BYTES, MAX_TOTAL_BYTES, MAX_ORIGINAL_MB } from "@/lib/upload/uploadLimits";
+import { reserveSortOrder } from "@/lib/upload/sortOrderReservation";
 
 const BUCKET = "photobox-private";
 
@@ -171,45 +172,55 @@ export async function POST(request: NextRequest) {
   const widthPx = formData.get("widthPx") ? parseInt(formData.get("widthPx") as string, 10) || null : null;
   const heightPx = formData.get("heightPx") ? parseInt(formData.get("heightPx") as string, 10) || null : null;
 
-  // 14. sortOrder 計算
-  const maxOrder = await prisma.uploadItem.aggregate({
-    where: { sessionId },
-    _max: { sortOrder: true },
-  });
-  const sortOrder = (maxOrder._max.sortOrder ?? -1) + 1;
-
-  // 15. uploadItemId を先に生成（tempStoragePath に必要）
+  // 14〜17. sortOrder予約 + UploadItem作成を同一transactionで行う。
+  // reserveSortOrder() は upload_sessions.next_upload_sort_order を atomic に
+  // increment する（旧 aggregate MAX(sortOrder)+1 は並行 upload で同値を返し
+  // 得たため置き換えた — Phase 10-43-B1）。同一 tx 内なので、reservation失敗時
+  // (session不存在) は create も Storage PUT も一切実行されない。
+  // B1 migration の AFTER INSERT trigger もこの tx 内で発火するが、
+  // このINSERT時点でcounterは既にreservation.sortOrder+1へ進んでいるため
+  // trigger のGREATESTはno-op(二重incrementにならない)。
   const uploadItemId = cuid();
-
-  // 16. Storage paths を確定
   const storagePath = tempOriginalPath(session.workspaceId, sessionId, uploadItemId, originalExt);
   const thumbnailStoragePath = tempThumbnailPath(session.workspaceId, sessionId, uploadItemId);
   const previewStoragePath = tempPreviewPath(session.workspaceId, sessionId, uploadItemId);
 
-  // 17. DB INSERT (status = UPLOADING)
-  await prisma.uploadItem.create({
-    data: {
-      id: uploadItemId,
-      workspaceId: session.workspaceId,
-      sessionId,
-      sortOrder,
-      originalName,
-      originalExt,
-      mimeType,
-      fileSizeBytes: originalFile.size,
-      widthPx,
-      heightPx,
-      fileHash: serverHash,
-      tempStoragePath: storagePath,
-      tempThumbnailPath: thumbnailStoragePath,
-      tempPreviewPath: previewStoragePath,
-      uploadStatus: "UPLOADING",
-      promptStatus: "EMPTY",
-      duplicateStatus,
-      commitStatus: "PENDING",
-      duplicateImageId,
-    },
+  const reservationResult = await prisma.$transaction(async (tx) => {
+    const reservation = await reserveSortOrder(tx, sessionId);
+    if (!reservation.ok) return reservation;
+
+    await tx.uploadItem.create({
+      data: {
+        id: uploadItemId,
+        workspaceId: session.workspaceId,
+        sessionId,
+        sortOrder: reservation.sortOrder,
+        originalName,
+        originalExt,
+        mimeType,
+        fileSizeBytes: originalFile.size,
+        widthPx,
+        heightPx,
+        fileHash: serverHash,
+        tempStoragePath: storagePath,
+        tempThumbnailPath: thumbnailStoragePath,
+        tempPreviewPath: previewStoragePath,
+        uploadStatus: "UPLOADING",
+        promptStatus: "EMPTY",
+        duplicateStatus,
+        commitStatus: "PENDING",
+        duplicateImageId,
+      },
+    });
+
+    return reservation;
   });
+
+  if (!reservationResult.ok) {
+    // session は手順4で存在確認済みのため、ここへ到達するのは手順4以降に
+    // sessionが削除された場合のみ(レース)。既存のsession不存在時と同じ契約。
+    return Errors.notFound("Session not found");
+  }
   perf.mark("dbInsertMs");
 
   // 18. Storage PUT — original / thumbnail / preview を並列化
