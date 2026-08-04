@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateImageFile } from "@/lib/upload/validateImage";
+import { detectImageMime, imageExtForMime, validateImageFile } from "@/lib/upload/validateImage";
 
 // Magic-byte fixtures
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
@@ -134,5 +134,36 @@ describe("validateImageFile — unrecognized / degenerate bytes", () => {
       ok: false,
       reason: "UNSUPPORTED_MEDIA_TYPE",
     });
+  });
+});
+
+// Phase 10-43-B3a: bytes-only helper の export 化に伴う追加固定。
+// 既存 validateImageFile の挙動は上の既存 test 群が regression を担保する。
+describe("detectImageMime — bytes-only helper (B3a)", () => {
+  it("JPEG / PNG / WebP の magic bytes を判定する", () => {
+    expect(detectImageMime(JPEG)).toBe("image/jpeg");
+    expect(detectImageMime(PNG)).toBe("image/png");
+    expect(detectImageMime(WEBP)).toBe("image/webp");
+  });
+
+  it("未知バイト列（HEIC / GIF / text）は null", () => {
+    expect(detectImageMime(HEIC)).toBeNull();
+    expect(detectImageMime(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]))).toBeNull(); // GIF89a
+    expect(detectImageMime(new TextEncoder().encode("plain text"))).toBeNull();
+  });
+
+  it("空・極端に短い buffer でも throw せず null", () => {
+    expect(detectImageMime(new Uint8Array([]))).toBeNull();
+    expect(detectImageMime(new Uint8Array([0xff]))).toBeNull();
+    expect(detectImageMime(new Uint8Array([0xff, 0xd8]))).toBeNull();
+    expect(detectImageMime(new Uint8Array([0x52, 0x49, 0x46, 0x46]))).toBeNull(); // RIFF のみ
+  });
+});
+
+describe("imageExtForMime (B3a)", () => {
+  it("measured MIME → 保存拡張子の対応が固定されている", () => {
+    expect(imageExtForMime("image/jpeg")).toBe("jpg");
+    expect(imageExtForMime("image/png")).toBe("png");
+    expect(imageExtForMime("image/webp")).toBe("webp");
   });
 });
