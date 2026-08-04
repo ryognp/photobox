@@ -13,10 +13,29 @@ export type ErrorCode =
   | "FILE_HASH_MISMATCH"
   | "UNSUPPORTED_MEDIA_TYPE"
   | "PAYLOAD_TOO_LARGE"
-  | "RATE_LIMITED";
+  | "RATE_LIMITED"
+  // Phase 10-43-B2: POST /api/uploads/items/prepare
+  | "SESSION_CLEANUP_IN_PROGRESS"
+  | "INTENT_CLEANUP_IN_PROGRESS"
+  | "IDEMPOTENCY_CONFLICT"
+  | "TOKEN_ISSUE_DEADLINE_EXCEEDED"
+  | "INTENT_EXPIRED"
+  | "FINALIZE_IN_PROGRESS"
+  | "INTENT_NOT_REUSABLE"
+  | "SIGNED_UPLOAD_URL_ISSUE_FAILED";
 
 export function ok<T>(data: T, status = 200) {
   return NextResponse.json({ data }, { status });
+}
+
+/**
+ * Same envelope as ok(), but with `Cache-Control: no-store`.
+ * For responses that carry short-lived credentials (e.g. the signed upload
+ * token from POST /api/uploads/items/prepare) — these must never be cached by
+ * the browser or any intermediary.
+ */
+export function okNoStore<T>(data: T, status = 200) {
+  return NextResponse.json({ data }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 export function err(code: ErrorCode, message: string, status: number) {
