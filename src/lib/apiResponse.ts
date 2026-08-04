@@ -22,7 +22,9 @@ export type ErrorCode =
   | "INTENT_EXPIRED"
   | "FINALIZE_IN_PROGRESS"
   | "INTENT_NOT_REUSABLE"
-  | "SIGNED_UPLOAD_URL_ISSUE_FAILED";
+  | "SIGNED_UPLOAD_URL_ISSUE_FAILED"
+  // Phase 10-43-B3a: finalize 実測検証（route 接続は B3b。pixel 上限超過用）
+  | "IMAGE_TOO_LARGE_PIXELS";
 
 export function ok<T>(data: T, status = 200) {
   return NextResponse.json({ data }, { status });

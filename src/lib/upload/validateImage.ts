@@ -11,8 +11,18 @@ const MIME_TO_EXT: Record<AllowedMime, ImageExt> = {
 
 const ALLOWED_MIMES = new Set<string>(Object.keys(MIME_TO_EXT));
 
-// magic bytes で MIME を判定
-function detectMimeFromBytes(buf: Uint8Array): AllowedMime | null {
+// measured MIME から保存用拡張子を決める（filename からは決めない）。
+// Phase 10-43-B3a: finalize 側の canonical path 拡張子決定にも同じ対応を使う。
+export function imageExtForMime(mime: AllowedMime): ImageExt {
+  return MIME_TO_EXT[mime];
+}
+
+// magic bytes で MIME を判定する bytes-only helper。
+// Phase 10-43-B3a: finalize 側でも同一判定を使うため export する
+// （magic-byte 実装を複数 module に重複させない）。判定内容は従来の
+// private 実装と同一で、buffer 長不足でも throw しない（undefined 比較で
+// null へ落ちる）。provider Content-Type は一切参照しない。
+export function detectImageMime(buf: Uint8Array): AllowedMime | null {
   // JPEG: FF D8 FF
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
 
@@ -44,7 +54,7 @@ export function validateImageFile(file: File, bytes: Uint8Array): ImageValidatio
   }
 
   // magic bytes で実際の MIME を確認
-  const detectedMime = detectMimeFromBytes(bytes);
+  const detectedMime = detectImageMime(bytes);
   if (!detectedMime) {
     return { ok: false, reason: "UNSUPPORTED_MEDIA_TYPE" };
   }
