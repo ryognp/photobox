@@ -54,6 +54,12 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
+// このfile全体は direct upload gate が開いている前提のテスト。gate自体の
+// 閉塞挙動は test 23 が vi.doMock + resetModules で個別に検証する。
+vi.mock("@/lib/upload/directUploadFeature", () => ({
+  readDirectUploadEnabledFlag: () => true,
+}));
+
 vi.mock("@/lib/prisma", async () => {
   if (!TEST_DATABASE_URL) return { prisma: null };
   const { PrismaClient } = await import("@/generated/prisma/client");
@@ -486,5 +492,42 @@ describe.skipIf(!TEST_DATABASE_URL)("POST /api/uploads/items/prepare (isolated P
     const orders = jsons.map((j) => j.data.reservedSortOrder).sort((a: number, b: number) => a - b);
     expect(orders).toEqual([0, 1, 2, 3, 4]);
     expect(new Set(jsons.map((j) => j.data.intentId)).size).toBe(5);
+  });
+
+  // ---- direct upload gate ------------------------------------------------
+  // このfile冒頭の vi.mock は gate=有効固定。gate が閉じている場合の挙動だけは
+  // ここで vi.doMock + resetModules により個別に上書きし、他の全testへ影響
+  // しないよう最後に必ず元へ戻す（このtestはfile内最後のtestでもある）。
+
+  it("23) direct upload gateが閉じている場合は404 NOT_FOUND（authより前段でブロックされる）", async () => {
+    currentUserId = `${RUN_NS}unset`; // 未認証のまま。gateはauthより前段で判定するはず
+    expect(await countNamespace(RUN_NS)).toBe(0); // このtestはsessionを作らない
+
+    vi.resetModules();
+    vi.doMock("@/lib/upload/directUploadFeature", () => ({
+      readDirectUploadEnabledFlag: () => false,
+    }));
+
+    try {
+      const { POST: gatedPOST } = await import("./route");
+      const req = new Request("http://localhost/api/uploads/items/prepare", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload(`${RUN_NS}wc23nonexistent`)),
+      });
+      const res = await gatedPOST(req as unknown as Parameters<typeof POST>[0]);
+
+      expect(res.status).toBe(404);
+      expect(res.status).not.toBe(401);
+      const json = await res.json();
+      expect(json.error.code).toBe("NOT_FOUND");
+
+      // authorizeSession / DB書き込みが一切呼ばれていない
+      expect(await countNamespace(RUN_NS)).toBe(0);
+      expect(createSignedUploadUrlCalls).toHaveLength(0);
+    } finally {
+      vi.doUnmock("@/lib/upload/directUploadFeature");
+      vi.resetModules();
+    }
   });
 });

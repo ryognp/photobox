@@ -15,6 +15,7 @@ import { err, okNoStore, Errors } from "@/lib/apiResponse";
 import { createPerfLog } from "@/lib/perfLog";
 import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 import { authorizeSession } from "@/lib/uploadSession";
+import { readDirectUploadEnabledFlag } from "@/lib/upload/directUploadFeature";
 import { intentStagingOriginalPath } from "@/lib/upload/storagePaths";
 import { reserveSortOrder } from "@/lib/upload/sortOrderReservation";
 import { isJsonContentType, parsePreparePayload, type PreparePayload } from "@/lib/upload/preparePayload";
@@ -124,6 +125,13 @@ async function classifySessionRejection(sessionId: string, userId: string, now: 
 
 export async function POST(request: NextRequest) {
   const perf = createPerfLog("uploads.prepare");
+
+  // ---- 0. direct upload gate（未接続機能の外部公開防止。auth より前） -----
+  // 無効時は auth 状態に関わらず一律 404 にし、有効化されているかどうかを
+  // 認証結果の違いから推測できないようにする。
+  if (!readDirectUploadEnabledFlag()) {
+    return err("NOT_FOUND", "Not found", 404);
+  }
 
   // ---- 1. 認証 -----------------------------------------------------------
   const user = await getCurrentUser();
