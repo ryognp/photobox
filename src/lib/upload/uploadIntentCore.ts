@@ -165,56 +165,13 @@ export function canAcquireFinalizeLease(args: {
 
 export const CLEANUP_LEASE_MS = 5 * 60 * 1000;
 export const CLEANUP_BATCH_SIZE = 100;
-export const CLEANUP_MAX_ATTEMPTS = 10;
 
 export type StorageCleanupStatusValue = "PENDING" | "DONE" | "FAILED";
 
-export type CleanupCandidate = {
-  status: UploadIntentStatusValue;
-  storageCleanupStatus: StorageCleanupStatusValue;
-  storageCleanupAttemptCount: number;
-  storageCleanupNotBefore: Date;
-  intentFinalizeDeadlineAt: Date;
-  finalizeLeaseUntil: Date | null;
-  cleanupLeaseUntil: Date | null;
-};
-
-export type CleanupEligibility =
-  | { eligible: true }
-  | {
-      eligible: false;
-      reason:
-        | "ALREADY_DONE"
-        | "BEFORE_NOT_BEFORE"
-        | "FINALIZE_IN_PROGRESS"
-        | "CLEANUP_CLAIMED"
-        | "ATTEMPTS_EXHAUSTED"
-        | "STILL_FINALIZABLE";
-    };
-
-// Storage 削除の対象にしてよいか。
-// storageCleanupNotBefore（= 全 token 失効 + grace）より前は絶対に削除しない。
-export function evaluateCleanupEligibility(c: CleanupCandidate, now: Date): CleanupEligibility {
-  if (c.storageCleanupStatus === "DONE") return { eligible: false, reason: "ALREADY_DONE" };
-  if (now.getTime() < c.storageCleanupNotBefore.getTime()) {
-    return { eligible: false, reason: "BEFORE_NOT_BEFORE" };
-  }
-  if (isLeaseActive(c.finalizeLeaseUntil, now)) return { eligible: false, reason: "FINALIZE_IN_PROGRESS" };
-  if (isLeaseActive(c.cleanupLeaseUntil, now)) return { eligible: false, reason: "CLEANUP_CLAIMED" };
-  if (c.storageCleanupAttemptCount >= CLEANUP_MAX_ATTEMPTS) {
-    return { eligible: false, reason: "ATTEMPTS_EXHAUSTED" };
-  }
-  // まだ finalize できる状態（deadline 前の PREPARED / FINALIZING）は触らない。
-  // storageCleanupNotBefore は finalize deadline より後なので通常ここへは来ないが、
-  // 期限値を変更した場合の安全弁として残す。
-  if (
-    (c.status === "PREPARED" || c.status === "FINALIZING") &&
-    !isPastFinalizeDeadline({ now, intentFinalizeDeadlineAt: c.intentFinalizeDeadlineAt })
-  ) {
-    return { eligible: false, reason: "STILL_FINALIZABLE" };
-  }
-  return { eligible: true };
-}
+// Phase 10-43-B3c-1: 旧 cleanup eligibility 契約（attempt 回数上限で retry を
+// 永久停止する判定）は撤回・削除した。cleanup eligibility の唯一の正本は
+// intentCleanupLifecycle.ts（retryable は回数無制限・terminal は dead-letter、
+// attemptCount は観測専用）。
 
 // PREPARED / FINALIZING が放棄されたと見なして terminal 化できるか。
 export function shouldExpireIntent(args: {

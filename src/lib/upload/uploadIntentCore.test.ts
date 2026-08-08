@@ -9,7 +9,6 @@ import {
   canAcquireFinalizeLease,
   isStaleFinalizeLease,
   isLeaseActive,
-  evaluateCleanupEligibility,
   shouldExpireIntent,
   canMarkStorageCleanupDone,
   sanitizeErrorDetail,
@@ -17,10 +16,8 @@ import {
   canonicalFingerprintInput,
   isSameFingerprint,
   LAST_ERROR_DETAIL_MAX_LENGTH,
-  CLEANUP_MAX_ATTEMPTS,
   SIGNED_UPLOAD_TOKEN_TTL_MS,
   type UploadIntentStatusValue,
-  type CleanupCandidate,
 } from "./uploadIntentCore";
 
 const H = 60 * 60 * 1000;
@@ -211,73 +208,11 @@ describe("finalize lease", () => {
   });
 });
 
-describe("cleanup eligibility", () => {
+// 旧 cleanup eligibility の契約 test は B3c-1 で削除した（cleanup
+// eligibility の正本は intentCleanupLifecycle.test.ts へ一本化）。
+// canMarkStorageCleanupDone の境界契約だけはこの core に残るため維持する。
+describe("storage cleanup DONE 判定", () => {
   const notBefore = at(25 * H);
-  const c = (over: Partial<CleanupCandidate> = {}): CleanupCandidate => ({
-    status: "EXPIRED",
-    storageCleanupStatus: "PENDING",
-    storageCleanupAttemptCount: 0,
-    storageCleanupNotBefore: notBefore,
-    intentFinalizeDeadlineAt: at(24 * H),
-    finalizeLeaseUntil: null,
-    cleanupLeaseUntil: null,
-    ...over,
-  });
-
-  it("notBefore 以降・PENDING は対象", () => {
-    expect(evaluateCleanupEligibility(c(), at(25 * H))).toEqual({ eligible: true });
-  });
-
-  it("notBefore より前は絶対に削除しない", () => {
-    expect(evaluateCleanupEligibility(c(), at(25 * H - 1))).toEqual({
-      eligible: false,
-      reason: "BEFORE_NOT_BEFORE",
-    });
-  });
-
-  it("DONE は対象外", () => {
-    expect(evaluateCleanupEligibility(c({ storageCleanupStatus: "DONE" }), at(26 * H))).toEqual({
-      eligible: false,
-      reason: "ALREADY_DONE",
-    });
-  });
-
-  it("FAILED は再試行対象(上限まで)", () => {
-    expect(
-      evaluateCleanupEligibility(c({ storageCleanupStatus: "FAILED", storageCleanupAttemptCount: 3 }), at(26 * H)),
-    ).toEqual({ eligible: true });
-    expect(
-      evaluateCleanupEligibility(
-        c({ storageCleanupStatus: "FAILED", storageCleanupAttemptCount: CLEANUP_MAX_ATTEMPTS }),
-        at(26 * H),
-      ),
-    ).toEqual({ eligible: false, reason: "ATTEMPTS_EXHAUSTED" });
-  });
-
-  it("finalize lease が生きている intent は触らない", () => {
-    expect(
-      evaluateCleanupEligibility(c({ finalizeLeaseUntil: at(26 * H + 1000) }), at(26 * H)),
-    ).toEqual({ eligible: false, reason: "FINALIZE_IN_PROGRESS" });
-  });
-
-  it("他 worker の cleanup claim 中は対象外", () => {
-    expect(
-      evaluateCleanupEligibility(c({ cleanupLeaseUntil: at(26 * H + 1000) }), at(26 * H)),
-    ).toEqual({ eligible: false, reason: "CLEANUP_CLAIMED" });
-  });
-
-  it("FINALIZED intent の staging 残骸も notBefore 後は削除対象", () => {
-    expect(evaluateCleanupEligibility(c({ status: "FINALIZED" }), at(25 * H))).toEqual({ eligible: true });
-  });
-
-  it("まだ finalize 可能な状態は対象外(安全弁)", () => {
-    expect(
-      evaluateCleanupEligibility(
-        c({ status: "PREPARED", storageCleanupNotBefore: at(H), intentFinalizeDeadlineAt: at(24 * H) }),
-        at(2 * H),
-      ),
-    ).toEqual({ eligible: false, reason: "STILL_FINALIZABLE" });
-  });
 
   it("DONE を付けられるのは notBefore 以降だけ", () => {
     expect(canMarkStorageCleanupDone({ now: at(25 * H), storageCleanupNotBefore: notBefore })).toBe(true);
