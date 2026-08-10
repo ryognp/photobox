@@ -46,6 +46,50 @@ vi.mock("@/lib/auth", () => ({
   getCurrentUser: async () => ({ id: currentUserId, email: "test@example.com" }),
 }));
 
+// ---------------------------------------------------------------------------
+// Phase 10-43-B3c-2: deterministic barrier knobs.
+//
+// sleep 順序に依存せず race を再現するため、(a) route の transaction session
+// guard (`tx.uploadSession.updateMany`) と (b) 最初の Storage PUT を、query /
+// call 実行前に hold できるようにする。全て one-shot・deferred promise 方式で、
+// afterEach が未解決の hold を必ず release する(失敗時も suite を hang させない)。
+// ---------------------------------------------------------------------------
+type Barrier = { onReached: () => void; gate: Promise<void> };
+
+let sessionGuardBarrier: Barrier | null = null;
+let uploadHoldBarrier: Barrier | null = null;
+const pendingReleases: Array<() => void> = [];
+
+function armBarrier(assign: (b: Barrier) => void): { reached: Promise<void>; release: () => void } {
+  let onReached!: () => void;
+  const reached = new Promise<void>((r) => { onReached = r; });
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  assign({ onReached, gate });
+  pendingReleases.push(release);
+  return { reached, release };
+}
+
+export function __armSessionGuardBarrier() {
+  return armBarrier((b) => { sessionGuardBarrier = b; });
+}
+
+export function __armUploadHold() {
+  return armBarrier((b) => { uploadHoldBarrier = b; });
+}
+
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timeout (${ms}ms) waiting for ${label}`)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Storage must never be touched for real in this test — every call succeeds
 // deterministically so we can assert purely on DB state and on whether
 // Storage was invoked at all (never() checks for the rollback/failure cases).
@@ -54,6 +98,12 @@ vi.mock("@/lib/supabase/admin", () => ({
     storage: {
       from: () => ({
         upload: async (path: string) => {
+          const hold = uploadHoldBarrier;
+          if (hold) {
+            uploadHoldBarrier = null; // one-shot
+            hold.onReached();
+            await hold.gate;
+          }
           uploadCalls.push({ path });
           return { error: null };
         },
@@ -92,6 +142,21 @@ vi.mock("@/lib/prisma", async () => {
           if (forceNextUploadItemCreateFailure) {
             forceNextUploadItemCreateFailure = false;
             throw new Error("forced create failure (test)");
+          }
+          return query(args);
+        },
+      },
+      // B3c-2: route の transaction session guard を query 実行前に hold する。
+      // Client Extension は `$transaction` callback 由来の tx client にも効く。
+      // barrier 中の claim 注入は、この Extension を通らない $executeRaw
+      // (raw SQL) で行う。
+      uploadSession: {
+        async updateMany({ args, query }) {
+          const barrier = sessionGuardBarrier;
+          if (barrier) {
+            sessionGuardBarrier = null; // one-shot
+            barrier.onReached();
+            await barrier.gate;
           }
           return query(args);
         },
@@ -160,6 +225,12 @@ describe.skipIf(!TEST_DATABASE_URL)("POST /api/uploads/items — sortOrder reser
   });
 
   afterEach(async () => {
+    // B3c-2: 未解決の barrier を必ず release して suite の hang を防ぎ、
+    // knob を毎 test reset する(test 順序非依存)。
+    for (const release of pendingReleases.splice(0)) release();
+    sessionGuardBarrier = null;
+    uploadHoldBarrier = null;
+
     // Cleans up exactly the rows this test case created. If the test failed
     // before reaching this point, afterAll's namespace-wide sweep still
     // catches it.
@@ -315,6 +386,180 @@ describe.skipIf(!TEST_DATABASE_URL)("POST /api/uploads/items — sortOrder reser
     expect(json.data.signedUrls).toHaveProperty("original");
     expect(uploadCalls.length).toBeGreaterThan(0); // 正常系ではStorage PUTに到達している
   });
+
+  // -------------------------------------------------------------------------
+  // Phase 10-43-B3c-2: session cleanup interlock
+  // -------------------------------------------------------------------------
+  describe("cleanup interlock (B3c-2)", () => {
+    const LEASE_TOKEN = "b3c2-test-cleanup-token-1234567890ab";
+    const FIXED_MESSAGE = "This session is being cleaned up. Please retry shortly.";
+
+    async function setLease(sessionId: string, until: Date) {
+      // Extension を通らない raw SQL(cleanup claim CAS 相当の注入)。
+      await prisma.$executeRaw`
+        UPDATE "upload_sessions"
+           SET "cleanup_lease_until" = ${until},
+               "cleanup_attempt_token" = ${LEASE_TOKEN}
+         WHERE "id" = ${sessionId}`;
+    }
+
+    async function sessionRow(sessionId: string) {
+      return prisma.uploadSession.findUniqueOrThrow({ where: { id: sessionId } });
+    }
+
+    it("i1) initial guard: active cleanup lease → 409 SESSION_CLEANUP_IN_PROGRESS(固定文)", async () => {
+      const { sessionId } = await makeSession("i1");
+      await setLease(sessionId, new Date(Date.now() + 60_000));
+
+      const res = await postUpload(sessionId);
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.error.code).toBe("SESSION_CLEANUP_IN_PROGRESS");
+      expect(json.error.message).toBe(FIXED_MESSAGE);
+    });
+
+    it("i2) initial guard: active lease 中は item 0・counter 不変・Storage PUT 0", async () => {
+      const { sessionId } = await makeSession("i2");
+      await setLease(sessionId, new Date(Date.now() + 60_000));
+
+      const res = await postUpload(sessionId);
+      expect(res.status).toBe(409);
+      expect(await prisma.uploadItem.count({ where: { sessionId } })).toBe(0);
+      expect((await sessionRow(sessionId)).nextUploadSortOrder).toBe(0);
+      expect(uploadCalls).toHaveLength(0);
+    });
+
+    it("i3) initial guard: response へ lease timestamp / attempt token を露出しない", async () => {
+      const { sessionId } = await makeSession("i3");
+      const until = new Date(Date.now() + 60_000);
+      await setLease(sessionId, until);
+
+      const res = await postUpload(sessionId);
+      expect(res.status).toBe(409);
+      const text = JSON.stringify(await res.json());
+      expect(text).not.toContain(LEASE_TOKEN);
+      expect(text).not.toContain(until.toISOString());
+      expect(text).not.toContain("cleanupLeaseUntil");
+      expect(text).not.toContain("cleanupAttemptToken");
+    });
+
+    it("i4) stale(失効済み) cleanup lease は upload を拒否しない(201)", async () => {
+      const { sessionId } = await makeSession("i4");
+      await setLease(sessionId, new Date(Date.now() - 1_000));
+
+      const res = await postUpload(sessionId);
+      expect(res.status).toBe(201);
+      expect(await prisma.uploadItem.count({ where: { sessionId } })).toBe(1);
+    });
+
+    it("i5) race: initial read 通過後・tx guard 直前に claim 取得 → 409(固定契約)", async () => {
+      const { sessionId } = await makeSession("i5");
+      const { reached, release } = __armSessionGuardBarrier();
+
+      const responsePromise = postUpload(sessionId);
+      try {
+        await withTimeout(reached, 3_000, "session guard barrier");
+        // guard query は未実行(row lock 未取得)なので、別 connection の注入は進む。
+        await setLease(sessionId, new Date(Date.now() + 60_000));
+      } finally {
+        release();
+      }
+
+      const res = await withTimeout(responsePromise, 5_000, "race response");
+      expect(res.status).toBe(409);
+      const json = await res.json();
+      expect(json.error.code).toBe("SESSION_CLEANUP_IN_PROGRESS");
+      expect(json.error.message).toBe(FIXED_MESSAGE);
+    });
+
+    it("i6) race 時は item 0・counter rollback(不変)・Storage PUT 0", async () => {
+      const { sessionId } = await makeSession("i6");
+      const { reached, release } = __armSessionGuardBarrier();
+
+      const responsePromise = postUpload(sessionId);
+      try {
+        await withTimeout(reached, 3_000, "session guard barrier");
+        await setLease(sessionId, new Date(Date.now() + 60_000));
+      } finally {
+        release();
+      }
+      const res = await withTimeout(responsePromise, 5_000, "race response");
+
+      expect(res.status).toBe(409);
+      expect(await prisma.uploadItem.count({ where: { sessionId } })).toBe(0);
+      expect((await sessionRow(sessionId)).nextUploadSortOrder).toBe(0); // 予約未実行/rollback
+      expect(uploadCalls).toHaveLength(0);
+    });
+
+    it("i7) race: guard 直前に status が ABANDONED 化 → 既存 status validation 契約(400)", async () => {
+      const { sessionId } = await makeSession("i7");
+      const { reached, release } = __armSessionGuardBarrier();
+
+      const responsePromise = postUpload(sessionId);
+      try {
+        await withTimeout(reached, 3_000, "session guard barrier");
+        await prisma.$executeRaw`
+          UPDATE "upload_sessions" SET "status" = 'ABANDONED' WHERE "id" = ${sessionId}`;
+      } finally {
+        release();
+      }
+      const res = await withTimeout(responsePromise, 5_000, "race response");
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error.code).toBe("VALIDATION_ERROR");
+      expect(json.error.message).toContain("Session status is 'ABANDONED'");
+      expect(await prisma.uploadItem.count({ where: { sessionId } })).toBe(0);
+      expect(uploadCalls).toHaveLength(0);
+    });
+
+    it("i8) upload winner: 最初の Storage PUT 完了前に UPLOADING row + server 生成 temp paths が確定済み", async () => {
+      const { workspaceId, sessionId } = await makeSession("i8");
+      const { reached, release } = __armUploadHold();
+
+      const responsePromise = postUpload(sessionId);
+      let heldItem: { uploadStatus: string; tempStoragePath: string; tempThumbnailPath: string | null; tempPreviewPath: string | null } | null = null;
+      try {
+        await withTimeout(reached, 3_000, "storage upload hold");
+        // PUT 未完了(uploadCalls は完了時に記録される)の時点で row が観測できる =
+        // transaction が Storage I/O より先に commit 済み(marker 順序の証明)。
+        expect(uploadCalls).toHaveLength(0);
+        heldItem = await prisma.uploadItem.findFirst({
+          where: { sessionId },
+          select: { uploadStatus: true, tempStoragePath: true, tempThumbnailPath: true, tempPreviewPath: true },
+        });
+      } finally {
+        release();
+      }
+
+      expect(heldItem).not.toBeNull();
+      expect(heldItem!.uploadStatus).toBe("UPLOADING");
+      expect(heldItem!.tempStoragePath).toContain(`${workspaceId}/uploads/${sessionId}/`);
+      expect(heldItem!.tempThumbnailPath).toContain(`${workspaceId}/uploads/${sessionId}/`);
+      expect(heldItem!.tempPreviewPath).toContain(`${workspaceId}/uploads/${sessionId}/`);
+
+      const res = await withTimeout(responsePromise, 5_000, "held upload response");
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.data.item.uploadStatus).toBe("READY");
+    });
+
+    it("i9) initial guard は tx より前に判定される(active lease 時は tx guard へ到達しない)", async () => {
+      const { sessionId } = await makeSession("i9");
+      await setLease(sessionId, new Date(Date.now() + 60_000));
+      const { reached, release } = __armSessionGuardBarrier();
+
+      // initial guard が削除されると request は tx guard(barrier)へ到達して
+      // hold され、この await が timeout する(= mutation 検出)。
+      const res = await withTimeout(postUpload(sessionId), 3_000, "initial-guard fast path");
+      expect(res.status).toBe(409);
+
+      // response 確定後も barrier は未到達のまま = tx を開始していない。
+      const reachedFirst = await Promise.race([reached.then(() => true), Promise.resolve(false)]);
+      expect(reachedFirst).toBe(false);
+      release();
+    });
+  });
 });
 
 describe("route source no longer uses aggregate MAX(sortOrder)+1", () => {
@@ -324,5 +569,36 @@ describe("route source no longer uses aggregate MAX(sortOrder)+1", () => {
     expect(source).not.toMatch(/_max:\s*{\s*sortOrder:\s*true\s*}/);
     expect(source).not.toMatch(/uploadItem\.aggregate/);
     expect(source).toContain("reserveSortOrder");
+  });
+});
+
+describe("B3c-2 static contract (items route)", () => {
+  it("s1) maxDuration=60 を明示 export している", async () => {
+    const routeModule = await import("./route");
+    expect(routeModule.maxDuration).toBe(60);
+    const fs = await import("node:fs");
+    const source = fs.readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+    expect(source).toContain("export const maxDuration = 60;");
+    expect(source).toContain('export const dynamic = "force-dynamic";'); // 既存契約維持
+  });
+
+  it("s2) tx guard は workspace/user/status/cleanup lease を条件に持ち、claim writer を含まない", async () => {
+    const fs = await import("node:fs");
+    const source = fs.readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+
+    // transaction guard の必須条件(fixtureで動的にも固定するが、条件セットは source で pin する)
+    const guardMatch = source.match(/tx\.uploadSession\.updateMany\(\{[\s\S]*?\}\);/);
+    expect(guardMatch).not.toBeNull();
+    const guard = guardMatch![0];
+    expect(guard).toContain("workspaceId: session.workspaceId");
+    expect(guard).toContain("userId: user.id");
+    expect(guard).toContain('status: "ACTIVE"');
+    expect(guard).toContain("cleanupLeaseUntil: null");
+    expect(guard).toContain("cleanupLeaseUntil: { lte: guardNow }");
+
+    // B3c-2 は lease を読む・guard するだけ — claim writer を追加しない(dormant)
+    expect(source).not.toContain("decideClaim");
+    expect(source).not.toContain("ownsClaim");
+    expect(source).not.toContain("cleanupAttemptToken");
   });
 });

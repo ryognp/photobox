@@ -1,11 +1,14 @@
 import "server-only";
 
 export const dynamic = "force-dynamic";
+// Phase 10-43-B3c-2: 明示 export。IN_FLIGHT_GRACE_MS(60min) ≫ maxDuration を
+// repo 内で証明可能にする(B3c-3 の stale IN_PROGRESS 回収の前提)。
+export const maxDuration = 300;
 
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ok, Errors } from "@/lib/apiResponse";
+import { err, ok, Errors } from "@/lib/apiResponse";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { buildImageSearchText } from "@/lib/commit/searchText";
 import { copyStorageFile } from "@/lib/commit/storageCopy";
@@ -13,9 +16,31 @@ import type { CommitItemResult, CommitResponse } from "@/lib/commit/commitTypes"
 import { createPerfLog } from "@/lib/perfLog";
 import { checkUserRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 import { classifyCommitItem, isCommitTimedOut, buildAssetPaths } from "@/lib/commit/commitDecision";
+import { isLeaseActive } from "@/lib/upload/uploadIntentCore";
 
 const COMMIT_CONCURRENCY = 2;
 const COMMIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
+
+// Phase 10-43-B3c-2: session cleanup 競合の固定 result(per-item)。
+// raw lease / token / path は含めない。
+const SESSION_CLEANUP_REASON = "SESSION_CLEANUP_IN_PROGRESS";
+const SESSION_CLEANUP_MESSAGE = "This session is being cleaned up. Please retry shortly.";
+
+// 認可済み request context。processItem へ引数で渡す(global mutable state 禁止)。
+type CommitSessionContext = {
+  readonly sessionId: string;
+  readonly workspaceId: string;
+  readonly userId: string;
+};
+
+// final transaction の session guard 失敗(cleanup 競合)を rollback として伝える
+// route-private sentinel。raw Prisma error を response へ出さないための内部専用型。
+class SessionCleanupConflictError extends Error {
+  constructor() {
+    super("session cleanup conflict");
+    this.name = "SessionCleanupConflictError";
+  }
+}
 
 function generateId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 25);
@@ -97,7 +122,7 @@ const COMMIT_ITEM_SELECT = {
 
 async function processItemsWithLimitedConcurrency(
   items: CommitItem[],
-  workspaceId: string,
+  context: CommitSessionContext,
 ): Promise<CommitItemResult[]> {
   const results: Array<CommitItemResult | undefined> = new Array(items.length);
   const activeHashes = new Set<string>();
@@ -123,7 +148,7 @@ async function processItemsWithLimitedConcurrency(
         activeHashes.add(item.fileHash);
         activeCount += 1;
 
-        processItem(item, workspaceId)
+        processItem(item, context)
           .then((result) => {
             results[selectedIndex] = result;
           })
@@ -205,7 +230,7 @@ export async function POST(req: NextRequest) {
   // Fetch session
   const session = await prisma.uploadSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, workspaceId: true, userId: true, status: true },
+    select: { id: true, workspaceId: true, userId: true, status: true, cleanupLeaseUntil: true },
   });
 
   if (!session) return Errors.notFound("Session not found");
@@ -218,6 +243,14 @@ export async function POST(req: NextRequest) {
     },
   });
   if (!member) return Errors.forbidden();
+
+  // Session cleanup interlock (Phase 10-43-B3c-2)
+  // active な session cleanup claim 中は commit を開始しない — items fetch /
+  // timeout reset / processItem / asset copy のいずれにも進まない。
+  // lease の値そのものは response へ出さない。
+  if (isLeaseActive(session.cleanupLeaseUntil, new Date())) {
+    return err(SESSION_CLEANUP_REASON, SESSION_CLEANUP_MESSAGE, 409);
+  }
 
   // Session status check
   if (session.status === "ABANDONED") {
@@ -284,7 +317,12 @@ export async function POST(req: NextRequest) {
 
   // Process items with limited concurrency.
   // 同じ fileHash は同時処理しないことで、commit 時の重複レースを避ける。
-  const results = await processItemsWithLimitedConcurrency(items, session.workspaceId);
+  const sessionContext: CommitSessionContext = {
+    sessionId: session.id,
+    workspaceId: session.workspaceId,
+    userId: user.id,
+  };
+  const results = await processItemsWithLimitedConcurrency(items, sessionContext);
   perf.mark("processItemsMs");
 
   // Check if all session items are committed and update session status
@@ -293,13 +331,30 @@ export async function POST(req: NextRequest) {
     select: { commitStatus: true },
   });
   const allCommitted = allItems.every((i) => i.commitStatus === "COMMITTED");
-  let finalSessionStatus = session.status;
+  let finalSessionStatus: string = session.status;
   if (allCommitted && session.status !== "COMMITTED") {
-    await prisma.uploadSession.update({
-      where: { id: session.id },
-      data: { status: "COMMITTED", committedAt: new Date() },
+    // B3c-2: cleanup lease を無視した無条件 update をやめ、条件付き updateMany で
+    // guard する。count=0 でも一般 500 にせず、最新 status を read-only で反映する。
+    const finalizeNow = new Date();
+    const finalized = await prisma.uploadSession.updateMany({
+      where: {
+        id: session.id,
+        workspaceId: session.workspaceId,
+        userId: user.id,
+        status: { not: "COMMITTED" },
+        OR: [{ cleanupLeaseUntil: null }, { cleanupLeaseUntil: { lte: finalizeNow } }],
+      },
+      data: { status: "COMMITTED", committedAt: finalizeNow },
     });
-    finalSessionStatus = "COMMITTED";
+    if (finalized.count > 0) {
+      finalSessionStatus = "COMMITTED";
+    } else {
+      const latestSession = await prisma.uploadSession.findUnique({
+        where: { id: session.id },
+        select: { status: true },
+      });
+      finalSessionStatus = latestSession?.status ?? session.status;
+    }
   }
 
   perf.mark("sessionFinalizeMs");
@@ -362,9 +417,10 @@ export async function POST(req: NextRequest) {
 
 async function processItem(
   item: CommitItem,
-  workspaceId: string
+  context: CommitSessionContext
 ): Promise<CommitItemResult> {
   const uploadItemId = item.id;
+  const workspaceId = context.workspaceId;
 
   // --- Pre-commit classification (branches 1–9, pure) ---
   const decision = classifyCommitItem(item);
@@ -452,19 +508,106 @@ async function processItem(
     assetPreviewPath = paths.assetPreviewPath;
   }
 
-  // Mark as IN_PROGRESS and persist paths
-  await prisma.uploadItem.update({
-    where: { id: uploadItemId },
-    data: {
-      reservedImageId,
-      assetStoragePath,
-      assetThumbnailPath,
-      assetPreviewPath,
-      commitStatus: "IN_PROGRESS",
-      commitStartedAt: new Date(),
-      commitError: null,
-    },
+  // Mark as IN_PROGRESS and persist paths (Phase 10-43-B3c-2 interlock)
+  //
+  // short transaction:
+  //   session cleanup guard(条件付き updateMany・row lock で claim CAS と直列化)
+  //   → UploadItem guarded IN_PROGRESS update(asset paths を copy 前に永続化)
+  // Storage I/O は transaction に入れない。cleanup 勝者なら IN_PROGRESS 化も
+  // asset copy も開始されない。commit 勝者なら copy 開始前に fresh IN_PROGRESS +
+  // asset paths が DB へ確定し、B3c-3 cleanup 側はこれを見て claim しない。
+  const startedAt = new Date();
+  const interlock = await prisma.$transaction(async (tx) => {
+    const guarded = await tx.uploadSession.updateMany({
+      where: {
+        id: context.sessionId,
+        workspaceId: context.workspaceId,
+        userId: context.userId,
+        status: { in: ["PREVIEWING", "COMMITTED"] },
+        OR: [{ cleanupLeaseUntil: null }, { cleanupLeaseUntil: { lte: startedAt } }],
+      },
+      data: { updatedAt: startedAt },
+    });
+    if (guarded.count === 0) return { kind: "session_cleanup_conflict" as const };
+
+    const marked = await tx.uploadItem.updateMany({
+      where: {
+        id: uploadItemId,
+        sessionId: context.sessionId,
+        workspaceId: context.workspaceId,
+        committedImageId: null,
+        commitStatus: { in: ["PENDING", "FAILED"] },
+      },
+      data: {
+        reservedImageId,
+        assetStoragePath,
+        assetThumbnailPath,
+        assetPreviewPath,
+        commitStatus: "IN_PROGRESS",
+        commitStartedAt: startedAt,
+        commitError: null,
+      },
+    });
+    if (marked.count === 0) return { kind: "item_state_conflict" as const };
+
+    return { kind: "marked" as const };
   });
+
+  if (interlock.kind === "session_cleanup_conflict") {
+    // cleanup 勝者。item は元の状態のまま・copy 0・Image/Prompt 0。
+    return {
+      kind: "failed",
+      uploadItemId,
+      reason: SESSION_CLEANUP_REASON,
+      message: SESSION_CLEANUP_MESSAGE,
+    };
+  }
+
+  if (interlock.kind === "item_state_conflict") {
+    // 並行 commit 等で item 状態が変わった。最新 row を再読込し、既存の
+    // classifyCommitItem() 契約へ収束させる(raw DB error は返さない)。
+    const latest = await prisma.uploadItem.findUnique({
+      where: { id: uploadItemId },
+      select: {
+        commitStatus: true,
+        committedImageId: true,
+        duplicateStatus: true,
+        duplicateImageId: true,
+        uploadStatus: true,
+        promptStatus: true,
+        promptDraft: true,
+      },
+    });
+    if (!latest) {
+      return {
+        kind: "failed",
+        uploadItemId,
+        reason: "COMMIT_STATE_CONFLICT",
+        message: "Item state changed during commit. Please retry.",
+      };
+    }
+    const latestDecision = classifyCommitItem(latest);
+    switch (latestDecision.action) {
+      case "already_committed":
+        return { kind: "already_committed", uploadItemId, imageId: latestDecision.imageId };
+      case "in_progress":
+        return {
+          kind: "failed",
+          uploadItemId,
+          reason: "COMMIT_IN_PROGRESS",
+          message: "Commit already in progress for this item",
+        };
+      case "invalid":
+        return { kind: "invalid", uploadItemId, reason: latestDecision.reason, message: latestDecision.message };
+      default:
+        return {
+          kind: "failed",
+          uploadItemId,
+          reason: "COMMIT_STATE_CONFLICT",
+          message: "Item state changed during commit. Please retry.",
+        };
+    }
+  }
 
   // --- Storage copy: original (required) ---
   const origResult = await copyStorageFile(item.tempStoragePath, assetStoragePath!);
@@ -526,6 +669,21 @@ async function processItem(
     const now = new Date();
 
     await prisma.$transaction(async (tx) => {
+      // 0. Session cleanup guard (Phase 10-43-B3c-2)
+      // asset copy 中に cleanup claim が取得された race では、Image/Prompt/
+      // imageTag/imagePerson/COMMITTED 化を一切残さず rollback する。
+      const guarded = await tx.uploadSession.updateMany({
+        where: {
+          id: context.sessionId,
+          workspaceId: context.workspaceId,
+          userId: context.userId,
+          status: { in: ["PREVIEWING", "COMMITTED"] },
+          OR: [{ cleanupLeaseUntil: null }, { cleanupLeaseUntil: { lte: now } }],
+        },
+        data: { updatedAt: now },
+      });
+      if (guarded.count === 0) throw new SessionCleanupConflictError();
+
       // 1. Upsert image
       await tx.image.upsert({
         where: { id: reservedImageId! },
@@ -612,18 +770,29 @@ async function processItem(
     await cleanupTempFiles(item);
 
     return { kind: "committed", uploadItemId, imageId: reservedImageId! };
-  } catch (err) {
+  } catch (txError) {
+    // B3c-2: session cleanup guard 失敗(rollback 済み)。copy 済み asset object は
+    // 削除せず、item は IN_PROGRESS + persisted asset paths のまま維持して
+    // B3c-3 の orphan recovery へ委譲する(FAILED 化・path clear は行わない)。
+    if (txError instanceof SessionCleanupConflictError) {
+      return {
+        kind: "failed",
+        uploadItemId,
+        reason: SESSION_CLEANUP_REASON,
+        message: SESSION_CLEANUP_MESSAGE,
+      };
+    }
     // P2002 = unique constraint violation. The pre-commit duplicate re-check
     // excludes soft-deleted images, but the DB unique (workspaceId, fileHash)
     // still counts them — so a same-hash re-upload after soft delete lands here.
     // Surface it as an explicit, understandable conflict rather than a raw error.
     const isP2002 =
-      typeof err === "object" && err !== null && "code" in err &&
-      (err as { code?: unknown }).code === "P2002";
+      typeof txError === "object" && txError !== null && "code" in txError &&
+      (txError as { code?: unknown }).code === "P2002";
     const reason = isP2002 ? "FILE_HASH_CONFLICT_WITH_DELETED_IMAGE" : "TRANSACTION_FAILED";
     const message = isP2002
       ? "A previously deleted image with the same file hash still occupies the unique constraint. Full re-upload support is pending (Phase 6C)."
-      : err instanceof Error ? err.message : "Unknown transaction error";
+      : txError instanceof Error ? txError.message : "Unknown transaction error";
     await prisma.uploadItem
       .update({
         where: { id: uploadItemId },

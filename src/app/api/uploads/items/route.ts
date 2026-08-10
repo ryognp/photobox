@@ -1,4 +1,7 @@
 export const dynamic = "force-dynamic";
+// Phase 10-43-B3c-2: 明示 export。IN_FLIGHT_GRACE_MS(60min) ≫ maxDuration を
+// repo 内で証明可能にする(B3c-3 の stale UPLOADING 回収の前提)。
+export const maxDuration = 60;
 
 import { NextRequest } from "next/server";
 import cuid from "cuid";
@@ -6,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { err, ok, Errors } from "@/lib/apiResponse";
+import { isLeaseActive } from "@/lib/upload/uploadIntentCore";
 import { validateImageFile } from "@/lib/upload/validateImage";
 import { sha256Hex } from "@/lib/upload/hashServer";
 import { tempOriginalPath, tempThumbnailPath, tempPreviewPath } from "@/lib/upload/storagePaths";
@@ -81,7 +85,7 @@ export async function POST(request: NextRequest) {
   // 4. session 取得 + 認可
   const session = await prisma.uploadSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, workspaceId: true, userId: true, status: true },
+    select: { id: true, workspaceId: true, userId: true, status: true, cleanupLeaseUntil: true },
   });
   if (!session) return Errors.notFound("Session not found");
   if (session.userId !== user.id) return Errors.forbidden();
@@ -91,6 +95,13 @@ export async function POST(request: NextRequest) {
     select: { workspaceId: true },
   });
   if (!member) return Errors.forbidden();
+
+  // 4.5. session cleanup interlock (Phase 10-43-B3c-2)
+  // active な session cleanup claim 中は新しい temp object を作らせない
+  // (prepare route と同一契約)。lease の値そのものは response へ出さない。
+  if (isLeaseActive(session.cleanupLeaseUntil, new Date())) {
+    return err("SESSION_CLEANUP_IN_PROGRESS", "This session is being cleaned up. Please retry shortly.", 409);
+  }
 
   // 5. session.status チェック
   if (session.status !== "ACTIVE") {
@@ -185,7 +196,24 @@ export async function POST(request: NextRequest) {
   const thumbnailStoragePath = tempThumbnailPath(session.workspaceId, sessionId, uploadItemId);
   const previewStoragePath = tempPreviewPath(session.workspaceId, sessionId, uploadItemId);
 
+  // B3c-2: transaction 冒頭で session を条件付き guard する(prepare と同型)。
+  // cleanup claim CAS と同一 session row の UPDATE なので row lock で直列化され、
+  // 「initial read 通過後に cleanup claim が取得される」raceでも、claim 勝者の
+  // 後から sortOrder 予約・UploadItem 作成・Storage PUT が始まることはない。
+  const guardNow = new Date();
   const reservationResult = await prisma.$transaction(async (tx) => {
+    const guarded = await tx.uploadSession.updateMany({
+      where: {
+        id: sessionId,
+        workspaceId: session.workspaceId,
+        userId: user.id,
+        status: "ACTIVE",
+        OR: [{ cleanupLeaseUntil: null }, { cleanupLeaseUntil: { lte: guardNow } }],
+      },
+      data: { updatedAt: guardNow },
+    });
+    if (guarded.count === 0) return { ok: false as const, reason: "SESSION_GUARD_FAILED" as const };
+
     const reservation = await reserveSortOrder(tx, sessionId);
     if (!reservation.ok) return reservation;
 
@@ -217,6 +245,23 @@ export async function POST(request: NextRequest) {
   });
 
   if (!reservationResult.ok) {
+    if (reservationResult.reason === "SESSION_GUARD_FAILED") {
+      // guard count=0 を一般 500 へ潰さず、transaction 外で再読込して理由を特定する
+      // (prepare の classifySessionRejection と同じ分類)。
+      const latest = await prisma.uploadSession.findUnique({
+        where: { id: sessionId },
+        select: { userId: true, status: true, cleanupLeaseUntil: true },
+      });
+      if (!latest) return Errors.notFound("Session not found");
+      if (latest.userId !== user.id) return Errors.forbidden();
+      if (isLeaseActive(latest.cleanupLeaseUntil, new Date())) {
+        return err("SESSION_CLEANUP_IN_PROGRESS", "This session is being cleaned up. Please retry shortly.", 409);
+      }
+      if (latest.status !== "ACTIVE") {
+        return Errors.validation(`Session status is '${latest.status}'. Only ACTIVE sessions accept uploads.`);
+      }
+      return err("CONFLICT", "Session state changed during upload. Please retry.", 409);
+    }
     // session は手順4で存在確認済みのため、ここへ到達するのは手順4以降に
     // sessionが削除された場合のみ(レース)。既存のsession不存在時と同じ契約。
     return Errors.notFound("Session not found");
