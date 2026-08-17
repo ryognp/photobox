@@ -1,23 +1,43 @@
 import "server-only";
 
 export const dynamic = "force-dynamic";
+// Uses node:crypto (randomUUID) — Node.js runtime only.
+export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
+import { randomUUID } from "node:crypto";
 import { getCurrentUser, getDefaultWorkspaceForUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ok, Errors } from "@/lib/apiResponse";
+import {
+  createPrismaSessionCleanupStore,
+  runSessionCleanup,
+  SESSION_CLEANUP_BATCH_SIZE,
+} from "@/lib/cleanup/cleanupUploadsCore";
+import type { StorageRemover } from "@/lib/upload/intentSweepCore";
 
 const BUCKET = "photobox-private";
-const MAX_SESSIONS = 50;
 const DEFAULT_HOURS = 24;
 const MIN_HOURS = 1;
 const MAX_HOURS = 168;
 
-// Cleanup 方針:
+// Cleanup 方針 (Phase 10-43-B3c-3):
+// - cron と同じ session cleanup core（runSessionCleanup）を使用し、安全条件
+//   （claim / fresh marker / COMMITTED 保護 / future notBefore / path 検証 /
+//   storage-first / token 条件付き delete）を一切迂回しない
 // - COMMITTED session / COMMITTED item は絶対に削除しない
-// - temp Storage ファイルを先に削除し、次に DB レコードを物理削除する
-// - Storage 削除失敗は警告として記録し処理継続
+// - Storage object の削除成功後にのみ session の DB 行を物理削除する
+// - intent sweep は manual route では実行しない（既存 response 互換のため
+//   cron 専用とする。COMMITTED session の staging 残骸も cron の intent sweep
+//   が notBefore 以降に回収する — route.integration.test.ts で固定）
+// - warnings は固定分類 + session id のみ（raw path / provider message /
+//   token / lease timestamp を返さない）
+
+const removeStorage: StorageRemover = async (paths) => {
+  const { data, error } = await supabaseAdmin.storage.from(BUCKET).remove([...paths]);
+  return { error, removedPaths: data ? data.map((object) => object.name) : null };
+};
 
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
@@ -47,110 +67,45 @@ export async function POST(request: NextRequest) {
 
   const cutoff = new Date(Date.now() - olderThanHours * 60 * 60 * 1000);
 
-  // 対象 session を取得（COMMITTED 以外、現在ユーザーの workspace のみ）
-  const sessions = await prisma.uploadSession.findMany({
-    where: {
-      workspaceId: workspace.id,
-      userId: user.id,
-      status: { in: ["ACTIVE", "PREVIEWING", "ABANDONED"] },
-      createdAt: { lt: cutoff },
-    },
-    take: MAX_SESSIONS,
-    select: {
-      id: true,
-      status: true,
-      createdAt: true,
-      items: {
-        select: {
-          id: true,
-          commitStatus: true,
-          tempStoragePath: true,
-          tempThumbnailPath: true,
-          tempPreviewPath: true,
-        },
-      },
-    },
-    orderBy: { createdAt: "asc" },
+  const result = await runSessionCleanup({
+    store: createPrismaSessionCleanupStore(prisma),
+    removeStorage,
+    now: () => new Date(),
+    generateAttemptToken: () => randomUUID(),
+    cutoff,
+    dryRun,
+    maxSessions: SESSION_CLEANUP_BATCH_SIZE,
+    // workspace scoping: 現在ユーザーの workspace / user の session のみ対象。
+    scope: { workspaceId: workspace.id, userId: user.id },
   });
 
-  // 対象 item から temp paths を収集（COMMITTED item は除外）
-  const allTempPaths: string[] = [];
-  for (const session of sessions) {
-    for (const item of session.items) {
-      if (item.commitStatus === "COMMITTED") continue;
-      if (item.tempStoragePath) allTempPaths.push(item.tempStoragePath);
-      if (item.tempThumbnailPath) allTempPaths.push(item.tempThumbnailPath);
-      if (item.tempPreviewPath) allTempPaths.push(item.tempPreviewPath);
-    }
-  }
-
-  const totalItems = sessions.reduce((acc, s) => {
-    return acc + s.items.filter((i) => i.commitStatus !== "COMMITTED").length;
-  }, 0);
-
-  const sessionSummary = sessions.map((s) => ({
-    id: s.id,
-    status: s.status,
-    createdAt: s.createdAt,
-    itemCount: s.items.filter((i) => i.commitStatus !== "COMMITTED").length,
-  }));
-
-  if (dryRun) {
-    return ok({
-      dryRun: true,
-      olderThanHours,
-      summary: {
-        sessions: sessions.length,
-        items: totalItems,
-        storagePaths: allTempPaths.length,
-        deletedStoragePaths: 0,
-        warnings: 0,
-      },
-      sessions: sessionSummary,
-      warnings: [],
-    });
-  }
-
-  // --- 実行モード ---
-  const warnings: string[] = [];
-  let deletedStoragePaths = 0;
-
-  // 1. Storage temp ファイルを削除（バッチ最大 1000 ファイルずつ）
-  const BATCH = 1000;
-  for (let i = 0; i < allTempPaths.length; i += BATCH) {
-    const batch = allTempPaths.slice(i, i + BATCH);
-    const { error } = await supabaseAdmin.storage.from(BUCKET).remove(batch);
-    if (error) {
-      warnings.push(`Storage remove error (batch ${Math.floor(i / BATCH) + 1}): ${error.message}`);
-    } else {
-      deletedStoragePaths += batch.length;
-    }
-  }
-
-  // 2. DB: upload_sessions を物理削除（Cascade で upload_items, upload_item_tags, upload_item_persons も削除）
-  const sessionIds = sessions.map((s) => s.id);
-  try {
-    await prisma.uploadSession.deleteMany({
-      where: {
-        id: { in: sessionIds },
-        status: { not: "COMMITTED" }, // 安全弁: COMMITTED は絶対に消さない
-      },
-    });
-  } catch (e: unknown) {
-    warnings.push(`DB delete error: ${(e as Error).message}`);
-  }
-
+  // 既存 response 契約（dryRun / olderThanHours / summary / sessions / warnings）
+  // を維持し、B3c-3 metrics を additive に追加する。
   return ok({
-    dryRun: false,
+    dryRun,
     olderThanHours,
     summary: {
-      sessions: sessions.length,
-      items: totalItems,
-      storagePaths: allTempPaths.length,
-      deletedStoragePaths,
-      warnings: warnings.length,
+      sessions: result.considered,
+      items: result.itemsConsidered,
+      storagePaths: result.plannedStoragePaths,
+      deletedStoragePaths: result.storageDeleted,
+      warnings: result.warnings.length,
     },
-    sessions: sessionSummary,
-    warnings,
+    sessions: result.sessions,
+    warnings: result.warnings,
+    // ---- additive metrics (B3c-3) ----
+    deletedSessions: result.deleted,
+    retainedSessions: result.retained,
+    sessionsClaimed: result.claimed,
+    sessionsSkippedFreshUploading: result.skippedFreshUploading,
+    sessionsSkippedFreshCommit: result.skippedFreshCommit,
+    sessionsSkippedFutureNotBefore: result.skippedFutureNotBefore,
+    sessionsSkippedFinalizeInProgress: result.skippedFinalizeInProgress,
+    sessionsSkippedIntentCleanupInProgress: result.skippedIntentCleanupInProgress,
+    sessionsSkippedClaimConflict: result.skippedClaimConflict,
+    sessionsSkippedCommittedItem: result.skippedCommittedItem,
+    pathMismatch: result.pathFailures,
+    storageMissing: result.storageMissing,
+    storageFailed: result.storageFailed,
   });
 }
