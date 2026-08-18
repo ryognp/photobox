@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { MutableRefObject } from "react";
 import type { LocalItem } from "./types";
 import type { SignedUrls } from "@/lib/upload/uploadClient";
-import { uploadFile } from "@/lib/upload/uploadClient";
+import { selectUploadFileFn } from "@/lib/upload/directUploadClient";
 import { shouldIgnoreArrowNav } from "@/lib/quick-add/keyboardNav";
 import { MAX_ORIGINAL_BYTES, MAX_ORIGINAL_MB } from "@/lib/upload/uploadLimits";
 import {
@@ -36,6 +36,8 @@ type Props = {
   userEmail: string;
   workspaceId: string;
   workspaceName: string;
+  // server（page.tsx）が読んだ direct upload flag。boolean のみ受け取る。
+  directUploadEnabled: boolean;
 };
 
 type PendingRestore = StoredSession & {
@@ -46,7 +48,7 @@ type PendingRestore = StoredSession & {
 const MAX_CONCURRENT = 2;
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-export default function QuickAddClient({ userEmail, workspaceId, workspaceName }: Props) {
+export default function QuickAddClient({ userEmail, workspaceId, workspaceName, directUploadEnabled }: Props) {
   const [items, setItems] = useState<LocalItem[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [checkedClientIds, setCheckedClientIds] = useState<string[]>([]);
@@ -70,6 +72,9 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
   const selectedClientIdRef = useRef<string | null>(null);
   // workspaceId is a server-provided prop that never changes during the component lifetime
   const workspaceIdRef = useRef(workspaceId);
+  // upload 関数は mount 時に 1 回だけ選択し ref に固定する（operation 途中で
+  // legacy / Direct が切り替わらない）。flag は server prop で page 表示中は不変。
+  const uploadFnRef = useRef(selectUploadFileFn(directUploadEnabled));
 
   // focusPromptRef: passed to InputPane so it can register its focus function
   const focusPromptRef: MutableRefObject<(() => void) | null> = useRef(null);
@@ -287,7 +292,7 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName }
     uploadingCount.current += 1;
     try {
       const sid = await ensureSession();
-      const result = await uploadFile(file, sid, (progress) => {
+      const result = await uploadFnRef.current(file, sid, (progress) => {
         const stage = progress.stage;
         if (stage !== "done" && stage !== "error") {
           updateItem(clientId, { status: stage });

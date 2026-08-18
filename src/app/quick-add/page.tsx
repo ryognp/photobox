@@ -1,4 +1,5 @@
 import { requireUser, getDefaultWorkspaceForUser } from "@/lib/auth";
+import { readDirectUploadEnabledFlag } from "@/lib/upload/directUploadFeature";
 import QuickAddClient from "./QuickAddClient";
 
 export default async function QuickAddPage() {
@@ -22,6 +23,9 @@ export default async function QuickAddPage() {
       userEmail={user.email ?? ""}
       workspaceId={workspace.id}
       workspaceName={workspace.name}
+      // server-only flag を render 時に読む（module import 時に固定しない）。
+      // client へは boolean のみを渡す — flag 名や env は bundle へ出さない。
+      directUploadEnabled={readDirectUploadEnabledFlag()}
     />
   );
 }
