@@ -53,12 +53,13 @@ import {
   type FinalizeRejection,
   type TransientStage,
 } from "@/lib/upload/finalizeLifecycle";
-import {
-  measureStagedImage,
-  type FinalizeMeasurementFailureReason,
-  type MeasuredImage,
+// sharp を静的 import graph へ載せないため、この 2 module からは型だけを取る
+// （実体は POST 内の loadImageRuntime() が動的に読む。Frozen Plan §79-8）。
+import type {
+  FinalizeMeasurementFailureReason,
+  MeasuredImage,
 } from "@/lib/upload/finalizeMeasurement";
-import { generateVariants, type VariantOutcome } from "@/lib/upload/variantProfile";
+import type { VariantOutcome } from "@/lib/upload/variantProfile";
 import { normalizeStorageError } from "@/lib/upload/storageErrors";
 import { resolveSignedUrl } from "@/lib/signedUrl";
 
@@ -136,7 +137,60 @@ const CANONICAL_PATH_CONFLICT: FinalizeRejection = {
   releaseLease: true,
 };
 
+// image 実行環境（sharp native binding + libvips）が Function bundle 上で
+// 解決できない場合の固定応答。lease 未取得地点でのみ使うため transition は
+// "none"（DB write 0 / lease 操作 0）。native path / package 名 / raw error は
+// message へ一切含めない（Frozen Plan §79-8）。
+const IMAGE_RUNTIME_UNAVAILABLE: FinalizeRejection = {
+  kind: "reject",
+  http: 500,
+  errorCode: "INTERNAL_ERROR",
+  message: "Failed to finalize the upload. Please try again later.",
+  retryable: true,
+  intentTransition: "none",
+  lastErrorCode: "IMAGE_RUNTIME_UNAVAILABLE",
+  lastErrorDetail: "Image processing runtime is unavailable",
+  releaseLease: false,
+};
+
 const rejectionResponse = (r: FinalizeRejection) => err(r.errorCode, r.message, r.http);
+
+// ---------------------------------------------------------------------------
+// image runtime lazy loader（Frozen Plan §79-4 / §79-8）
+//
+// sharp は native binding + 共有 library に依存する。これを module scope で
+// 解決すると load 失敗が route module 全体を落とし、POST 先頭の feature flag
+// gate（404）へ到達できなくなる（B4 P0-C3 の実障害）。measurement / variant の
+// 両 module をここでまとめて動的 import し、片方だけ成功した状態では続行しない。
+// raw import error は外へ throw せず握り潰し、呼び出し側は固定 rejection だけを
+// 返す。module scope では実行しない（loader は POST 内からのみ呼ぶ）。
+// ---------------------------------------------------------------------------
+
+type ImageRuntime = {
+  measureStagedImage: (typeof import("@/lib/upload/finalizeMeasurement"))["measureStagedImage"];
+  generateVariants: (typeof import("@/lib/upload/variantProfile"))["generateVariants"];
+};
+
+async function loadImageRuntime(): Promise<ImageRuntime | null> {
+  // Promise.all の一括 reject で片側が unhandled rejection になるのを避けるため、
+  // 個別に catch して null へ落とす（両方の評価を必ず試行する）。
+  const [measurement, variant] = await Promise.all([
+    import("@/lib/upload/finalizeMeasurement").catch(() => null),
+    import("@/lib/upload/variantProfile").catch(() => null),
+  ]);
+  if (measurement === null || variant === null) return null;
+  if (
+    typeof measurement.measureStagedImage !== "function" ||
+    typeof variant.generateVariants !== "function"
+  ) {
+    return null;
+  }
+  // Production entry point のみを渡す（*ForTest entry は返さない）。
+  return {
+    measureStagedImage: measurement.measureStagedImage,
+    generateVariants: variant.generateVariants,
+  };
+}
 
 const cleanupInactive = (now: Date) => ({
   OR: [{ cleanupLeaseUntil: null }, { cleanupLeaseUntil: { lte: now } }],
@@ -520,6 +574,21 @@ export async function POST(request: NextRequest) {
   const originalBuffer = Buffer.from(await stagingBlob.arrayBuffer());
   stagingBlob = null;
 
+  // ---- 6b. image runtime 解決（staging download 成功後・lease CAS 前） ------
+  // OBJECT_MISSING / transient の分類はここまでで確定済み。この地点までに
+  // DB write 0 / Storage write 0 のため、失敗しても lease を取得せずに返せる。
+  const imageRuntime = await loadImageRuntime();
+  perf.mark("imageRuntimeMs");
+  if (imageRuntime === null) {
+    perf.end({
+      path: "image_runtime_unavailable",
+      intentId: intent.id,
+      rateLimitEnabled: rl.enabled,
+      rateLimitSource: rl.source,
+    });
+    return rejectionResponse(IMAGE_RUNTIME_UNAVAILABLE);
+  }
+
   // ---- 7. finalize lease CAS（短 transaction・Storage I/O は入れない） ------
   const attemptToken = randomUUID();
   const leaseNow = new Date();
@@ -627,7 +696,7 @@ export async function POST(request: NextRequest) {
     if (!(await ownsAttempt(intent.id, attemptToken, new Date()))) {
       return respondByReclassification(intent.id, user.id);
     }
-    const measurementResult = await measureStagedImage(originalBuffer, {
+    const measurementResult = await imageRuntime.measureStagedImage(originalBuffer, {
       declaredSizeBytes: intent.declaredSizeBytes,
       declaredMimeType: intent.declaredMimeType,
       clientFileHash: intent.clientFileHash,
@@ -716,7 +785,7 @@ export async function POST(request: NextRequest) {
         return transientExit("canonical_upload");
       }
       const canonicalBytes = Buffer.from(await verifyBlob.arrayBuffer());
-      const verification = await measureStagedImage(canonicalBytes, {
+      const verification = await imageRuntime.measureStagedImage(canonicalBytes, {
         declaredSizeBytes: measured.actualSizeBytes,
         declaredMimeType: measured.actualMimeType,
         clientFileHash: measured.actualFileHash,
@@ -734,7 +803,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ---- 8d. variants（per-variant 独立・nonfatal・両 null 可） --------------
-    const variants = await generateVariants(originalBuffer, intent.variantProfileVersion);
+    const variants = await imageRuntime.generateVariants(originalBuffer, intent.variantProfileVersion);
     perf.mark("variantGenerateMs");
 
     if (!(await ownsAttempt(intent.id, attemptToken, new Date()))) {

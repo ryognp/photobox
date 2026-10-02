@@ -151,10 +151,53 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 
+// ---------------------------------------------------------------------------
+// B4 P0-C3R: test state（direct upload flag / sharp native load 可否）
+//
+// mock は module ごとに file-level で 1 つだけ登録し、状態は globalThis の
+// この file 専用 key で切り替える。同一 module を vi.doMock でテスト間に往復
+// させると、後続の fresh import が古い登録を掴み続けて無関係な test が落ちる。
+// また vi.hoisted の戻り値は vi.resetModules() 越しに共有できない（factory と
+// test が別 object を掴む）ため、共有 state は globalThis に置く。
+// factory 内では TDZ を避けるため key 文字列を直接書く。
+// ---------------------------------------------------------------------------
+const FLAG_KEY = "__b4FinalizeDirectUploadEnabled";
+const SHARP_IMPORT_KEY = "__b4FinalizeSharpImportAttempts";
+
+type TestGlobal = typeof globalThis & {
+  [FLAG_KEY]?: boolean;
+  [SHARP_IMPORT_KEY]?: number;
+};
+
+const testGlobal = () => globalThis as TestGlobal;
+
+const testState = {
+  /** direct upload feature flag。既定は有効（この file 全体の前提）。 */
+  get directUploadEnabled(): boolean {
+    return testGlobal()[FLAG_KEY] !== false;
+  },
+  set directUploadEnabled(v: boolean) {
+    testGlobal()[FLAG_KEY] = v;
+  },
+  /** sharp module の evaluation 試行回数（= image runtime loader へ到達した観測点）。 */
+  get sharpImportAttempts(): number {
+    return testGlobal()[SHARP_IMPORT_KEY] ?? 0;
+  },
+  resetSharpImportAttempts() {
+    testGlobal()[SHARP_IMPORT_KEY] = 0;
+  },
+  reset() {
+    testGlobal()[FLAG_KEY] = true;
+    testGlobal()[SHARP_IMPORT_KEY] = 0;
+  },
+};
+
 // このfile全体は direct upload gate が開いている前提。gate 閉塞は個別 test が
-// vi.doMock + resetModules で検証する。
+// testState.directUploadEnabled を反転して検証する（route は request ごとに
+// flag を読むため、module 再 import は不要）。
 vi.mock("@/lib/upload/directUploadFeature", () => ({
-  readDirectUploadEnabledFlag: () => true,
+  readDirectUploadEnabledFlag: () =>
+    (globalThis as Record<string, unknown>)["__b4FinalizeDirectUploadEnabled"] !== false,
 }));
 
 // prisma: isolated Postgres への実接続（singleton — resetModules 後の再 import
@@ -173,7 +216,16 @@ vi.mock("@/lib/prisma", async () => {
 // sharp: 実装は実 sharp のまま、constructor options だけを記録する wrapper。
 // full decode の limitInputPixels 契約（B3a carry-forward）を route 経由で固定する。
 const sharpCtorOptions: Array<Record<string, unknown>> = [];
-vi.mock("sharp", async (importOriginal) => {
+
+// sharp mock factory の唯一の定義。file-level 登録と、native load failure を
+// 模した test の復元登録の双方でこの同一関数を使い、登録内容が分岐しないように
+// する（分岐した stale factory が後続 test を汚染するのを構造的に防ぐ）。
+// 併せて module evaluation の試行を記録する — image runtime loader へ到達しない
+// 限り sharp は import されないため、これが "loader call 0" の観測点になる。
+async function sharpWrapperFactory(importOriginal: () => Promise<unknown>) {
+  const g = globalThis as Record<string, unknown>;
+  g["__b4FinalizeSharpImportAttempts"] =
+    ((g["__b4FinalizeSharpImportAttempts"] as number | undefined) ?? 0) + 1;
   const actual = (await importOriginal()) as { default: typeof import("sharp") };
   const real = actual.default;
   const wrapped = ((...args: unknown[]) => {
@@ -185,7 +237,34 @@ vi.mock("sharp", async (importOriginal) => {
   }) as unknown as typeof real;
   Object.assign(wrapped, real);
   return { default: wrapped };
-});
+}
+
+vi.mock("sharp", sharpWrapperFactory);
+
+// Preview で実測した native load failure と同型のメッセージ。
+const SHARP_NATIVE_LOAD_ERROR =
+  'Could not load the "sharp" module using the linux-x64 runtime\n' +
+  "ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3: cannot open shared object file: No such file or directory";
+
+// vitest では vi.mock の factory 結果が file 単位でキャッシュされ、
+// vi.resetModules() では再実行されない（実測）。module evaluation 失敗を
+// 再現できるのは vi.doMock だけなので、失敗の注入と復元にだけこれを使う。
+// 復元は必ず上の唯一の factory を再登録する（別実装を残さない）。
+function injectSharpNativeLoadFailure() {
+  vi.doMock("sharp", () => {
+    const g = globalThis as Record<string, unknown>;
+    g["__b4FinalizeSharpImportAttempts"] =
+      ((g["__b4FinalizeSharpImportAttempts"] as number | undefined) ?? 0) + 1;
+    throw new Error(SHARP_NATIVE_LOAD_ERROR);
+  });
+  vi.resetModules();
+  testState.resetSharpImportAttempts();
+}
+
+function restoreSharp() {
+  vi.doMock("sharp", sharpWrapperFactory);
+  vi.resetModules();
+}
 
 // ---------------------------------------------------------------------------
 // 共通 helpers
@@ -234,6 +313,7 @@ function resetKnobs() {
   downloadHoldPath = null;
   uploadHold = null;
   currentUserId = `${RUN_NS}unset`;
+  testState.reset();
 }
 
 beforeAll(async () => {
@@ -282,18 +362,14 @@ beforeAll(async () => {
 describe("POST /api/uploads/items/finalize (DB-less: gate / auth / rate limit / payload)", () => {
   it("1) feature gate 無効時は auth より前に 404（rate limit / Storage / sharp 未到達）", async () => {
     currentUserId = `${RUN_NS}unset`; // 未認証のまま — gate が auth より前なら 401 ではなく 404
-    vi.resetModules();
-    vi.doMock("@/lib/upload/directUploadFeature", () => ({
-      readDirectUploadEnabledFlag: () => false,
-    }));
+    testState.directUploadEnabled = false;
     try {
-      const { POST: gatedPOST } = await import("./route");
       const req = new Request("http://localhost/api/uploads/items/finalize", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ intentId: "cmxxgate" }),
       });
-      const res = await gatedPOST(req as unknown as Parameters<RoutePOST>[0]);
+      const res = await POST(req as unknown as Parameters<RoutePOST>[0]);
       expect(res.status).toBe(404);
       expect(res.status).not.toBe(401);
       expect((await res.json()).error.code).toBe("NOT_FOUND");
@@ -302,14 +378,79 @@ describe("POST /api/uploads/items/finalize (DB-less: gate / auth / rate limit / 
       expect(uploadCalls).toHaveLength(0);
       expect(sharpCtorOptions).toHaveLength(0);
     } finally {
-      // doUnmock だと file-level mock ごと恒久解除され、後続の resetModules +
-      // 再 import 系 test が実 flag（無効=404）を見てしまう。gate 有効の mock を
-      // 明示的に再登録して復元する。
-      vi.doMock("@/lib/upload/directUploadFeature", () => ({
-        readDirectUploadEnabledFlag: () => true,
-      }));
-      vi.resetModules();
+      testState.directUploadEnabled = true;
     }
+  });
+
+  // ---- B4 P0-C3R: image runtime lazy-load 契約（Frozen Plan §79-8 / §79-9） --
+  //
+  // sharp の native load failure は describe 単位で 1 回だけ注入し、末尾で 1 回
+  // だけ復元する。test ごとに doMock を往復させると登録の入れ替えが競合し、
+  // 注入が効かない run が出る（実測）。
+  describe("sharp native load 失敗（image runtime 不在）", () => {
+    beforeAll(() => {
+      injectSharpNativeLoadFailure();
+    });
+    afterAll(() => {
+      restoreSharp();
+    });
+
+    it("1b) sharp native load 失敗 + flag OFF は 404（route module evaluation が落ちない・loader 未到達）", async () => {
+      currentUserId = `${RUN_NS}unset`;
+      testState.directUploadEnabled = false;
+      testState.resetSharpImportAttempts();
+      try {
+        // static sharp 到達経路が無いこと = route module 自体は evaluate できる
+        const { POST: gatedPOST } = await import("./route");
+        expect(testState.sharpImportAttempts).toBe(0);
+
+        const req = new Request("http://localhost/api/uploads/items/finalize", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ intentId: "cmxxlazygate" }),
+        });
+        const res = await gatedPOST(req as unknown as Parameters<RoutePOST>[0]);
+
+        expect(res.status).toBe(404);
+        expect(await res.json()).toEqual({
+          error: { code: "NOT_FOUND", message: "Not found" },
+        });
+        // image runtime loader は flag gate より後にしか存在しない
+        expect(testState.sharpImportAttempts).toBe(0);
+        expect(rateLimiterLimitCalls).toHaveLength(0);
+        expect(downloadCalls).toHaveLength(0);
+        expect(uploadCalls).toHaveLength(0);
+        expect(sharpCtorOptions).toHaveLength(0);
+      } finally {
+        testState.reset();
+      }
+    });
+
+    it("1c) sharp native load 失敗 + flag ON でも route module は evaluate でき、gate 後の auth で 401", async () => {
+      currentUserId = `${RUN_NS}unset`;
+      testState.resetSharpImportAttempts();
+      vi.resetModules();
+      try {
+        const mod = await import("./route");
+        expect(typeof mod.POST).toBe("function");
+        expect(testState.sharpImportAttempts).toBe(0);
+
+        const req = new Request("http://localhost/api/uploads/items/finalize", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ intentId: "cmxxlazyauth" }),
+        });
+        const res = await mod.POST(req as unknown as Parameters<RoutePOST>[0]);
+
+        expect(res.status).toBe(401);
+        // auth より前に image runtime loader は動かない
+        expect(testState.sharpImportAttempts).toBe(0);
+        expect(downloadCalls).toHaveLength(0);
+        expect(uploadCalls).toHaveLength(0);
+      } finally {
+        testState.reset();
+      }
+    });
   });
 
   it("2) 未認証は 401・rate limit 未到達（auth が rate limit より前）", async () => {
@@ -947,6 +1088,130 @@ describe.skipIf(!TEST_DATABASE_URL)("POST /api/uploads/items/finalize (isolated 
     expect(intent.tokenIssueDeadlineAt.getTime()).toBeGreaterThan(Date.now());
     expect(uploadCalls).toHaveLength(0);
     expect(await itemCount(ctx.workspaceId)).toBe(0);
+  });
+
+  // ---- B4 P0-C3R: image runtime unavailable（staging download 後・lease 前） --
+  //
+  // DB-less 側と同じく、注入と復元は describe 単位で 1 回ずつだけ行う。
+  describe("image runtime unavailable", () => {
+    beforeAll(() => {
+      injectSharpNativeLoadFailure();
+    });
+    afterAll(() => {
+      restoreSharp();
+    });
+
+    it("40b) image runtime load 失敗は固定 500・lease 未取得・DB 不変・Storage PUT 0", async () => {
+      const ctx = await makeCase("c40b");
+      const refs = await makeIntent(ctx, jpeg40x20, "image/jpeg");
+      const before = await intentRow(refs.intentId);
+
+      testState.resetSharpImportAttempts();
+      vi.resetModules();
+      let res: Response;
+      let attempts = 0;
+      try {
+        const { POST: rtPOST } = await import("./route");
+        const req = new Request("http://localhost/api/uploads/items/finalize", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ intentId: refs.intentId }),
+        });
+        res = await rtPOST(req as unknown as Parameters<RoutePOST>[0]);
+        attempts = testState.sharpImportAttempts;
+      } finally {
+        testState.reset();
+      }
+
+      // 固定 500 JSON（§79-8 の contract 文言そのもの）
+      expect(res.status).toBe(500);
+      expect(res.headers.get("content-type")).toContain("application/json");
+      expect(await res.json()).toEqual({
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Failed to finalize the upload. Please try again later.",
+        },
+      });
+
+      // loader は実際に到達している（= gate/auth を通り、staging download 後に呼ばれた）
+      expect(attempts).toBeGreaterThan(0);
+      // 順序契約: staging download は済み・Storage PUT は 0
+      expect(downloadCalls).toContain(refs.stagingPath);
+      expect(uploadCalls).toHaveLength(0);
+
+      // lease 未取得・DB 完全不変
+      const after = await intentRow(refs.intentId);
+      expect(after.status).toBe("PREPARED");
+      expect(after.finalizeLeaseUntil).toBeNull();
+      expect(after.finalizeAttemptToken).toBe(before.finalizeAttemptToken);
+      expect(after.finalizeAttemptCount).toBe(before.finalizeAttemptCount);
+      expect(after.finalizeStartedAt).toBe(before.finalizeStartedAt);
+      expect(after.canonicalOriginalPath).toBe(before.canonicalOriginalPath);
+      expect(after.uploadItemId).toBe(before.uploadItemId);
+      expect(after.lastErrorCode).toBe(before.lastErrorCode);
+      expect(after.lastErrorDetail).toBe(before.lastErrorDetail);
+      expect(after.updatedAt.getTime()).toBe(before.updatedAt.getTime());
+      expect(await itemCount(ctx.workspaceId)).toBe(0);
+    });
+
+    it("40c) image runtime load 失敗でも raw native error は response / DB / log へ出さない", async () => {
+      const ctx = await makeCase("c40c");
+      const refs = await makeIntent(ctx, jpeg40x20, "image/jpeg");
+
+      const consoleSpies = (["log", "info", "warn", "error", "debug"] as const).map((level) =>
+        vi.spyOn(console, level).mockImplementation(() => {}),
+      );
+      testState.resetSharpImportAttempts();
+      vi.resetModules();
+      let raw: string;
+      try {
+        const { POST: rtPOST } = await import("./route");
+        const req = new Request("http://localhost/api/uploads/items/finalize", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ intentId: refs.intentId }),
+        });
+        const res = await rtPOST(req as unknown as Parameters<RoutePOST>[0]);
+        expect(res.status).toBe(500);
+        raw = await res.text();
+      } finally {
+        testState.reset();
+      }
+
+      const consoleText = consoleSpies
+        .flatMap((spy) => spy.mock.calls)
+        .map((args) => args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "))
+        .join("\n");
+      consoleSpies.forEach((spy) => spy.mockRestore());
+
+      // response は固定 envelope と完全一致でなければならない。sentinel だけだと
+      // 「別文言の raw error が混ざった」leak を取り逃がすため、完全一致を主 oracle
+      // にし、sentinel 群を補助 oracle として併用する。
+      expect(JSON.parse(raw)).toEqual({
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Failed to finalize the upload. Please try again later.",
+        },
+      });
+
+      const sentinels = [
+        "libvips-cpp.so",
+        "ERR_DLOPEN_FAILED",
+        "/node_modules/",
+        "sharp-linux-x64.node",
+        "@img/sharp-libvips-linux-x64",
+        refs.stagingPath,
+      ];
+      for (const sentinel of sentinels) {
+        expect(raw).not.toContain(sentinel);
+        expect(consoleText).not.toContain(sentinel);
+      }
+
+      // DB の error field にも raw detail を書かない（そもそも書き込み自体が 0）
+      const after = await intentRow(refs.intentId);
+      expect(after.lastErrorCode).toBeNull();
+      expect(after.lastErrorDetail).toBeNull();
+    });
   });
 
   it("41) stale FINALIZING + staging missing は guarded FAILED（STAGING_OBJECT_LOST）400", async () => {
