@@ -7,6 +7,7 @@ import type { LocalItem } from "./types";
 import type { SignedUrls } from "@/lib/upload/uploadClient";
 import { selectUploadFileFn } from "@/lib/upload/directUploadClient";
 import { shouldIgnoreArrowNav } from "@/lib/quick-add/keyboardNav";
+import { createSessionEnsurer, type SessionEnsurer } from "@/lib/upload/sessionCreator";
 import { MAX_ORIGINAL_BYTES, MAX_ORIGINAL_MB } from "@/lib/upload/uploadLimits";
 import {
   loadStoredSession,
@@ -75,6 +76,11 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName, 
   // upload 関数は mount 時に 1 回だけ選択し ref に固定する（operation 途中で
   // legacy / Direct が切り替わらない）。flag は server prop で page 表示中は不変。
   const uploadFnRef = useRef(selectUploadFileFn(directUploadEnabled));
+  // session 作成は この client lifecycle につき最大 1 request。drainQueue() が
+  // MAX_CONCURRENT 本の processFile を同時に開始しても、並行 caller は進行中の
+  // Promise を共有するため POST は 1 回に収束する（session split の防止）。
+  // 実体は ensureSession() の初回呼び出し時に作る（render 中に ref を読まない）。
+  const ensureSessionRef = useRef<SessionEnsurer | null>(null);
 
   // focusPromptRef: passed to InputPane so it can register its focus function
   const focusPromptRef: MutableRefObject<(() => void) | null> = useRef(null);
@@ -251,20 +257,29 @@ export default function QuickAddClient({ userEmail, workspaceId, workspaceName, 
     );
   }
 
-  async function ensureSession(): Promise<string> {
-    if (sessionIdRef.current) return sessionIdRef.current;
-    const r = await fetch("/api/uploads/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workspaceId: workspaceIdRef.current }),
-    });
-    if (!r.ok) throw new Error("セッション作成に失敗しました");
-    const json = (await r.json()) as { data: { session: { id: string } } };
-    const newId = json.data.session.id;
-    saveSession({ sessionId: newId, workspaceId: workspaceIdRef.current });
-    sessionIdRef.current = newId;
-    setSessionId(newId);
-    return newId;
+  function ensureSession(): Promise<string> {
+    // processFile からのみ呼ばれる（render 中には呼ばれない）ため、ここで遅延生成する。
+    if (ensureSessionRef.current === null) {
+      ensureSessionRef.current = createSessionEnsurer({
+        getSessionId: () => sessionIdRef.current,
+        requestSession: async () => {
+          const r = await fetch("/api/uploads/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ workspaceId: workspaceIdRef.current }),
+          });
+          if (!r.ok) throw new Error("セッション作成に失敗しました");
+          const json = (await r.json()) as { data: { session: { id: string } } };
+          return json.data.session.id;
+        },
+        onSessionCreated: (newId) => {
+          saveSession({ sessionId: newId, workspaceId: workspaceIdRef.current });
+          sessionIdRef.current = newId;
+          setSessionId(newId);
+        },
+      });
+    }
+    return ensureSessionRef.current();
   }
 
   function drainQueue() {
